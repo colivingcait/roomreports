@@ -6,3 +6,265 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ─── Enums ──────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  PM
+  CLEANER
+  RESIDENT
+}
+
+enum InspectionType {
+  COMMON_AREA
+  ROOM_TURN
+  QUARTERLY
+  RESIDENT_SELF_CHECK
+  MOVE_IN_OUT
+}
+
+enum InspectionStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+}
+
+enum MaintenanceStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+}
+
+// ─── Organization ───────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  users       User[]
+  properties  Property[]
+  inspections Inspection[]
+  maintenanceItems MaintenanceItem[]
+
+  @@map("organizations")
+}
+
+// ─── User ───────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  hashedPassword String?
+  googleId       String?  @unique
+  role           Role
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  inspections         Inspection[]
+  propertyAssignments PropertyAssignment[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+// ─── Property ───────────────────────────────────────────
+
+model Property {
+  id             String   @id @default(cuid())
+  name           String
+  address        String
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  rooms               Room[]
+  kitchens            Kitchen[]
+  bathrooms           Bathroom[]
+  inspections         Inspection[]
+  maintenanceItems    MaintenanceItem[]
+  propertyAssignments PropertyAssignment[]
+
+  @@index([organizationId])
+  @@map("properties")
+}
+
+// ─── Room ───────────────────────────────────────────────
+
+model Room {
+  id        String   @id @default(cuid())
+  label     String
+  features  String[]
+  furniture String[]
+  propertyId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  property         Property          @relation(fields: [propertyId], references: [id])
+  inspections      Inspection[]
+  maintenanceItems MaintenanceItem[]
+
+  @@index([propertyId])
+  @@map("rooms")
+}
+
+// ─── Kitchen ────────────────────────────────────────────
+
+model Kitchen {
+  id         String   @id @default(cuid())
+  label      String
+  propertyId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@index([propertyId])
+  @@map("kitchens")
+}
+
+// ─── Bathroom ───────────────────────────────────────────
+
+model Bathroom {
+  id         String   @id @default(cuid())
+  label      String
+  propertyId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@index([propertyId])
+  @@map("bathrooms")
+}
+
+// ─── PropertyAssignment ─────────────────────────────────
+
+model PropertyAssignment {
+  id         String @id @default(cuid())
+  userId     String
+  propertyId String
+
+  user     User     @relation(fields: [userId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@unique([userId, propertyId])
+  @@map("property_assignments")
+}
+
+// ─── Inspection ─────────────────────────────────────────
+
+model Inspection {
+  id             String           @id @default(cuid())
+  type           InspectionType
+  status         InspectionStatus @default(DRAFT)
+  propertyId     String
+  roomId         String?
+  inspectorId    String
+  inspectorName  String
+  inspectorRole  Role
+  organizationId String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  completedAt    DateTime?
+  deletedAt      DateTime?
+
+  property         Property          @relation(fields: [propertyId], references: [id])
+  room             Room?             @relation(fields: [roomId], references: [id])
+  inspector        User              @relation(fields: [inspectorId], references: [id])
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  items            InspectionItem[]
+  maintenanceItems MaintenanceItem[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([inspectorId])
+  @@map("inspections")
+}
+
+// ─── InspectionItem ─────────────────────────────────────
+
+model InspectionItem {
+  id            String   @id @default(cuid())
+  inspectionId  String
+  zone          String
+  text          String
+  options       String[]
+  status        String
+  flagCategory  String?
+  note          String?
+  isMaintenance Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  inspection      Inspection       @relation(fields: [inspectionId], references: [id])
+  maintenanceItem MaintenanceItem?
+  photos          Photo[]
+
+  @@index([inspectionId])
+  @@map("inspection_items")
+}
+
+// ─── MaintenanceItem ────────────────────────────────────
+
+model MaintenanceItem {
+  id               String            @id @default(cuid())
+  inspectionItemId String            @unique
+  inspectionId     String
+  propertyId       String
+  roomId           String?
+  organizationId   String
+  description      String
+  zone             String
+  status           MaintenanceStatus @default(OPEN)
+  assignedTo       String?
+  flagCategory     String
+  note             String?
+  priority         String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  resolvedAt       DateTime?
+  deletedAt        DateTime?
+
+  inspectionItem InspectionItem @relation(fields: [inspectionItemId], references: [id])
+  inspection     Inspection     @relation(fields: [inspectionId], references: [id])
+  property       Property       @relation(fields: [propertyId], references: [id])
+  room           Room?          @relation(fields: [roomId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  photos         Photo[]
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([status])
+  @@map("maintenance_items")
+}
+
+// ─── Photo ──────────────────────────────────────────────
+
+model Photo {
+  id                String  @id @default(cuid())
+  url               String
+  key               String
+  inspectionItemId  String?
+  maintenanceItemId String?
+  createdAt         DateTime @default(now())
+
+  inspectionItem  InspectionItem?  @relation(fields: [inspectionItemId], references: [id])
+  maintenanceItem MaintenanceItem? @relation(fields: [maintenanceItemId], references: [id])
+
+  @@index([inspectionItemId])
+  @@index([maintenanceItemId])
+  @@map("photos")
+}
