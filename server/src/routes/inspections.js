@@ -42,8 +42,13 @@ async function verifyPropertyAccess(userId, role, propertyId, organizationId) {
 
 router.post('/', async (req, res) => {
   try {
-    const { type, propertyId, roomId } = req.body;
+    const { type, propertyId, roomId, direction } = req.body;
     const { role, organizationId } = req.user;
+
+    // Validate direction for MOVE_IN_OUT
+    if (type === 'MOVE_IN_OUT' && direction && !['Move-In', 'Move-Out'].includes(direction)) {
+      return res.status(400).json({ error: 'direction must be "Move-In" or "Move-Out"' });
+    }
 
     if (!type || !propertyId) {
       return res.status(400).json({ error: 'type and propertyId are required' });
@@ -75,7 +80,7 @@ router.post('/', async (req, res) => {
     }
 
     // Generate checklist items
-    const checklistItems = generateChecklist(type, property, room);
+    const checklistItems = generateChecklist(type, property, room, { direction });
 
     // Create inspection with items in a transaction
     const inspection = await prisma.inspection.create({
@@ -387,6 +392,110 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.json({ inspection: updated });
   } catch (error) {
     console.error('Review inspection error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/inspections/compare/:roomId — Move-In vs Move-Out ─
+
+router.get('/compare/:roomId', async (req, res) => {
+  try {
+    const room = await prisma.room.findFirst({
+      where: { id: req.params.roomId, deletedAt: null },
+      include: {
+        property: { select: { id: true, name: true, organizationId: true } },
+      },
+    });
+
+    if (!room || room.property.organizationId !== req.user.organizationId) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        roomId: room.id,
+        type: 'MOVE_IN_OUT',
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        status: { in: ['SUBMITTED', 'REVIEWED'] },
+      },
+      include: {
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: { photos: true },
+        },
+        inspector: { select: { name: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Determine direction from the _Direction metadata item
+    const getDirection = (insp) => {
+      const meta = insp.items.find((i) => i.zone === '_Direction');
+      return meta?.status || null;
+    };
+
+    const moveOut = inspections.find((i) => getDirection(i) === 'Move-Out');
+    const moveIn = inspections.find((i) => getDirection(i) === 'Move-In');
+
+    // Fallback: no direction stored — use chronology (oldest = Move-In, newest = Move-Out)
+    const ordered = inspections.slice().reverse(); // oldest first
+    const fallbackMoveIn = !moveIn && ordered.length >= 1 ? ordered[0] : moveIn;
+    const fallbackMoveOut = !moveOut && ordered.length >= 2 ? ordered[ordered.length - 1] : moveOut;
+
+    // Filter out the _Direction meta item from display
+    const cleanItems = (insp) => ({
+      id: insp.id,
+      status: insp.status,
+      createdAt: insp.createdAt,
+      completedAt: insp.completedAt,
+      inspectorName: insp.inspector?.name,
+      items: insp.items
+        .filter((item) => item.zone !== '_Direction')
+        .map((item) => ({
+          id: item.id,
+          zone: item.zone,
+          text: item.text,
+          status: item.status,
+          note: item.note,
+          photos: item.photos || [],
+        })),
+    });
+
+    // Build comparison
+    const conditionRank = { 'Excellent': 0, 'Good': 1, 'Fair': 2, 'Damaged': 3, 'Heavily Damaged': 4 };
+    let comparison = [];
+    if (fallbackMoveIn && fallbackMoveOut) {
+      const inMap = {};
+      for (const item of fallbackMoveIn.items.filter((i) => i.zone !== '_Direction')) {
+        inMap[`${item.zone}|${item.text}`] = item.status;
+      }
+      for (const item of fallbackMoveOut.items.filter((i) => i.zone !== '_Direction')) {
+        const key = `${item.zone}|${item.text}`;
+        const prev = inMap[key];
+        if (prev && prev !== item.status) {
+          const prevRank = conditionRank[prev] ?? -1;
+          const currRank = conditionRank[item.status] ?? -1;
+          comparison.push({
+            zone: item.zone,
+            text: item.text,
+            moveInStatus: prev,
+            moveOutStatus: item.status,
+            deteriorated: currRank > prevRank,
+          });
+        }
+      }
+    }
+
+    return res.json({
+      room: { id: room.id, label: room.label },
+      property: { id: room.property.id, name: room.property.name },
+      moveIn: fallbackMoveIn ? cleanItems(fallbackMoveIn) : null,
+      moveOut: fallbackMoveOut ? cleanItems(fallbackMoveOut) : null,
+      comparison,
+    });
+  } catch (error) {
+    console.error('Move-in/out compare error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
 import OfflineBanner from '../components/OfflineBanner';
+import MoveInOutComparison from '../components/MoveInOutComparison';
 
 const FLAG_CATEGORIES = ['Maintenance', 'Pest', 'Safety', 'Cleanliness', 'Lease Violation', 'Other'];
 const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
@@ -82,7 +83,7 @@ function PhotoCapture({ inspectionId, itemId, photos, onPhotoAdded, onPhotoRemov
 
 // ─── Inspection Item ────────────────────────────────────
 
-function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUpdate }) {
+function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUpdate, requirePhoto }) {
   const [expanded, setExpanded] = useState(false);
   const isPassFail = PASS_FAIL_TYPES.includes(inspectionType);
   const isBad = BAD_STATUSES.includes(item.status);
@@ -101,10 +102,19 @@ function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUp
     update({ isMaintenance: !item.isMaintenance });
   };
 
+  const photoMissing = requirePhoto && item.status && (!item.photos || item.photos.length === 0);
+
   return (
-    <div className={`insp-item ${item.status ? 'insp-item-done' : ''} ${isBad ? 'insp-item-flagged' : ''}`}>
+    <div className={`insp-item ${item.status ? 'insp-item-done' : ''} ${isBad ? 'insp-item-flagged' : ''} ${photoMissing ? 'insp-item-photo-missing' : ''}`}>
       <div className="insp-item-main">
-        <div className="insp-item-text">{item.text}</div>
+        <div className="insp-item-text">
+          {item.text}
+          {requirePhoto && (
+            <span className={`photo-required-badge ${item.photos?.length > 0 ? 'has-photo' : ''}`} title="Photo recommended">
+              {item.photos?.length > 0 ? 'Photo \u2713' : 'Photo'}
+            </span>
+          )}
+        </div>
 
         {isPassFail ? (
           <div className="insp-item-actions">
@@ -210,7 +220,7 @@ function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUp
 
 // ─── Zone Section ───────────────────────────────────────
 
-function ZoneSection({ zone, items, inspectionId, inspectionType, saveItem, onItemUpdate }) {
+function ZoneSection({ zone, items, inspectionId, inspectionType, saveItem, onItemUpdate, requirePhoto }) {
   const [collapsed, setCollapsed] = useState(false);
   const completed = items.filter((i) => i.status).length;
   const total = items.length;
@@ -234,6 +244,7 @@ function ZoneSection({ zone, items, inspectionId, inspectionType, saveItem, onIt
               inspectionType={inspectionType}
               saveItem={saveItem}
               onItemUpdate={onItemUpdate}
+              requirePhoto={requirePhoto}
             />
           ))}
         </div>
@@ -253,6 +264,7 @@ export default function InspectionFlow() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showCompare, setShowCompare] = useState(false);
 
   const fetchInspection = useCallback(async () => {
     try {
@@ -300,10 +312,17 @@ export default function InspectionFlow() {
   if (error && !inspection) return <div className="page-container"><div className="auth-error">{error}</div></div>;
   if (!inspection) return null;
 
-  // Group items by zone
+  // Extract direction from _Direction meta item (for MOVE_IN_OUT)
+  const directionItem = items.find((i) => i.zone === '_Direction');
+  const direction = directionItem?.status || null;
+
+  // Filter out the _Direction meta item from display
+  const visibleItems = items.filter((i) => i.zone !== '_Direction');
+
+  // Group items by zone (excluding _Direction)
   const zones = [];
   const zoneMap = {};
-  for (const item of items) {
+  for (const item of visibleItems) {
     if (!zoneMap[item.zone]) {
       zoneMap[item.zone] = [];
       zones.push(item.zone);
@@ -311,13 +330,14 @@ export default function InspectionFlow() {
     zoneMap[item.zone].push(item);
   }
 
-  const totalItems = items.length;
-  const completedItems = items.filter((i) => i.status).length;
-  const flaggedItems = items.filter((i) => i.flagCategory).length;
-  const maintenanceItems = items.filter((i) => i.isMaintenance).length;
+  const totalItems = visibleItems.length;
+  const completedItems = visibleItems.filter((i) => i.status).length;
+  const flaggedItems = visibleItems.filter((i) => i.flagCategory).length;
+  const maintenanceItems = visibleItems.filter((i) => i.isMaintenance).length;
   const remaining = totalItems - completedItems;
   const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
   const isSubmitted = inspection.status !== 'DRAFT';
+  const isMoveInOut = inspection.type === 'MOVE_IN_OUT';
 
   return (
     <div className="insp-page">
@@ -335,7 +355,7 @@ export default function InspectionFlow() {
         <div className="insp-title">
           <h1>{inspection.property?.name}</h1>
           <span className="insp-meta">
-            {inspection.type.replace(/_/g, ' ')}
+            {direction ? `${direction.toUpperCase()}` : inspection.type.replace(/_/g, ' ')}
             {inspection.room ? ` — ${inspection.room.label}` : ''}
           </span>
         </div>
@@ -358,6 +378,29 @@ export default function InspectionFlow() {
           </div>
         )}
 
+        {/* Move-Out comparison toggle */}
+        {isMoveInOut && direction === 'Move-Out' && inspection.room && (
+          <div className="compare-toggle-row">
+            <button
+              className={`compare-toggle ${showCompare ? 'active' : ''}`}
+              onClick={() => setShowCompare(!showCompare)}
+            >
+              {showCompare ? 'Hide' : 'Show'} Move-In Comparison
+            </button>
+          </div>
+        )}
+
+        {showCompare && inspection.room && (
+          <MoveInOutComparison roomId={inspection.room.id} />
+        )}
+
+        {/* Required photo notice for MOVE_IN_OUT */}
+        {isMoveInOut && !isSubmitted && (
+          <div className="insp-notice">
+            <strong>Move-In/Out inspection:</strong> A photo is strongly recommended on every item to document condition for security deposit disputes.
+          </div>
+        )}
+
         {error && <div className="auth-error" style={{ margin: '1rem 0' }}>{error}</div>}
 
         {zones.map((zone) => (
@@ -369,6 +412,7 @@ export default function InspectionFlow() {
             inspectionType={inspection.type}
             saveItem={saveItem}
             onItemUpdate={handleItemUpdate}
+            requirePhoto={isMoveInOut}
           />
         ))}
       </div>

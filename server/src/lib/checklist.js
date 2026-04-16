@@ -9,6 +9,7 @@
 
 const STATUS_OPTIONS = ['Pass', 'Fail', 'N/A'];
 const CONDITION_OPTIONS = ['Good', 'Fair', 'Poor', 'Missing'];
+const DETAILED_CONDITION = ['Excellent', 'Good', 'Fair', 'Damaged', 'Heavily Damaged'];
 const CLEAN_OPTIONS = ['Clean', 'Needs Attention', 'Dirty'];
 const YES_NO = ['Yes', 'No'];
 
@@ -291,96 +292,110 @@ function generateResidentSelfCheck(property, room) {
 
 // ─── MOVE_IN_OUT ────────────────────────────────────────
 
-function generateMoveInOut(property, room) {
+function generateMoveInOut(property, room, direction) {
   const items = [];
 
-  // Room condition documentation
+  // Metadata item: stores direction (Move-In/Move-Out). Filtered out in UI.
+  if (direction) {
+    items.push({
+      zone: '_Direction',
+      text: 'Inspection direction',
+      options: ['Move-In', 'Move-Out'],
+      status: direction,
+    });
+  }
+
+  const cond = (zone, text) => item(zone, text, DETAILED_CONDITION);
+
+  // Walls — each direction documented separately
   items.push(
-    item('Walls', 'North wall condition', CONDITION_OPTIONS),
-    item('Walls', 'South wall condition', CONDITION_OPTIONS),
-    item('Walls', 'East wall condition', CONDITION_OPTIONS),
-    item('Walls', 'West wall condition', CONDITION_OPTIONS),
-    item('Ceiling', 'Ceiling condition', CONDITION_OPTIONS),
-    item('Floor', 'Floor condition', CONDITION_OPTIONS),
+    cond('Walls', 'North wall — condition'),
+    cond('Walls', 'South wall — condition'),
+    cond('Walls', 'East wall — condition'),
+    cond('Walls', 'West wall — condition'),
+    cond('Ceiling', 'Ceiling — condition'),
+    cond('Floor', 'Floor — condition'),
   );
 
   // Door and windows
   items.push(
-    item('Door', 'Door condition', CONDITION_OPTIONS),
-    item('Door', 'Door handle and lock', CONDITION_OPTIONS),
-    item('Windows', 'Window glass condition', CONDITION_OPTIONS),
-    item('Windows', 'Window screens', CONDITION_OPTIONS),
-    item('Windows', 'Window locks functioning'),
+    cond('Door', 'Door — condition'),
+    cond('Door', 'Door handle, hinges, and lock'),
+    cond('Windows', 'Window #1 — glass condition'),
+    cond('Windows', 'Window #1 — screen condition'),
+    cond('Windows', 'Window #1 — lock and hardware'),
   );
 
   // Closet
   items.push(
-    item('Closet', 'Closet door/curtain', CONDITION_OPTIONS),
-    item('Closet', 'Closet shelves/rod', CONDITION_OPTIONS),
-    item('Closet', 'Closet interior', CLEAN_OPTIONS),
+    cond('Closet', 'Closet door or curtain'),
+    cond('Closet', 'Closet rod and shelves'),
+    item('Closet', 'Closet interior — cleanliness', CLEAN_OPTIONS),
   );
 
-  // Electrical
+  // Electrical — itemized
   items.push(
-    item('Electrical', 'Light fixture(s) condition', CONDITION_OPTIONS),
-    item('Electrical', 'All switches working'),
-    item('Electrical', 'All outlets working'),
-    item('Electrical', 'Smoke detector present and working'),
+    cond('Electrical', 'Main light fixture — condition'),
+    cond('Electrical', 'Light switch — condition'),
+    cond('Electrical', 'Outlet #1 — condition and function'),
+    cond('Electrical', 'Outlet #2 — condition and function'),
+    item('Electrical', 'Smoke detector — present and tested', YES_NO),
+    item('Electrical', 'CO detector — present and tested', YES_NO),
   );
 
-  // Furniture inventory (dynamic)
+  // Furniture inventory (dynamic) — each item individually documented
   for (const f of room?.furniture || []) {
-    items.push(item('Furniture', `${f} — present and condition`, CONDITION_OPTIONS));
+    items.push(cond('Furniture', `${f} — condition`));
   }
 
   // Feature-specific
   if (room?.features?.includes('Ensuite Bathroom')) {
     items.push(
-      item('Ensuite Bathroom', 'Toilet condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Sink condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Shower/tub condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Mirror condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Tile/grout condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Caulking condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Floor condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Exhaust fan working'),
-      item('Ensuite Bathroom', 'Plumbing — no leaks'),
+      cond('Ensuite Bathroom', 'Toilet — condition'),
+      cond('Ensuite Bathroom', 'Sink and faucet — condition'),
+      cond('Ensuite Bathroom', 'Shower/tub — condition'),
+      cond('Ensuite Bathroom', 'Mirror — condition'),
+      cond('Ensuite Bathroom', 'Tile and grout — condition'),
+      cond('Ensuite Bathroom', 'Caulking — condition'),
+      cond('Ensuite Bathroom', 'Floor — condition'),
+      cond('Ensuite Bathroom', 'Exhaust fan — function'),
+      item('Ensuite Bathroom', 'Plumbing — no leaks', YES_NO),
     );
   }
 
   if (room?.features?.includes('Mini Fridge')) {
-    items.push(item('Appliances', 'Mini fridge condition', CONDITION_OPTIONS));
+    items.push(cond('Appliances', 'Mini fridge — condition and function'));
   }
 
   if (room?.features?.includes('Window AC')) {
-    items.push(item('Appliances', 'Window AC condition', CONDITION_OPTIONS));
+    items.push(cond('Appliances', 'Window AC — condition and function'));
   }
 
   if (room?.features?.includes('In-Unit Washer/Dryer')) {
     items.push(
-      item('Appliances', 'Washer condition', CONDITION_OPTIONS),
-      item('Appliances', 'Dryer condition', CONDITION_OPTIONS),
+      cond('Appliances', 'Washer — condition and function'),
+      cond('Appliances', 'Dryer — condition and function'),
     );
   }
 
   if (room?.features?.includes('Balcony/Patio')) {
     items.push(
-      item('Balcony/Patio', 'Balcony/patio surface condition', CONDITION_OPTIONS),
-      item('Balcony/Patio', 'Railing condition', CONDITION_OPTIONS),
+      cond('Balcony/Patio', 'Balcony/patio surface — condition'),
+      cond('Balcony/Patio', 'Railing — condition'),
     );
   }
 
   if (room?.features?.includes('Separate Entry')) {
     items.push(
-      item('Entry', 'Separate entry door condition', CONDITION_OPTIONS),
-      item('Entry', 'Entry lock condition', CONDITION_OPTIONS),
+      cond('Entry', 'Separate entry door — condition'),
+      cond('Entry', 'Entry lock — condition'),
     );
   }
 
   // Overall
   items.push(
     item('Overall', 'General cleanliness', CLEAN_OPTIONS),
-    item('Overall', 'Room is move-in ready', YES_NO),
+    item('Overall', 'Keys and access devices returned', YES_NO),
   );
 
   return items;
@@ -388,7 +403,7 @@ function generateMoveInOut(property, room) {
 
 // ─── Main generator ─────────────────────────────────────
 
-export function generateChecklist(type, property, room) {
+export function generateChecklist(type, property, room, options = {}) {
   switch (type) {
     case 'COMMON_AREA':
       return generateCommonArea(property);
@@ -399,7 +414,7 @@ export function generateChecklist(type, property, room) {
     case 'RESIDENT_SELF_CHECK':
       return generateResidentSelfCheck(property, room);
     case 'MOVE_IN_OUT':
-      return generateMoveInOut(property, room);
+      return generateMoveInOut(property, room, options.direction);
     default:
       throw new Error(`Unknown inspection type: ${type}`);
   }

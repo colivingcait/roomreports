@@ -25,6 +25,7 @@ export default function StartInspection({ open, onClose }) {
   const [propertyId, setPropertyId] = useState('');
   const [type, setType] = useState('');
   const [roomId, setRoomId] = useState('');
+  const [direction, setDirection] = useState('');
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -61,6 +62,7 @@ export default function StartInspection({ open, onClose }) {
     try {
       const body = { type, propertyId };
       if (selectedType?.needsRoom) body.roomId = roomId;
+      if (type === 'MOVE_IN_OUT' && direction) body.direction = direction;
 
       const res = await fetch('/api/inspections', {
         method: 'POST',
@@ -83,6 +85,7 @@ export default function StartInspection({ open, onClose }) {
     setPropertyId('');
     setType('');
     setRoomId('');
+    setDirection('');
     setRooms([]);
     setError('');
   };
@@ -143,6 +146,32 @@ export default function StartInspection({ open, onClose }) {
           </label>
         )}
 
+        {type === 'MOVE_IN_OUT' && (
+          <div className="direction-picker">
+            <span className="direction-label">Direction</span>
+            <div className="direction-buttons">
+              <button
+                type="button"
+                className={`direction-btn ${direction === 'Move-In' ? 'active' : ''}`}
+                onClick={() => setDirection('Move-In')}
+              >
+                <span className="direction-btn-icon">&rarr;</span>
+                <span className="direction-btn-label">Move-In</span>
+                <span className="direction-btn-sub">New resident</span>
+              </button>
+              <button
+                type="button"
+                className={`direction-btn ${direction === 'Move-Out' ? 'active' : ''}`}
+                onClick={() => setDirection('Move-Out')}
+              >
+                <span className="direction-btn-icon">&larr;</span>
+                <span className="direction-btn-label">Move-Out</span>
+                <span className="direction-btn-sub">Resident leaving</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <label>
           Inspector
           <input type="text" value={user?.name || ''} disabled className="form-input-disabled" />
@@ -151,7 +180,7 @@ export default function StartInspection({ open, onClose }) {
         <button
           type="submit"
           className="btn-primary"
-          disabled={loading || !propertyId || !type || (selectedType?.needsRoom && !roomId)}
+          disabled={loading || !propertyId || !type || (selectedType?.needsRoom && !roomId) || (type === 'MOVE_IN_OUT' && !direction)}
         >
           {loading ? 'Starting...' : 'Start Inspection'}
         </button>
