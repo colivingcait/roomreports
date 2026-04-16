@@ -7,6 +7,7 @@ import propertyRoutes from './routes/properties.js';
 import inspectionRoutes from './routes/inspections.js';
 import photoRoutes from './routes/photos.js';
 import maintenanceRoutes from './routes/maintenance.js';
+import dashboardRoutes from './routes/dashboard.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,6 +40,7 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/inspections', inspectionRoutes);
 app.use('/api', photoRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
