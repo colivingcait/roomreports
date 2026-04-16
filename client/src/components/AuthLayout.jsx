@@ -13,7 +13,8 @@ export default function AuthLayout() {
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    const home = user.role === 'RESIDENT' ? '/resident' : '/dashboard';
+    return <Navigate to={home} replace />;
   }
 
   return (

@@ -247,48 +247,58 @@ function generateQuarterly(property, room) {
 function generateResidentSelfCheck(property, room) {
   const items = [];
 
+  // Overall room condition
   items.push(
-    item('General', 'Smoke detector working (press test button)', YES_NO),
-    item('General', 'All lights and switches working', YES_NO),
-    item('General', 'All outlets working', YES_NO),
-    item('General', 'Door lock functioning properly', YES_NO),
-    item('General', 'Windows open and close properly', YES_NO),
+    item('Your Room', 'How does your room look overall?', ['Clean', 'Could Use Attention', 'Needs Help']),
   );
 
-  // Maintenance concerns
+  // Under sink check (always applies — shared or ensuite)
   items.push(
-    item('Maintenance', 'Any water leaks or water damage?', YES_NO),
-    item('Maintenance', 'Any pest issues?', YES_NO),
-    item('Maintenance', 'Any mold or mildew?', YES_NO),
-    item('Maintenance', 'Any damage to walls, floor, or ceiling?', YES_NO),
-    item('Maintenance', 'Any broken furniture or fixtures?', YES_NO),
+    item('Under Sink', 'Any issues under your sink?', ['Looks Good', 'I See a Problem']),
   );
 
+  // Bathroom (if ensuite)
   if (room?.features?.includes('Ensuite Bathroom')) {
     items.push(
-      item('Ensuite Bathroom', 'Toilet flushing properly', YES_NO),
-      item('Ensuite Bathroom', 'Sink draining properly', YES_NO),
-      item('Ensuite Bathroom', 'Shower draining properly', YES_NO),
-      item('Ensuite Bathroom', 'Any mold in bathroom?', YES_NO),
+      item('Bathroom', 'How\u2019s your bathroom?', ['Clean', 'Needs Cleaning', 'Something\u2019s Broken']),
     );
   }
 
-  if (room?.features?.includes('Mini Fridge')) {
-    items.push(item('Appliances', 'Mini fridge working properly', YES_NO));
-  }
-
-  if (room?.features?.includes('Window AC')) {
-    items.push(item('Appliances', 'AC unit working properly', YES_NO));
-  }
-
-  // Cleanliness self-assessment
+  // Closet
   items.push(
-    item('Cleanliness', 'Room is reasonably clean and tidy', YES_NO),
-    item('Cleanliness', 'Trash is taken out regularly', YES_NO),
+    item('Closet', 'Check your closet area', ['All Good', 'Issue to Report']),
+  );
+
+  // Floors
+  items.push(
+    item('Floors', 'Look at your floors', ['Good Shape', 'Wear or Damage']),
+  );
+
+  // Walls
+  items.push(
+    item('Walls', 'Check your walls', ['Good Shape', 'Marks or Damage']),
+  );
+
+  // Pests
+  items.push(
+    item('Pests', 'Any pests spotted?', ['None', 'Yes']),
+  );
+
+  // Catch-all
+  items.push(
+    item('Anything Else', 'Anything that needs fixing?', ['Nothing', 'Yes — Let me tell you']),
   );
 
   return items;
 }
+
+// Items (by text) that should strongly prompt photos in the resident UI
+export const RESIDENT_PHOTO_PROMPTS = new Set([
+  'How does your room look overall?',
+  'Any issues under your sink?',
+  'How\u2019s your bathroom?',
+  'Check your closet area',
+]);
 
 // ─── MOVE_IN_OUT ────────────────────────────────────────
 
