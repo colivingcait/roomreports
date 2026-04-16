@@ -69,11 +69,25 @@ model User {
   deletedAt      DateTime?
 
   organization        Organization         @relation(fields: [organizationId], references: [id])
+  sessions            Session[]
   inspections         Inspection[]
   propertyAssignments PropertyAssignment[]
 
   @@index([organizationId])
   @@map("users")
+}
+
+// ─── Session ────────────────────────────────────────────
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 // ─── Property ───────────────────────────────────────────
