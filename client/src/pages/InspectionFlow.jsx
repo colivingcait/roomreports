@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
+import { queuePhoto } from '../lib/offlineStore';
+import OfflineBanner from '../components/OfflineBanner';
 
 const FLAG_CATEGORIES = ['Maintenance', 'Pest', 'Safety', 'Cleanliness', 'Lease Violation', 'Other'];
 const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
@@ -25,16 +27,28 @@ function PhotoCapture({ inspectionId, itemId, photos, onPhotoAdded, onPhotoRemov
     if (!file) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append('photo', file);
-      const res = await fetch(`/api/inspections/${inspectionId}/items/${itemId}/photos`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      const data = await res.json();
-      if (res.ok) onPhotoAdded(data.photo);
-    } catch { /* ignore */ }
+      if (!navigator.onLine) {
+        // Queue photo for later upload
+        await queuePhoto(inspectionId, itemId, file, file.name);
+        const localUrl = URL.createObjectURL(file);
+        onPhotoAdded({ id: `local-${Date.now()}`, url: localUrl, local: true });
+      } else {
+        const form = new FormData();
+        form.append('photo', file);
+        const res = await fetch(`/api/inspections/${inspectionId}/items/${itemId}/photos`, {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        });
+        const data = await res.json();
+        if (res.ok) onPhotoAdded(data.photo);
+      }
+    } catch {
+      // Network error — queue for offline
+      await queuePhoto(inspectionId, itemId, file, file.name);
+      const localUrl = URL.createObjectURL(file);
+      onPhotoAdded({ id: `local-${Date.now()}`, url: localUrl, local: true });
+    }
     finally { setUploading(false); fileRef.current.value = ''; }
   };
 
@@ -314,6 +328,7 @@ export default function InspectionFlow() {
           <div className="save-indicator">
             {saveStatus === 'saving' && <span className="save-saving">Saving...</span>}
             {saveStatus === 'saved' && <span className="save-saved">Saved &#10003;</span>}
+            {saveStatus === 'offline' && <span className="save-offline">Saved locally</span>}
             {saveStatus === 'error' && <span className="save-error">Save failed</span>}
           </div>
         </div>
@@ -335,6 +350,7 @@ export default function InspectionFlow() {
       </div>
 
       {/* Zone sections */}
+      <OfflineBanner />
       <div className="insp-body">
         {isSubmitted && (
           <div className="insp-submitted-banner">

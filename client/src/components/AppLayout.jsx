@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import SearchBar from './SearchBar';
+import OfflineBanner from './OfflineBanner';
 
 // SVG icons as inline components
 const icons = {
@@ -86,6 +87,7 @@ export default function AppLayout() {
 
       {/* Main Content */}
       <main className="shell-main">
+        <OfflineBanner />
         <Outlet />
       </main>
 

@@ -2305,3 +2305,78 @@ body {
   color: #4A4543;
   word-break: break-all;
 }
+
+/* ─── Offline Banner ─────────────────────────────────── */
+
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.offline-banner.offline {
+  background: #FFF5EB;
+  border: 1px solid #C4703F;
+  color: #C4703F;
+}
+
+.offline-banner.online {
+  background: #F0F7F1;
+  border: 1px solid #6B8F71;
+  color: #6B8F71;
+}
+
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #C4703F;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.offline-count {
+  background: #C4703F;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 100px;
+}
+
+.syncing-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #D3E4D5;
+  border-top-color: #6B8F71;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sync-check { font-weight: 700; }
+
+.offline-retry {
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.save-offline { color: #C4703F; }

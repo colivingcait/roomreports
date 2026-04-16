@@ -1,29 +1,11 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
-
-const pendingQueue = [];
-
-function processQueue() {
-  while (pendingQueue.length > 0) {
-    const { url, body } = pendingQueue.shift();
-    fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    }).catch(() => {
-      pendingQueue.unshift({ url, body });
-    });
-  }
-}
-
-// Listen for online event to flush queue
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', processQueue);
-}
+import { queueSave, updateCachedItem } from '../lib/offlineStore';
+import { useOnlineStatus } from './useOnlineStatus';
 
 export function useAutoSave(inspectionId) {
-  const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
+  const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | offline | error
   const timers = useRef({});
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     if (saveStatus === 'saved') {
@@ -33,36 +15,37 @@ export function useAutoSave(inspectionId) {
   }, [saveStatus]);
 
   const saveItem = useCallback((itemId, data) => {
-    // Clear existing debounce for this item
     if (timers.current[itemId]) clearTimeout(timers.current[itemId]);
 
     setSaveStatus('saving');
 
-    timers.current[itemId] = setTimeout(async () => {
-      const url = `/api/inspections/${inspectionId}/items/${itemId}`;
-      const body = data;
+    // Always update local cache immediately
+    updateCachedItem(itemId, data).catch(() => {});
 
+    timers.current[itemId] = setTimeout(async () => {
       if (!navigator.onLine) {
-        pendingQueue.push({ url, body });
-        setSaveStatus('saved');
+        // Queue for later sync
+        await queueSave(inspectionId, itemId, data);
+        setSaveStatus('offline');
         return;
       }
 
       try {
-        const res = await fetch(url, {
+        const res = await fetch(`/api/inspections/${inspectionId}/items/${itemId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify(body),
+          body: JSON.stringify(data),
         });
         if (!res.ok) throw new Error('Save failed');
         setSaveStatus('saved');
       } catch {
-        pendingQueue.push({ url, body });
-        setSaveStatus('error');
+        // Network error — queue for sync
+        await queueSave(inspectionId, itemId, data);
+        setSaveStatus('offline');
       }
     }, 500);
   }, [inspectionId]);
 
-  return { saveItem, saveStatus };
+  return { saveItem, saveStatus, isOnline };
 }
