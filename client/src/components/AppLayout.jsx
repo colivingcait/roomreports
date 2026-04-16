@@ -13,6 +13,7 @@ export default function AppLayout() {
           <NavLink to="/properties" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Properties</NavLink>
           <NavLink to="/inspections" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Inspections</NavLink>
           <NavLink to="/maintenance" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Maintenance</NavLink>
+          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Team</NavLink>
         </div>
         <div className="app-nav-right">
           <span className="nav-org">{organization?.name}</span>

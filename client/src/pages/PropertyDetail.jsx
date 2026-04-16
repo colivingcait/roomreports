@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import { DEFAULT_FEATURES, DEFAULT_FURNITURE } from '../../../shared/index.js';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -250,6 +252,7 @@ export default function PropertyDetail() {
   const [addingRoom, setAddingRoom] = useState(false);
   const [deleteProperty, setDeleteProperty] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -313,7 +316,10 @@ export default function PropertyDetail() {
             <InlineEdit value={property.address} onSave={(v) => handleUpdateProperty('address', v)} placeholder="Add address" />
           </p>
         </div>
-        <button className="btn-danger-sm" onClick={() => setDeleteProperty(true)}>Archive Property</button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn-secondary" onClick={() => setShowQR(true)}>QR Code</button>
+          <button className="btn-danger-sm" onClick={() => setDeleteProperty(true)}>Archive Property</button>
+        </div>
       </div>
 
       <SpaceSection title="Kitchens" items={property.kitchens} propertyId={id} endpoint="kitchens" onRefresh={fetchProperty} />
@@ -345,6 +351,23 @@ export default function PropertyDetail() {
         message={`Are you sure you want to archive "${property.name}"? It will be hidden from all views.`}
         confirmLabel="Archive"
       />
+
+      <Modal open={showQR} onClose={() => setShowQR(false)} title="Resident Signup QR Code">
+        <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+          <QRCodeSVG
+            value={`${window.location.origin}/signup?property=${id}`}
+            size={200}
+            level="M"
+            fgColor="#4A4543"
+          />
+          <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#8A8583' }}>
+            Post this QR code at <strong>{property.name}</strong> so residents can scan and sign up.
+          </p>
+          <p style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#B5B1AF', wordBreak: 'break-all' }}>
+            {window.location.origin}/signup?property={id}
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

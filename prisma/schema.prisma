@@ -50,6 +50,7 @@ model Organization {
   properties  Property[]
   inspections Inspection[]
   maintenanceItems MaintenanceItem[]
+  invitations Invitation[]
 
   @@map("organizations")
 }
@@ -72,6 +73,7 @@ model User {
   sessions            Session[]
   inspections         Inspection[]
   propertyAssignments PropertyAssignment[]
+  sentInvitations     Invitation[]         @relation("InvitedByUser")
 
   @@index([organizationId])
   @@map("users")
@@ -88,6 +90,31 @@ model Session {
 
   @@index([userId])
   @@map("sessions")
+}
+
+// ─── Invitation ─────────────────────────────────────────
+
+model Invitation {
+  id             String   @id @default(cuid())
+  email          String
+  role           Role
+  token          String   @unique
+  organizationId String
+  propertyId     String?
+  roomId         String?
+  invitedById    String
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  property     Property?    @relation(fields: [propertyId], references: [id])
+  room         Room?        @relation(fields: [roomId], references: [id])
+  invitedBy    User         @relation("InvitedByUser", fields: [invitedById], references: [id])
+
+  @@index([organizationId])
+  @@index([token])
+  @@map("invitations")
 }
 
 // ─── Property ───────────────────────────────────────────
@@ -108,6 +135,7 @@ model Property {
   inspections         Inspection[]
   maintenanceItems    MaintenanceItem[]
   propertyAssignments PropertyAssignment[]
+  invitations         Invitation[]
 
   @@index([organizationId])
   @@map("properties")
@@ -128,6 +156,7 @@ model Room {
   property         Property          @relation(fields: [propertyId], references: [id])
   inspections      Inspection[]
   maintenanceItems MaintenanceItem[]
+  invitations      Invitation[]
 
   @@index([propertyId])
   @@map("rooms")

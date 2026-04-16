@@ -11,6 +11,7 @@ import PropertyDetail from './pages/PropertyDetail';
 import Inspections from './pages/Inspections';
 import InspectionFlow from './pages/InspectionFlow';
 import Maintenance from './pages/Maintenance';
+import Team from './pages/Team';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
               <Route path="/properties/:id" element={<PropertyDetail />} />
               <Route path="/inspections" element={<Inspections />} />
               <Route path="/maintenance" element={<Maintenance />} />
+              <Route path="/team" element={<Team />} />
             </Route>
             {/* Full-screen inspection flow (no nav) */}
             <Route path="/inspections/:id" element={<InspectionFlow />} />

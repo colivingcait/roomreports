@@ -17,10 +17,14 @@ const router = Router();
 //   -d '{"email":"owner@example.com","password":"password123","name":"Jane Doe","organizationName":"Acme Coliving"}'
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, name, organizationName } = req.body;
+    const { email, password, name, organizationName, inviteToken } = req.body;
 
-    if (!email || !password || !name || !organizationName) {
-      return res.status(400).json({ error: 'email, password, name, and organizationName are required' });
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'email, password, and name are required' });
+    }
+
+    if (!inviteToken && !organizationName) {
+      return res.status(400).json({ error: 'organizationName is required for new signups' });
     }
 
     if (password.length < 8) {
@@ -41,22 +45,72 @@ router.post('/signup', async (req, res) => {
 
     const userId = generateIdFromEntropySize(10);
 
-    const user = await prisma.$transaction(async (tx) => {
-      const org = await tx.organization.create({
-        data: { name: organizationName },
-      });
+    let user;
 
-      return tx.user.create({
-        data: {
-          id: userId,
-          email,
-          name,
-          hashedPassword,
-          role: 'OWNER',
-          organizationId: org.id,
+    if (inviteToken) {
+      // Invited signup — join existing org
+      const invitation = await prisma.invitation.findFirst({
+        where: {
+          token: inviteToken,
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
         },
       });
-    });
+
+      if (!invitation) {
+        return res.status(400).json({ error: 'Invalid or expired invitation' });
+      }
+
+      if (invitation.email !== email) {
+        return res.status(400).json({ error: 'Email does not match invitation' });
+      }
+
+      user = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            id: userId,
+            email,
+            name,
+            hashedPassword,
+            role: invitation.role,
+            organizationId: invitation.organizationId,
+          },
+        });
+
+        // Create property assignment if invitation specifies a property
+        if (invitation.propertyId) {
+          await tx.propertyAssignment.create({
+            data: { userId: created.id, propertyId: invitation.propertyId },
+          });
+        }
+
+        // Mark invitation as accepted
+        await tx.invitation.update({
+          where: { id: invitation.id },
+          data: { acceptedAt: new Date() },
+        });
+
+        return created;
+      });
+    } else {
+      // New org signup
+      user = await prisma.$transaction(async (tx) => {
+        const org = await tx.organization.create({
+          data: { name: organizationName },
+        });
+
+        return tx.user.create({
+          data: {
+            id: userId,
+            email,
+            name,
+            hashedPassword,
+            role: 'OWNER',
+            organizationId: org.id,
+          },
+        });
+      });
+    }
 
     const session = await lucia.createSession(user.id, {});
     const sessionCookie = lucia.createSessionCookie(session.id);

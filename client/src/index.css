@@ -1894,3 +1894,123 @@ body {
 }
 
 .hist-row-changed .hist-cell-status { background: #FFFAF5; }
+
+/* ─── Team Management ────────────────────────────────── */
+
+.team-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.team-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  gap: 1rem;
+}
+
+.team-card-pending { border-style: dashed; }
+
+.team-card-left { flex: 1; min-width: 0; }
+
+.team-card-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4A4543;
+}
+
+.team-you {
+  font-size: 0.75rem;
+  color: #B5B1AF;
+  font-weight: 400;
+  margin-left: 0.375rem;
+}
+
+.team-card-email {
+  font-size: 0.75rem;
+  color: #8A8583;
+  margin-top: 0.125rem;
+}
+
+.team-props {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.team-prop-tag {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  background: #F0F7F1;
+  color: #6B8F71;
+  border-radius: 100px;
+}
+
+.team-card-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.team-role-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid;
+  border-radius: 100px;
+}
+
+.team-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.team-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.team-prop-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+.team-prop-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #4A4543;
+  cursor: pointer;
+}
+
+.team-prop-checkbox input { cursor: pointer; }
+
+.invite-url-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #FAF8F5;
+  border: 1px solid #E8E4E1;
+  border-radius: 8px;
+  padding: 0.625rem;
+}
+
+.invite-url-box code {
+  flex: 1;
+  font-size: 0.75rem;
+  color: #4A4543;
+  word-break: break-all;
+}
