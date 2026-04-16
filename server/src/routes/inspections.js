@@ -391,4 +391,100 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
   }
 });
 
+// ─── GET /api/inspections/history/:roomId — room history ─
+
+router.get('/history/:roomId', async (req, res) => {
+  try {
+    const room = await prisma.room.findFirst({
+      where: { id: req.params.roomId, deletedAt: null },
+      include: {
+        property: {
+          select: { id: true, name: true, organizationId: true },
+        },
+      },
+    });
+
+    if (!room || room.property.organizationId !== req.user.organizationId) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        roomId: room.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        status: { in: ['SUBMITTED', 'REVIEWED'] },
+      },
+      include: {
+        items: { orderBy: { createdAt: 'asc' } },
+        inspector: { select: { name: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 4,
+    });
+
+    // Build comparison: for each item text, track status across inspections
+    const comparison = [];
+    if (inspections.length >= 2) {
+      const latest = inspections[0];
+      const previous = inspections[1];
+
+      const prevMap = {};
+      for (const item of previous.items) {
+        prevMap[`${item.zone}|${item.text}`] = item.status;
+      }
+
+      for (const item of latest.items) {
+        const key = `${item.zone}|${item.text}`;
+        const prevStatus = prevMap[key] || null;
+        if (prevStatus && prevStatus !== item.status) {
+          comparison.push({
+            zone: item.zone,
+            text: item.text,
+            currentStatus: item.status,
+            previousStatus: prevStatus,
+            deteriorated: isDeteriorated(prevStatus, item.status),
+          });
+        }
+      }
+    }
+
+    return res.json({
+      room: { id: room.id, label: room.label },
+      property: { id: room.property.id, name: room.property.name },
+      inspections: inspections.map((i) => ({
+        id: i.id,
+        type: i.type,
+        status: i.status,
+        createdAt: i.createdAt,
+        completedAt: i.completedAt,
+        inspectorName: i.inspector?.name,
+        inspectorRole: i.inspector?.role,
+        items: i.items.map((item) => ({
+          id: item.id,
+          zone: item.zone,
+          text: item.text,
+          status: item.status,
+          flagCategory: item.flagCategory,
+          isMaintenance: item.isMaintenance,
+          note: item.note,
+        })),
+        flagCount: i.items.filter((item) => item.flagCategory).length,
+      })),
+      comparison,
+    });
+  } catch (error) {
+    console.error('Room history error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+function isDeteriorated(prev, current) {
+  const goodStatuses = ['Pass', 'Good', 'Clean', 'Yes'];
+  const badStatuses = ['Fail', 'Poor', 'Dirty', 'No', 'Missing'];
+  const wasGood = goodStatuses.includes(prev);
+  const nowBad = badStatuses.includes(current);
+  return wasGood && nowBad;
+}
+
 export default router;
