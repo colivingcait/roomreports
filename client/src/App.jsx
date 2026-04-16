@@ -8,6 +8,8 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Properties from './pages/Properties';
 import PropertyDetail from './pages/PropertyDetail';
+import Inspections from './pages/Inspections';
+import InspectionFlow from './pages/InspectionFlow';
 
 function App() {
   return (
@@ -26,7 +28,10 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:id" element={<PropertyDetail />} />
+              <Route path="/inspections" element={<Inspections />} />
             </Route>
+            {/* Full-screen inspection flow (no nav) */}
+            <Route path="/inspections/:id" element={<InspectionFlow />} />
           </Route>
 
           {/* Default redirect */}

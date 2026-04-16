@@ -11,6 +11,7 @@ export default function AppLayout() {
           <span className="app-nav-brand">RoomReport</span>
           <NavLink to="/dashboard" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Dashboard</NavLink>
           <NavLink to="/properties" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Properties</NavLink>
+          <NavLink to="/inspections" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Inspections</NavLink>
         </div>
         <div className="app-nav-right">
           <span className="nav-org">{organization?.name}</span>
