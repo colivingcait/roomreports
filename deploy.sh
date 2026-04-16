@@ -12,6 +12,7 @@ echo "==> Installing dependencies..."
 npm ci
 
 echo "==> Generating Prisma client..."
+rm -rf server/node_modules/.prisma
 npm run db:generate
 
 echo "==> Running migrations..."
