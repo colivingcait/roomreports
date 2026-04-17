@@ -335,10 +335,57 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
-// ─── PUT /api/inspections/:id/review — PM approves + creates maintenance ──
+// ─── GET /api/inspections/pending — SUBMITTED for dashboard ──
 
-router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
+router.get('/pending', async (req, res) => {
   try {
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        status: 'SUBMITTED',
+      },
+      include: {
+        property: { select: { id: true, name: true } },
+        room: { select: { id: true, label: true } },
+        inspector: { select: { id: true, name: true, role: true } },
+        items: {
+          where: { flagCategory: { not: null } },
+          select: { id: true, isMaintenance: true },
+        },
+      },
+      orderBy: { completedAt: 'desc' },
+    });
+
+    const summaries = inspections.map((i) => ({
+      id: i.id,
+      type: i.type,
+      propertyId: i.property?.id,
+      propertyName: i.property?.name,
+      roomId: i.room?.id || null,
+      roomLabel: i.room?.label || null,
+      inspectorName: i.inspector?.name,
+      inspectorRole: i.inspector?.role,
+      completedAt: i.completedAt,
+      createdAt: i.createdAt,
+      flagCount: i.items.length,
+      maintenanceCount: i.items.filter((it) => it.isMaintenance).length,
+    }));
+
+    return res.json({ inspections: summaries });
+  } catch (error) {
+    console.error('List pending inspections error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/:id/approve — PM approves + creates maintenance ──
+// Body: { items: [{ itemId, createTask, description?, pmNote? }] }
+
+router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { items: itemSelections } = req.body;
+
     const inspection = await prisma.inspection.findFirst({
       where: {
         id: req.params.id,
@@ -353,18 +400,37 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
     }
 
     if (inspection.status !== 'SUBMITTED') {
-      return res.status(400).json({ error: 'Can only review SUBMITTED inspections' });
+      return res.status(400).json({ error: 'Can only approve SUBMITTED inspections' });
     }
 
-    // Find items flagged for maintenance
-    const maintenanceItems = inspection.items.filter((i) => i.isMaintenance);
+    // Build a map of item id -> inspection item
+    const itemMap = {};
+    for (const it of inspection.items) itemMap[it.id] = it;
 
-    // Check if maintenance already exists (e.g., from old submit workflow)
-    const existingMaintenance = await prisma.maintenanceItem.findMany({
+    // Determine which items to create maintenance for
+    const toCreate = [];
+    if (Array.isArray(itemSelections) && itemSelections.length > 0) {
+      for (const sel of itemSelections) {
+        if (!sel.createTask) continue;
+        const item = itemMap[sel.itemId];
+        if (!item) continue;
+        toCreate.push({ item, description: sel.description || item.text, pmNote: sel.pmNote || null });
+      }
+    } else {
+      // Fallback: default to all isMaintenance items if no selection provided
+      for (const item of inspection.items) {
+        if (item.isMaintenance) {
+          toCreate.push({ item, description: item.text, pmNote: null });
+        }
+      }
+    }
+
+    // Check for existing maintenance to avoid duplicates
+    const existing = await prisma.maintenanceItem.findMany({
       where: { inspectionId: inspection.id, deletedAt: null },
       select: { inspectionItemId: true },
     });
-    const existingIds = new Set(existingMaintenance.map((m) => m.inspectionItemId));
+    const existingIds = new Set(existing.map((m) => m.inspectionItemId));
 
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.inspection.update({
@@ -373,8 +439,10 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
       });
 
       const created = [];
-      for (const item of maintenanceItems) {
-        if (existingIds.has(item.id)) continue; // already created
+      for (const { item, description, pmNote } of toCreate) {
+        if (existingIds.has(item.id)) continue;
+        // Combine inspector note and PM note
+        const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
         const mi = await tx.maintenanceItem.create({
           data: {
             inspectionItemId: item.id,
@@ -382,14 +450,19 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
             propertyId: inspection.propertyId,
             roomId: inspection.roomId,
             organizationId: inspection.organizationId,
-            description: item.text,
+            description,
             zone: item.zone,
             flagCategory: item.flagCategory || 'General',
-            note: item.note,
+            note: combinedNote || null,
           },
         });
         created.push(mi);
       }
+
+      // Clear any stored send-back reason
+      await tx.inspectionItem.deleteMany({
+        where: { inspectionId: inspection.id, zone: '_SendBackReason' },
+      });
 
       return { inspection: updated, maintenanceItems: created };
     });
@@ -399,7 +472,63 @@ router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
       maintenanceItemsCreated: result.maintenanceItems.length,
     });
   } catch (error) {
-    console.error('Review inspection error:', error);
+    console.error('Approve inspection error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/:id/send-back — PM sends back to DRAFT ──
+// Body: { reason?: string }
+
+router.post('/:id/send-back', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    const inspection = await prisma.inspection.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({ error: 'Inspection not found' });
+    }
+
+    if (inspection.status !== 'SUBMITTED') {
+      return res.status(400).json({ error: 'Can only send back SUBMITTED inspections' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // Remove any existing _SendBackReason items
+      await tx.inspectionItem.deleteMany({
+        where: { inspectionId: inspection.id, zone: '_SendBackReason' },
+      });
+
+      // Store reason as synthetic item (if provided)
+      if (reason && reason.trim()) {
+        await tx.inspectionItem.create({
+          data: {
+            inspectionId: inspection.id,
+            zone: '_SendBackReason',
+            text: 'PM feedback',
+            options: [],
+            status: 'sent-back',
+            note: reason.trim(),
+          },
+        });
+      }
+
+      return tx.inspection.update({
+        where: { id: inspection.id },
+        data: { status: 'DRAFT', completedAt: null },
+      });
+    });
+
+    return res.json({ inspection: updated });
+  } catch (error) {
+    console.error('Send back inspection error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
