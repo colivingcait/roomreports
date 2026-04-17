@@ -15,8 +15,8 @@ echo "==> Generating Prisma client..."
 rm -rf server/node_modules/.prisma
 npm run db:generate
 
-echo "==> Running migrations..."
-npm run db:migrate
+# Database schema changes are applied manually via `npx prisma db push`
+# when the schema.prisma file changes. Skipped here to avoid drift prompts.
 
 echo "==> Building client..."
 npm run build
