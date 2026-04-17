@@ -13,18 +13,19 @@ const api = (path, opts = {}) =>
 export default function Team() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
-  const [invitations, setInvitations] = useState([]);
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Invite modal
   const [showInvite, setShowInvite] = useState(false);
   const [invEmail, setInvEmail] = useState('');
+  const [invName, setInvName] = useState('');
   const [invRole, setInvRole] = useState('CLEANER');
   const [invPropertyId, setInvPropertyId] = useState('');
   const [inviting, setInviting] = useState(false);
   const [invError, setInvError] = useState('');
-  const [inviteUrl, setInviteUrl] = useState('');
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [copied, setCopied] = useState('');
 
   // Edit modal
   const [editUser, setEditUser] = useState(null);
@@ -36,37 +37,50 @@ export default function Team() {
   const [deactivateTarget, setDeactivateTarget] = useState(null);
   const [deactivating, setDeactivating] = useState(false);
 
+  // Reset password
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
   const fetchData = useCallback(async () => {
     try {
-      const [teamData, inviteData, propData] = await Promise.all([
+      const [teamData, propData] = await Promise.all([
         api('/api/team'),
-        user?.role === 'OWNER' || user?.role === 'PM' ? api('/api/team/invites') : { invitations: [] },
         api('/api/properties'),
       ]);
       setUsers(teamData.users || []);
-      setInvitations(inviteData.invitations || []);
       setProperties(propData.properties || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [user?.role]);
+  }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const resetInviteForm = () => {
+    setInvEmail('');
+    setInvName('');
+    setInvRole('CLEANER');
+    setInvPropertyId('');
+    setInvError('');
+    setCreatedCredentials(null);
+    setCopied('');
+  };
 
   const handleInvite = async (e) => {
     e.preventDefault();
     setInviting(true);
     setInvError('');
-    setInviteUrl('');
     try {
       const data = await api('/api/team/invite', {
         method: 'POST',
         body: JSON.stringify({
           email: invEmail,
+          name: invName || undefined,
           role: invRole,
           propertyId: invPropertyId || undefined,
         }),
       });
-      setInviteUrl(data.signupUrl);
+      setCreatedCredentials({ email: data.user.email, password: data.password });
       fetchData();
     } catch (err) {
       setInvError(err.message);
@@ -75,11 +89,11 @@ export default function Team() {
     }
   };
 
-  const handleCancelInvite = async (id) => {
-    try {
-      await api(`/api/team/invites/${id}`, { method: 'DELETE' });
-      fetchData();
-    } catch { /* ignore */ }
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(''), 2000);
+    });
   };
 
   const openEdit = (u) => {
@@ -111,11 +125,23 @@ export default function Team() {
     finally { setDeactivating(false); }
   };
 
+  const handleResetPassword = async () => {
+    setResetting(true);
+    try {
+      const data = await api(`/api/team/${resetTarget.id}/reset-password`, { method: 'POST' });
+      setResetResult({ email: data.user.email, password: data.password });
+    } catch { /* ignore */ }
+    finally { setResetting(false); }
+  };
+
   const toggleProperty = (pid) => {
     setEditPropertyIds((prev) =>
       prev.includes(pid) ? prev.filter((id) => id !== pid) : [...prev, pid],
     );
   };
+
+  const buildLoginMessage = (creds) =>
+    `Here's your RoomReport login:\n\nEmail: ${creds.email}\nPassword: ${creds.password}\n\nLogin at: ${window.location.origin}/login`;
 
   const isOwner = user?.role === 'OWNER';
   const canInvite = user?.role === 'OWNER' || user?.role === 'PM';
@@ -123,6 +149,49 @@ export default function Team() {
   const deactivatedUsers = users.filter((u) => u.deletedAt);
 
   if (loading) return <div className="page-loading">Loading team...</div>;
+
+  const credentialsDisplay = (creds, onClose) => (
+    <div>
+      <p style={{ color: '#6B8F71', fontWeight: 600, marginBottom: '0.5rem' }}>Account created</p>
+      <p style={{ fontSize: '0.85rem', color: '#8A8583', marginBottom: '1rem' }}>
+        Share these credentials with {creds.email}. This password won&apos;t be shown again.
+      </p>
+
+      <div className="credentials-box">
+        <div className="credential-row">
+          <span className="credential-label">Email</span>
+          <code className="credential-value">{creds.email}</code>
+        </div>
+        <div className="credential-row">
+          <span className="credential-label">Password</span>
+          <code className="credential-value credential-password">{creds.password}</code>
+        </div>
+      </div>
+
+      <div className="credential-actions">
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => copyToClipboard(creds.password, 'password')}
+        >
+          {copied === 'password' ? 'Copied \u2713' : 'Copy Password'}
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => copyToClipboard(buildLoginMessage(creds), 'full')}
+        >
+          {copied === 'full' ? 'Copied \u2713' : 'Copy Login Details'}
+        </button>
+      </div>
+
+      <p className="credential-warning">This password won&apos;t be shown again.</p>
+
+      <button className="btn-secondary" style={{ marginTop: '0.75rem', width: '100%' }} onClick={onClose}>
+        Done
+      </button>
+    </div>
+  );
 
   return (
     <div className="page-container">
@@ -132,8 +201,8 @@ export default function Team() {
           <p className="page-subtitle">{activeUsers.length} member{activeUsers.length !== 1 ? 's' : ''}</p>
         </div>
         {canInvite && (
-          <button className="btn-primary-sm" onClick={() => { setShowInvite(true); setInviteUrl(''); setInvError(''); setInvEmail(''); }}>
-            + Invite Member
+          <button className="btn-primary-sm" onClick={() => { setShowInvite(true); resetInviteForm(); }}>
+            + Add Member
           </button>
         )}
       </div>
@@ -163,6 +232,9 @@ export default function Team() {
               {isOwner && u.id !== user?.id && (
                 <div className="team-actions">
                   <button className="btn-text-sm" onClick={() => openEdit(u)}>Edit</button>
+                  <button className="btn-text-sm" onClick={() => { setResetTarget(u); setResetResult(null); }}>
+                    Reset Password
+                  </button>
                   <button className="btn-text-sm" style={{ color: '#C53030' }} onClick={() => setDeactivateTarget(u)}>Deactivate</button>
                 </div>
               )}
@@ -170,32 +242,6 @@ export default function Team() {
           </div>
         ))}
       </div>
-
-      {/* Pending invitations */}
-      {canInvite && invitations.length > 0 && (
-        <div style={{ marginTop: '1.5rem' }}>
-          <h3 className="team-section-title">Pending Invitations</h3>
-          <div className="team-list">
-            {invitations.map((inv) => (
-              <div key={inv.id} className="team-card team-card-pending">
-                <div className="team-card-left">
-                  <div className="team-card-name">{inv.email}</div>
-                  <div className="team-card-email">
-                    Invited by {inv.invitedBy?.name}
-                    {inv.property && ` — ${inv.property.name}`}
-                  </div>
-                </div>
-                <div className="team-card-right">
-                  <span className="team-role-badge" style={{ color: ROLE_COLORS[inv.role], borderColor: ROLE_COLORS[inv.role] }}>
-                    {inv.role}
-                  </span>
-                  <button className="btn-text-sm" style={{ color: '#C53030' }} onClick={() => handleCancelInvite(inv.id)}>Cancel</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Deactivated users */}
       {deactivatedUsers.length > 0 && (
@@ -216,30 +262,23 @@ export default function Team() {
       )}
 
       {/* Invite Modal */}
-      <Modal open={showInvite} onClose={() => setShowInvite(false)} title="Invite Team Member">
-        {inviteUrl ? (
-          <div>
-            <p style={{ color: '#6B8F71', fontWeight: 500, marginBottom: '0.5rem' }}>Invitation created!</p>
-            <p style={{ fontSize: '0.85rem', color: '#8A8583', marginBottom: '0.75rem' }}>
-              Share this signup link with {invEmail}:
-            </p>
-            <div className="invite-url-box">
-              <code>{inviteUrl}</code>
-              <button
-                className="btn-primary-xs"
-                onClick={() => { navigator.clipboard.writeText(inviteUrl); }}
-              >
-                Copy
-              </button>
-            </div>
-            <button className="btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => { setShowInvite(false); setInviteUrl(''); }}>Done</button>
-          </div>
+      <Modal
+        open={showInvite}
+        onClose={() => { setShowInvite(false); resetInviteForm(); }}
+        title={createdCredentials ? 'Account Created' : 'Add Team Member'}
+      >
+        {createdCredentials ? (
+          credentialsDisplay(createdCredentials, () => { setShowInvite(false); resetInviteForm(); })
         ) : (
           <form onSubmit={handleInvite} className="modal-form">
             {invError && <div className="auth-error">{invError}</div>}
             <label>
+              Name <span className="form-optional">(optional)</span>
+              <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} placeholder="Jane Doe" />
+            </label>
+            <label>
               Email
-              <input type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="team@example.com" required />
+              <input type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="jane@example.com" required />
             </label>
             <label>
               Role
@@ -257,9 +296,30 @@ export default function Team() {
               </label>
             )}
             <button type="submit" className="btn-primary" disabled={inviting}>
-              {inviting ? 'Sending...' : 'Send Invitation'}
+              {inviting ? 'Creating...' : 'Create Account'}
             </button>
           </form>
+        )}
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal
+        open={!!resetTarget}
+        onClose={() => { setResetTarget(null); setResetResult(null); setCopied(''); }}
+        title={resetResult ? 'New Password' : 'Reset Password'}
+      >
+        {resetResult ? (
+          credentialsDisplay(resetResult, () => { setResetTarget(null); setResetResult(null); setCopied(''); })
+        ) : (
+          <div className="modal-form">
+            <p style={{ color: '#4A4543', fontSize: '0.9rem', marginBottom: '1rem' }}>
+              Generate a new password for <strong>{resetTarget?.name}</strong>?
+              They will be logged out of all sessions.
+            </p>
+            <button className="btn-danger" onClick={handleResetPassword} disabled={resetting} style={{ width: '100%' }}>
+              {resetting ? 'Generating...' : 'Generate New Password'}
+            </button>
+          </div>
         )}
       </Modal>
 

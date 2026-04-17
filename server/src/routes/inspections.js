@@ -287,8 +287,8 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(400).json({ error: 'Inspection already submitted' });
     }
 
-    // Check that all items have a status set
-    const incomplete = inspection.items.filter((i) => !i.status);
+    // Check that all items have a status set (ignore _Direction metadata)
+    const incomplete = inspection.items.filter((i) => !i.status && i.zone !== '_Direction');
     if (incomplete.length > 0) {
       return res.status(400).json({
         error: `${incomplete.length} item(s) have not been completed`,
@@ -296,23 +296,85 @@ router.post('/:id/submit', async (req, res) => {
       });
     }
 
+    // Update inspection status to SUBMITTED — maintenance items created on review
+    const updated = await prisma.inspection.update({
+      where: { id: inspection.id },
+      data: {
+        status: 'SUBMITTED',
+        completedAt: new Date(),
+      },
+    });
+
+    const flaggedItems = inspection.items.filter((i) => i.flagCategory);
+    const propertyName = inspection.property?.name || 'Unknown';
+    const roomLabel = inspection.room?.label || '';
+
+    if (flaggedItems.length > 0) {
+      console.log(
+        `[NOTIFICATION] Inspection ${inspection.id} submitted for ${propertyName}${roomLabel ? ` / ${roomLabel}` : ''}` +
+        ` — ${flaggedItems.length} flagged item(s), awaiting PM review`,
+      );
+    } else if (inspection.type === 'ROOM_TURN') {
+      console.log(
+        `[NOTIFICATION] Room Ready: ${propertyName} / ${roomLabel} — Room turn passed with no flags`,
+      );
+    }
+
+    return res.json({
+      inspection: updated,
+      flaggedItemsCount: flaggedItems.length,
+      notification: flaggedItems.length > 0
+        ? `Submitted for PM review — ${flaggedItems.length} flagged item(s)`
+        : inspection.type === 'ROOM_TURN'
+          ? 'Room Ready — no issues found'
+          : 'Inspection submitted for review',
+    });
+  } catch (error) {
+    console.error('Submit inspection error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PUT /api/inspections/:id/review — PM approves + creates maintenance ──
+
+router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+      include: { items: true },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({ error: 'Inspection not found' });
+    }
+
+    if (inspection.status !== 'SUBMITTED') {
+      return res.status(400).json({ error: 'Can only review SUBMITTED inspections' });
+    }
+
     // Find items flagged for maintenance
     const maintenanceItems = inspection.items.filter((i) => i.isMaintenance);
 
-    // Submit in a transaction
+    // Check if maintenance already exists (e.g., from old submit workflow)
+    const existingMaintenance = await prisma.maintenanceItem.findMany({
+      where: { inspectionId: inspection.id, deletedAt: null },
+      select: { inspectionItemId: true },
+    });
+    const existingIds = new Set(existingMaintenance.map((m) => m.inspectionItemId));
+
     const result = await prisma.$transaction(async (tx) => {
-      // Update inspection status
       const updated = await tx.inspection.update({
         where: { id: inspection.id },
-        data: {
-          status: 'SUBMITTED',
-          completedAt: new Date(),
-        },
+        data: { status: 'REVIEWED' },
       });
 
-      // Create maintenance items for flagged items
-      const createdMaintenance = [];
+      const created = [];
       for (const item of maintenanceItems) {
+        if (existingIds.has(item.id)) continue; // already created
         const mi = await tx.maintenanceItem.create({
           data: {
             inspectionItemId: item.id,
@@ -326,70 +388,16 @@ router.post('/:id/submit', async (req, res) => {
             note: item.note,
           },
         });
-        createdMaintenance.push(mi);
+        created.push(mi);
       }
 
-      return { inspection: updated, maintenanceItems: createdMaintenance };
+      return { inspection: updated, maintenanceItems: created };
     });
-
-    // Build notification summary (logged for now, email integration later)
-    const flaggedItems = inspection.items.filter((i) => i.flagCategory);
-    const propertyName = inspection.property?.name || 'Unknown';
-    const roomLabel = inspection.room?.label || '';
-
-    if (flaggedItems.length > 0) {
-      console.log(
-        `[NOTIFICATION] Inspection ${inspection.id} submitted for ${propertyName}${roomLabel ? ` / ${roomLabel}` : ''}` +
-        ` — ${flaggedItems.length} flagged item(s), ${maintenanceItems.length} maintenance item(s) created`,
-      );
-    } else if (inspection.type === 'ROOM_TURN') {
-      console.log(
-        `[NOTIFICATION] Room Ready: ${propertyName} / ${roomLabel} — Room turn passed with no flags`,
-      );
-    }
 
     return res.json({
       inspection: result.inspection,
       maintenanceItemsCreated: result.maintenanceItems.length,
-      flaggedItemsCount: flaggedItems.length,
-      notification: flaggedItems.length > 0
-        ? `${flaggedItems.length} flagged item(s) — maintenance tickets created`
-        : inspection.type === 'ROOM_TURN'
-          ? 'Room Ready — no issues found'
-          : 'Inspection submitted successfully',
     });
-  } catch (error) {
-    console.error('Submit inspection error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── PUT /api/inspections/:id/review — PM review ───────
-
-router.put('/:id/review', requireRole('OWNER', 'PM'), async (req, res) => {
-  try {
-    const inspection = await prisma.inspection.findFirst({
-      where: {
-        id: req.params.id,
-        organizationId: req.user.organizationId,
-        deletedAt: null,
-      },
-    });
-
-    if (!inspection) {
-      return res.status(404).json({ error: 'Inspection not found' });
-    }
-
-    if (inspection.status !== 'SUBMITTED') {
-      return res.status(400).json({ error: 'Can only review SUBMITTED inspections' });
-    }
-
-    const updated = await prisma.inspection.update({
-      where: { id: inspection.id },
-      data: { status: 'REVIEWED' },
-    });
-
-    return res.json({ inspection: updated });
   } catch (error) {
     console.error('Review inspection error:', error);
     return res.status(500).json({ error: 'Internal server error' });

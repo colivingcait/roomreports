@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
@@ -211,16 +211,27 @@ function KanbanColumn({ status, items, onUpdate, onDelete }) {
 // ─── Main Page ──────────────────────────────────────────
 
 export default function Maintenance() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list');
 
-  // Filters
+  // Filters (status pre-populated from URL if provided)
   const [filterProperty, setFilterProperty] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
   const [filterCategory, setFilterCategory] = useState('');
+
+  // Sync status filter to URL
+  useEffect(() => {
+    if (filterStatus) {
+      setSearchParams({ status: filterStatus }, { replace: true });
+    } else if (searchParams.get('status')) {
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus]);
 
   const fetchItems = useCallback(async () => {
     const params = new URLSearchParams();

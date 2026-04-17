@@ -1,10 +1,30 @@
 import { Router } from 'express';
-import crypto from 'crypto';
+import { hash } from '@node-rs/argon2';
+import { generateIdFromEntropySize } from 'lucia';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 router.use(requireAuth);
+
+// Password chars — excludes confusing 0/O/1/l/I
+const PW_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const PW_LOWER = 'abcdefghjkmnpqrstuvwxyz';
+const PW_DIGIT = '23456789';
+
+function generatePassword() {
+  // 3 upper, 3 lower, 2 digit, shuffled
+  const chars = [];
+  for (let i = 0; i < 3; i++) chars.push(PW_UPPER[Math.floor(Math.random() * PW_UPPER.length)]);
+  for (let i = 0; i < 3; i++) chars.push(PW_LOWER[Math.floor(Math.random() * PW_LOWER.length)]);
+  for (let i = 0; i < 2; i++) chars.push(PW_DIGIT[Math.floor(Math.random() * PW_DIGIT.length)]);
+  // Fisher-Yates shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
 
 // ─── GET /api/team — list org members ───────────────────
 
@@ -35,11 +55,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ─── POST /api/team/invite — send invitation ────────────
+// ─── POST /api/team/invite — create user with generated password ──
 
 router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
-    const { email, role, propertyId, roomId } = req.body;
+    const { email, name, role, propertyId } = req.body;
 
     if (!email || !role) {
       return res.status(400).json({ error: 'email and role are required' });
@@ -49,108 +69,57 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
       return res.status(400).json({ error: 'Cannot invite as OWNER' });
     }
 
-    // Check if user already exists in this org
-    const existing = await prisma.user.findFirst({
-      where: { email, organizationId: req.user.organizationId },
-    });
+    // Check if user already exists with this email (in any org)
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return res.status(409).json({ error: 'User already in this organization' });
+      return res.status(409).json({ error: 'A user with this email already exists' });
     }
 
-    // Check for pending invite
-    const pendingInvite = await prisma.invitation.findFirst({
-      where: {
-        email,
-        organizationId: req.user.organizationId,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
-    if (pendingInvite) {
-      return res.status(409).json({ error: 'Invitation already pending for this email' });
-    }
-
-    const token = crypto.randomBytes(32).toString('hex');
-
-    const invitation = await prisma.invitation.create({
-      data: {
-        email,
-        role,
-        token,
-        organizationId: req.user.organizationId,
-        propertyId: propertyId || null,
-        roomId: roomId || null,
-        invitedById: req.user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-      },
-      include: {
-        organization: { select: { name: true } },
-        property: { select: { name: true } },
-        room: { select: { label: true } },
-      },
+    // Generate password and hash it
+    const password = generatePassword();
+    const hashedPassword = await hash(password, {
+      memoryCost: 19456,
+      timeCost: 2,
+      outputLen: 32,
+      parallelism: 1,
     });
 
-    // Build signup URL with token
-    const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
-    const signupUrl = `${baseUrl}/signup?invite=${token}`;
+    const userId = generateIdFromEntropySize(10);
+    const displayName = name || email.split('@')[0];
 
-    // Log for now (email integration later)
-    console.log(`[INVITE] ${email} invited as ${role} to ${invitation.organization.name}`);
-    console.log(`[INVITE] Signup URL: ${signupUrl}`);
+    // Create user + optional property assignment in a transaction
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          id: userId,
+          email,
+          name: displayName,
+          hashedPassword,
+          role,
+          organizationId: req.user.organizationId,
+        },
+      });
 
-    return res.status(201).json({ invitation, signupUrl });
+      if (propertyId) {
+        await tx.propertyAssignment.create({
+          data: { userId: created.id, propertyId },
+        });
+      }
+
+      return created;
+    });
+
+    return res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+      password, // plaintext — displayed once, never stored
+    });
   } catch (error) {
     console.error('Invite error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── GET /api/team/invites — list pending invitations ───
-
-router.get('/invites', requireRole('OWNER', 'PM'), async (req, res) => {
-  try {
-    const invitations = await prisma.invitation.findMany({
-      where: {
-        organizationId: req.user.organizationId,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        property: { select: { id: true, name: true } },
-        room: { select: { id: true, label: true } },
-        invitedBy: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return res.json({ invitations });
-  } catch (error) {
-    console.error('List invites error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── DELETE /api/team/invites/:id — cancel invitation ───
-
-router.delete('/invites/:id', requireRole('OWNER', 'PM'), async (req, res) => {
-  try {
-    const invitation = await prisma.invitation.findFirst({
-      where: {
-        id: req.params.id,
-        organizationId: req.user.organizationId,
-        acceptedAt: null,
-      },
-    });
-
-    if (!invitation) {
-      return res.status(404).json({ error: 'Invitation not found' });
-    }
-
-    await prisma.invitation.delete({ where: { id: invitation.id } });
-
-    return res.json({ success: true });
-  } catch (error) {
-    console.error('Cancel invite error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -176,7 +145,6 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
 
     const { role, propertyIds } = req.body;
 
-    // Update role if provided
     if (role !== undefined) {
       await prisma.user.update({
         where: { id: user.id },
@@ -184,25 +152,15 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
       });
     }
 
-    // Update property assignments if provided
     if (propertyIds !== undefined) {
-      // Remove existing assignments
-      await prisma.propertyAssignment.deleteMany({
-        where: { userId: user.id },
-      });
-
-      // Create new assignments
+      await prisma.propertyAssignment.deleteMany({ where: { userId: user.id } });
       if (propertyIds.length > 0) {
         await prisma.propertyAssignment.createMany({
-          data: propertyIds.map((pid) => ({
-            userId: user.id,
-            propertyId: pid,
-          })),
+          data: propertyIds.map((pid) => ({ userId: user.id, propertyId: pid })),
         });
       }
     }
 
-    // Fetch updated user
     const updated = await prisma.user.findUnique({
       where: { id: user.id },
       select: {
@@ -259,32 +217,45 @@ router.delete('/:userId', requireRole('OWNER'), async (req, res) => {
   }
 });
 
-// ─── GET /api/team/invite-info/:token — public route ────
+// ─── POST /api/team/:userId/reset-password ──────────────
+// Generate a new password for an existing team member
 
-router.get('/invite-info/:token', async (req, res) => {
+router.post('/:userId/reset-password', requireRole('OWNER'), async (req, res) => {
   try {
-    const invitation = await prisma.invitation.findFirst({
+    const user = await prisma.user.findFirst({
       where: {
-        token: req.params.token,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        organization: { select: { name: true } },
+        id: req.params.userId,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
       },
     });
 
-    if (!invitation) {
-      return res.status(404).json({ error: 'Invitation not found or expired' });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
+    const password = generatePassword();
+    const hashedPassword = await hash(password, {
+      memoryCost: 19456,
+      timeCost: 2,
+      outputLen: 32,
+      parallelism: 1,
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { hashedPassword },
+    });
+
+    // Invalidate existing sessions
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+
     return res.json({
-      email: invitation.email,
-      role: invitation.role,
-      organizationName: invitation.organization.name,
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      password,
     });
   } catch (error) {
-    console.error('Invite info error:', error);
+    console.error('Reset password error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

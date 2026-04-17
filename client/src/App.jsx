@@ -11,6 +11,7 @@ import Properties from './pages/Properties';
 import PropertyDetail from './pages/PropertyDetail';
 import Inspections from './pages/Inspections';
 import InspectionFlow from './pages/InspectionFlow';
+import InspectionReview from './pages/InspectionReview';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
 import ResidentHome from './pages/ResidentHome';
@@ -41,6 +42,7 @@ function App() {
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:id" element={<PropertyDetail />} />
               <Route path="/inspections" element={<Inspections />} />
+              <Route path="/inspections/:id/review" element={<InspectionReview />} />
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/team" element={<Team />} />
             </Route>

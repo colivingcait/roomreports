@@ -3025,3 +3025,450 @@ body {
   margin-bottom: 2rem;
   max-width: 320px;
 }
+
+/* ─── Credentials Display ────────────────────────────── */
+
+.credentials-box {
+  background: #FAF8F5;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.credential-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0;
+}
+
+.credential-row + .credential-row {
+  border-top: 1px solid #E8E4E1;
+  padding-top: 0.625rem;
+  margin-top: 0.5rem;
+}
+
+.credential-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.credential-value {
+  font-size: 0.9rem;
+  color: #4A4543;
+  word-break: break-all;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+.credential-password {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #6B8F71;
+}
+
+.credential-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.credential-actions button {
+  flex: 1;
+}
+
+.credential-warning {
+  font-size: 0.75rem;
+  color: #C4703F;
+  text-align: center;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.form-optional {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: #B5B1AF;
+}
+
+/* ─── Dashboard v2 ───────────────────────────────────── */
+
+.dash-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #C4703F;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.5rem;
+  border-radius: 100px;
+  margin-left: 0.5rem;
+}
+
+.dash-pending { border-left: 3px solid #C4703F; }
+.dash-pending .dash-section-header h2 { color: #C4703F; }
+
+.dash-caught-up {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  color: #6B8F71;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.dash-caught-up-icon {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* Pending Review Cards */
+
+.pending-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.pending-card {
+  background: #FFFAF5;
+  border: 1px solid #F0DDD0;
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pending-card:hover {
+  border-color: #C4703F;
+  background: #FFF5EB;
+  transform: translateY(-1px);
+}
+
+.pending-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.pending-flag-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #C53030;
+  background: #FEF2F2;
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+}
+
+.pending-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4A4543;
+  margin-bottom: 0.25rem;
+}
+
+.pending-card-room { color: #8A8583; font-weight: 500; }
+
+.pending-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: #8A8583;
+}
+
+/* Maintenance stats grid */
+
+.maint-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+  .maint-stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.maint-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-left: 4px solid #E8E4E1;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  font-family: inherit;
+}
+
+.maint-stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(74, 69, 67, 0.08);
+}
+
+.maint-stat-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.maint-stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Property Health */
+
+.health-list { display: flex; flex-direction: column; }
+
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #F5F2EF;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.health-row:last-child { border-bottom: none; }
+.health-row:hover { background: #FDFCFB; margin: 0 -0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; border-radius: 8px; }
+
+.health-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-info { flex: 1; min-width: 0; }
+
+.health-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4A4543;
+}
+
+.health-meta {
+  font-size: 0.75rem;
+  color: #8A8583;
+  margin-top: 0.125rem;
+}
+
+.health-urgent { color: #C53030; font-weight: 600; }
+.health-pending { color: #C4703F; font-weight: 600; }
+
+.health-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* ─── Review Page ────────────────────────────────────── */
+
+.review-summary {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.review-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.375rem 0;
+}
+
+.review-summary-row + .review-summary-row {
+  border-top: 1px solid #F5F2EF;
+}
+
+.review-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.review-value { font-size: 0.9rem; color: #4A4543; }
+
+.review-flag-count {
+  color: #C53030;
+  font-weight: 600;
+}
+
+.review-maint-count { color: #C4703F; }
+
+.review-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4A4543;
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.review-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.review-zone {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.review-zone-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6B8F71;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+
+.review-item {
+  padding: 0.625rem 0;
+  border-bottom: 1px solid #F5F2EF;
+}
+
+.review-item:last-child { border-bottom: none; }
+
+.review-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.review-item-text {
+  font-size: 0.9rem;
+  color: #4A4543;
+  font-weight: 500;
+  flex: 1;
+}
+
+.review-item-badges {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.review-status-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid;
+  border-radius: 100px;
+}
+
+.review-cat-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: #F5F2EF;
+  color: #8A8583;
+  border-radius: 100px;
+}
+
+.review-maint-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: #FFF5EB;
+  color: #C4703F;
+  border: 1px solid #F0DDD0;
+  border-radius: 100px;
+}
+
+.review-item-note {
+  font-size: 0.8rem;
+  color: #6B6563;
+  background: #FAF8F5;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-top: 0.375rem;
+  line-height: 1.4;
+}
+
+.review-note-label {
+  font-weight: 600;
+  color: #8A8583;
+  margin-right: 0.25rem;
+}
+
+.review-photos {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.review-photo-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #E8E4E1;
+}
+
+.review-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-footer {
+  position: sticky;
+  bottom: 0;
+  background: #FAF8F5;
+  padding: 1rem 0;
+  border-top: 1px solid #E8E4E1;
+  text-align: center;
+}
+
+.review-footer .btn-finish {
+  width: 100%;
+  max-width: 320px;
+  padding: 1rem;
+  font-size: 1rem;
+}
+
+.review-footer-note {
+  font-size: 0.75rem;
+  color: #8A8583;
+  margin-top: 0.5rem;
+}
