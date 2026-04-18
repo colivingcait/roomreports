@@ -103,8 +103,10 @@ router.get('/', async (req, res) => {
           select: { id: true, priority: true, flagCategory: true },
         },
         inspections: {
-          where: { deletedAt: null, status: 'SUBMITTED' },
-          select: { id: true },
+          where: { deletedAt: null },
+          select: { id: true, status: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
         },
       },
       orderBy: { name: 'asc' },
@@ -112,24 +114,17 @@ router.get('/', async (req, res) => {
 
     const propertyHealth = properties.map((p) => {
       const openCount = p.maintenanceItems.length;
-      const urgentCount = p.maintenanceItems.filter((m) => m.priority === 'Urgent').length;
-      const safetyCount = p.maintenanceItems.filter((m) => m.flagCategory === 'Safety').length;
-      const pestCount = p.maintenanceItems.filter((m) => m.flagCategory === 'Pest').length;
 
-      // Health score: green/yellow/red based on open maintenance
-      let health = 'healthy';
-      if (urgentCount > 0 || safetyCount > 0 || pestCount > 0 || openCount >= 5) {
-        health = 'attention';
-      } else if (openCount >= 1) {
-        health = 'watch';
-      }
+      // Health: Green (0-2), Yellow (3-5), Red (6+)
+      let health = 'green';
+      if (openCount >= 6) health = 'red';
+      else if (openCount >= 3) health = 'yellow';
 
       return {
         id: p.id,
         name: p.name,
         openMaintenanceCount: openCount,
-        urgentCount,
-        pendingReviewCount: p.inspections.length,
+        lastInspectionDate: p.inspections[0]?.createdAt || null,
         health,
       };
     });

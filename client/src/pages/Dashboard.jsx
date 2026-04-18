@@ -72,135 +72,154 @@ export default function Dashboard() {
         <div className="notification-bar">{notification}</div>
       )}
 
-      {/* ─── 1. PENDING REVIEW ─── */}
-      <section className="dash-section dash-pending">
-        <div className="dash-section-header">
-          <h2>
-            Pending Review
-            {pendingReview.length > 0 && <span className="dash-count-badge">{pendingReview.length}</span>}
-          </h2>
-          {pendingReview.length > 4 && (
-            <button className="btn-text-sm" onClick={() => navigate('/inspections?status=SUBMITTED')}>
-              View All &rarr;
-            </button>
-          )}
-        </div>
-
-        {pendingReview.length === 0 ? (
-          <div className="dash-caught-up">
-            <span className="dash-caught-up-icon">&#10003;</span>
-            <span>All caught up</span>
+      <div className="dash-grid">
+        {/* ─── Top Left: PENDING REVIEW ─── */}
+        <section className="dash-section dash-pending">
+          <div className="dash-section-header">
+            <h2>
+              Pending Review
+              {pendingReview.length > 0 && <span className="dash-count-badge">{pendingReview.length}</span>}
+            </h2>
+            {pendingReview.length > 4 && (
+              <button className="btn-text-sm" onClick={() => navigate('/inspections?status=SUBMITTED')}>
+                View All &rarr;
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="pending-grid">
-            {pendingReview.slice(0, 4).map((p) => (
-              <div key={p.id} className="pending-card" onClick={() => navigate(`/inspections/${p.id}/review`)}>
-                <div className="pending-card-top">
-                  <span className="dash-type-badge">{TYPE_LABELS[p.type] || p.type}</span>
+
+          {pendingReview.length === 0 ? (
+            <div className="dash-caught-up">
+              <span className="dash-caught-up-icon">&#10003;</span>
+              <span>All caught up</span>
+            </div>
+          ) : (
+            <div className="pending-list">
+              {pendingReview.slice(0, 4).map((p) => (
+                <div key={p.id} className="pending-row" onClick={() => navigate(`/inspections/${p.id}/review`)}>
+                  <div className="pending-row-left">
+                    <span className="dash-type-badge">{TYPE_LABELS[p.type] || p.type}</span>
+                    <div className="pending-row-info">
+                      <span className="pending-row-prop">
+                        {p.propertyName}
+                        {p.roomLabel && <span className="pending-row-room"> &rarr; {p.roomLabel}</span>}
+                      </span>
+                      <span className="pending-row-date">{timeAgo(p.completedAt)}</span>
+                    </div>
+                  </div>
                   {p.flagCount > 0 && (
                     <span className="pending-flag-count">&#9873; {p.flagCount}</span>
                   )}
                 </div>
-                <h3 className="pending-card-title">
-                  {p.propertyName}
-                  {p.roomLabel && <span className="pending-card-room"> &rarr; {p.roomLabel}</span>}
-                </h3>
-                <div className="pending-card-meta">
-                  <span>{timeAgo(p.completedAt)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+              ))}
+            </div>
+          )}
+        </section>
 
-      {/* ─── 2. MAINTENANCE OVERVIEW ─── */}
-      <section className="dash-section">
-        <div className="dash-section-header">
-          <h2>Maintenance This Month</h2>
-          <button className="btn-text-sm" onClick={() => navigate('/maintenance')}>
-            View All &rarr;
-          </button>
-        </div>
-
-        <div className="maint-stats-grid">
-          {['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].map((s) => (
-            <button
-              key={s}
-              className="maint-stat-card"
-              onClick={() => navigate(`/maintenance?status=${s}`)}
-              style={{ borderLeftColor: MAINT_STATUS_COLORS[s] }}
-            >
-              <span className="maint-stat-count" style={{ color: MAINT_STATUS_COLORS[s] }}>
-                {statusCounts[s] || 0}
-              </span>
-              <span className="maint-stat-label">{MAINT_STATUS_LABELS[s]}</span>
+        {/* ─── Top Right: MAINTENANCE OVERVIEW ─── */}
+        <section className="dash-section">
+          <div className="dash-section-header">
+            <h2>Maintenance This Month</h2>
+            <button className="btn-text-sm" onClick={() => navigate('/maintenance')}>
+              View All &rarr;
             </button>
-          ))}
-        </div>
+          </div>
 
-        {maintenance.recentOpen?.length > 0 && (
-          <div className="dash-maint-list" style={{ marginTop: '1rem' }}>
-            {maintenance.recentOpen.map((m) => (
-              <div key={m.id} className="dash-maint-row" onClick={() => navigate('/maintenance')}>
-                <div className="dash-maint-left">
-                  <span className="dash-maint-desc">{m.description}</span>
-                  <span className="dash-maint-meta">
-                    {m.propertyName}{m.roomLabel ? ` / ${m.roomLabel}` : ''} &middot; {m.zone}
-                  </span>
-                </div>
-                <div className="dash-maint-right">
-                  {m.priority && (
-                    <span className={`dash-priority dash-priority-${m.priority.toLowerCase()}`}>
-                      {m.priority}
-                    </span>
-                  )}
-                  <span
-                    className="insp-status-badge"
-                    style={{ color: MAINT_STATUS_COLORS[m.status], borderColor: MAINT_STATUS_COLORS[m.status] }}
-                  >
-                    {MAINT_STATUS_LABELS[m.status]}
-                  </span>
-                </div>
-              </div>
+          <div className="maint-stats-grid">
+            {['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].map((s) => (
+              <button
+                key={s}
+                className="maint-stat-card"
+                onClick={() => navigate(`/maintenance?status=${s}`)}
+                style={{ borderLeftColor: MAINT_STATUS_COLORS[s] }}
+              >
+                <span className="maint-stat-count" style={{ color: MAINT_STATUS_COLORS[s] }}>
+                  {statusCounts[s] || 0}
+                </span>
+                <span className="maint-stat-label">{MAINT_STATUS_LABELS[s]}</span>
+              </button>
             ))}
           </div>
-        )}
-      </section>
+        </section>
 
-      {/* ─── 3. PROPERTY HEALTH ─── */}
-      <section className="dash-section">
-        <div className="dash-section-header">
-          <h2>Property Health</h2>
-          <button className="btn-text-sm" onClick={() => navigate('/properties')}>View All &rarr;</button>
-        </div>
-
-        {propertyHealth.length === 0 ? (
-          <p className="empty-text" style={{ padding: '0.5rem 0' }}>No properties yet</p>
-        ) : (
-          <div className="health-list">
-            {propertyHealth.map((p) => {
-              const color = HEALTH_COLORS[p.health] || '#6B8F71';
-              return (
-                <div key={p.id} className="health-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
-                  <div className="health-indicator" style={{ background: color }} />
-                  <div className="health-info">
-                    <div className="health-name">{p.name}</div>
-                    <div className="health-meta">
-                      {p.openMaintenanceCount > 0
-                        ? `${p.openMaintenanceCount} open issue${p.openMaintenanceCount !== 1 ? 's' : ''}`
-                        : 'No open issues'}
-                    </div>
-                  </div>
-                  <span className="health-count" style={{ color }}>
-                    {p.openMaintenanceCount}
-                  </span>
-                </div>
-              );
-            })}
+        {/* ─── Bottom Left: PROPERTY HEALTH ─── */}
+        <section className="dash-section">
+          <div className="dash-section-header">
+            <h2>Property Health</h2>
+            <button className="btn-text-sm" onClick={() => navigate('/properties')}>View All &rarr;</button>
           </div>
-        )}
-      </section>
+
+          {propertyHealth.length === 0 ? (
+            <p className="empty-text" style={{ padding: '0.5rem 0' }}>No properties yet</p>
+          ) : (
+            <div className="health-list">
+              {propertyHealth.map((p) => {
+                const color = HEALTH_COLORS[p.health] || '#6B8F71';
+                return (
+                  <div key={p.id} className="health-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
+                    <div className="health-indicator" style={{ background: color }} />
+                    <div className="health-info">
+                      <div className="health-name">{p.name}</div>
+                      <div className="health-meta">
+                        {p.openMaintenanceCount > 0
+                          ? `${p.openMaintenanceCount} open issue${p.openMaintenanceCount !== 1 ? 's' : ''}`
+                          : 'No open issues'}
+                        <span className="dot" />
+                        <span>Inspected {timeAgo(p.lastInspectionDate)}</span>
+                      </div>
+                    </div>
+                    <span className="health-count" style={{ color }}>
+                      {p.openMaintenanceCount}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ─── Bottom Right: RECENT OPEN MAINTENANCE ─── */}
+        <section className="dash-section">
+          <div className="dash-section-header">
+            <h2>Urgent Items</h2>
+            <button className="btn-text-sm" onClick={() => navigate('/maintenance')}>
+              View All &rarr;
+            </button>
+          </div>
+
+          {maintenance.recentOpen?.length === 0 ? (
+            <div className="dash-caught-up">
+              <span className="dash-caught-up-icon">&#10003;</span>
+              <span>No urgent items</span>
+            </div>
+          ) : (
+            <div className="dash-maint-list">
+              {maintenance.recentOpen?.map((m) => (
+                <div key={m.id} className="dash-maint-row" onClick={() => navigate('/maintenance')}>
+                  <div className="dash-maint-left">
+                    <span className="dash-maint-desc">{m.description}</span>
+                    <span className="dash-maint-meta">
+                      {m.propertyName}{m.roomLabel ? ` / ${m.roomLabel}` : ''}
+                    </span>
+                  </div>
+                  <div className="dash-maint-right">
+                    {m.priority && (
+                      <span className={`dash-priority dash-priority-${m.priority.toLowerCase()}`}>
+                        {m.priority}
+                      </span>
+                    )}
+                    <span
+                      className="insp-status-badge"
+                      style={{ color: MAINT_STATUS_COLORS[m.status], borderColor: MAINT_STATUS_COLORS[m.status] }}
+                    >
+                      {MAINT_STATUS_LABELS[m.status]}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />
     </div>

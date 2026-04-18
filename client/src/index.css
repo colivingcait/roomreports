@@ -1702,12 +1702,74 @@ body {
 
 /* ─── Dashboard ──────────────────────────────────────── */
 
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dash-grid { grid-template-columns: 1fr; }
+}
+
 .dash-section {
   background: #fff;
   border: 1px solid #E8E4E1;
   border-radius: 12px;
   padding: 1rem 1.25rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0;
+}
+
+/* ─── Pending Review List (dashboard) ────────────────── */
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pending-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid #F5F2EF;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pending-row:last-child { border-bottom: none; }
+.pending-row:hover { background: #FFFAF5; margin: 0 -0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; border-radius: 6px; }
+
+.pending-row-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.pending-row-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pending-row-prop {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4A4543;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-row-room { color: #8A8583; font-weight: 400; }
+
+.pending-row-date {
+  font-size: 0.7rem;
+  color: #B5B1AF;
 }
 
 .dash-section-header {
