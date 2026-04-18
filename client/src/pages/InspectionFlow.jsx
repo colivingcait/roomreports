@@ -446,11 +446,6 @@ export default function InspectionFlow() {
             {remaining > 0 ? `${remaining} item${remaining !== 1 ? 's' : ''} remaining` : 'All items completed'}
           </div>
           <div className="insp-footer-actions">
-            {remaining > 0 && completedItems > 0 && (
-              <button className="btn-text" onClick={() => handleSubmit(true)} disabled={submitting}>
-                Finish Anyway
-              </button>
-            )}
             <button
               className="btn-finish"
               onClick={() => handleSubmit()}

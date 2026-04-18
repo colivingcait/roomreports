@@ -4454,3 +4454,92 @@ button.review-photo-thumb {
   font-weight: 600;
   color: #4A4543;
 }
+
+/* ─── Archived / Restore ─────────────────────────────── */
+
+.filter-toggle {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid #D4D0CE;
+  border-radius: 8px;
+  background: #fff;
+  color: #4A4543;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-toggle:hover { background: #F5F2EF; border-color: #8A8583; }
+
+.filter-toggle.active {
+  background: #E8F0E9;
+  border-color: #6B8F71;
+  color: #3B6D11;
+  font-weight: 600;
+}
+
+.insp-history-row-archived {
+  opacity: 0.7;
+  background: #FAF8F5;
+}
+
+.insp-history-row-archived:hover { opacity: 0.9; }
+
+.insp-archived-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  background: #F0EDEB;
+  color: #8A8583;
+  border: 1px solid #D4D0CE;
+  border-radius: 100px;
+}
+
+/* ─── Partial Submission ─────────────────────────────── */
+
+.partial-banner {
+  background: #FFF5EB;
+  border: 1px solid #C4703F;
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.partial-banner-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #C4703F;
+  margin-bottom: 0.375rem;
+}
+
+.partial-banner-reason {
+  font-size: 0.85rem;
+  color: #4A4543;
+  line-height: 1.4;
+}
+
+.partial-banner-label {
+  font-weight: 600;
+  color: #8A8583;
+  margin-right: 0.25rem;
+}
+
+.partial-room-list {
+  list-style: none;
+  padding: 0.625rem 0.875rem;
+  margin: 0 0 1rem;
+  background: #FFFAF5;
+  border: 1px solid #F0DDD0;
+  border-radius: 8px;
+}
+
+.partial-room-list li {
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #4A4543;
+}
+
+.partial-room-list li strong { color: #C4703F; }

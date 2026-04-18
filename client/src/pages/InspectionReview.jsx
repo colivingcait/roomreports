@@ -136,6 +136,13 @@ export default function InspectionReview() {
   const isSubmitted = inspection.status === 'SUBMITTED';
   const isReviewed = inspection.status === 'REVIEWED';
 
+  // Detect partial submission
+  const partialItem = inspection.items?.find((i) => i.zone === '_PartialReason');
+  const partialReason = partialItem?.note || null;
+  const incompleteItems = (inspection.items || []).filter(
+    (i) => !i.zone.startsWith('_') && !i.status,
+  );
+
   // Only display items with flags or marked for maintenance (filter out metadata zones)
   const flaggedItems = (inspection.items || []).filter(
     (i) => !i.zone.startsWith('_') && (i.flagCategory || i.isMaintenance || BAD_STATUSES.has(i.status)),
@@ -178,6 +185,19 @@ export default function InspectionReview() {
       </div>
 
       {/* Summary */}
+      {/* Partial submission banner */}
+      {partialReason && (
+        <div className="partial-banner">
+          <div className="partial-banner-title">
+            &#9888; Partial Inspection
+            {incompleteItems.length > 0 && ` \u2014 ${incompleteItems.length} item${incompleteItems.length !== 1 ? 's' : ''} not completed`}
+          </div>
+          <div className="partial-banner-reason">
+            <span className="partial-banner-label">Reason:</span> {partialReason}
+          </div>
+        </div>
+      )}
+
       <div className="review-summary">
         <div className="review-summary-row">
           <span className="review-label">Inspector</span>

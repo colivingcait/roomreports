@@ -88,6 +88,9 @@ export default function Inspections() {
   const [deleting, setDeleting] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
+  // Archived toggle
+  const [showArchived, setShowArchived] = useState(false);
+
   useEffect(() => {
     fetch('/api/properties', { credentials: 'include' })
       .then((r) => r.json())
@@ -111,6 +114,7 @@ export default function Inspections() {
     if (filterRoom) params.set('roomId', filterRoom);
     if (filterType) params.set('type', filterType);
     if (filterStatus) params.set('status', filterStatus);
+    if (showArchived) params.set('archived', 'true');
 
     setLoading(true);
     fetch(`/api/inspections?${params}`, { credentials: 'include' })
@@ -119,7 +123,7 @@ export default function Inspections() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchInspections(); }, [filterProperty, filterRoom, filterType, filterStatus]);
+  useEffect(() => { fetchInspections(); }, [filterProperty, filterRoom, filterType, filterStatus, showArchived]);
 
   const grouped = groupInspections(inspections);
 
@@ -136,6 +140,19 @@ export default function Inspections() {
       fetchInspections();
     } catch { /* ignore */ }
     finally { setDeleting(false); }
+  };
+
+  const handleRestore = async (item) => {
+    try {
+      if (item.isGroup) {
+        for (const i of item.inspections) {
+          await api(`/api/inspections/${i.id}/restore`, { method: 'POST' });
+        }
+      } else {
+        await api(`/api/inspections/${item.id}/restore`, { method: 'POST' });
+      }
+      fetchInspections();
+    } catch { /* ignore */ }
   };
 
   const handleBulkDelete = async () => {
@@ -169,9 +186,9 @@ export default function Inspections() {
     });
   };
 
-  const selectAllDrafts = () => {
-    const draftIds = grouped.filter((i) => i.status === 'DRAFT').map((i) => i.id);
-    setSelected(new Set(draftIds));
+  const selectAllDeletable = () => {
+    const ids = grouped.filter((i) => ['DRAFT', 'REVIEWED'].includes(i.status)).map((i) => i.id);
+    setSelected(new Set(ids));
   };
 
   const handleRowClick = (item) => {
@@ -209,7 +226,7 @@ export default function Inspections() {
         <div className="bulk-bar">
           <div className="bulk-bar-left">
             <span className="bulk-count">{selected.size} selected</span>
-            <button className="btn-text-sm" onClick={selectAllDrafts}>Select all drafts</button>
+            <button className="btn-text-sm" onClick={selectAllDeletable}>Select all</button>
           </div>
           <div className="bulk-bar-right">
             <button className="btn-text-sm" onClick={() => { setSelectMode(false); setSelected(new Set()); }}>Cancel</button>
@@ -250,7 +267,14 @@ export default function Inspections() {
           <option value="REVIEWED">Reviewed</option>
         </select>
 
-        {!selectMode && (
+        <button
+          className={`filter-toggle ${showArchived ? 'active' : ''}`}
+          onClick={() => { setShowArchived(!showArchived); setSelectMode(false); }}
+        >
+          {showArchived ? '\u2713 Show Archived' : 'Show Archived'}
+        </button>
+
+        {!selectMode && !showArchived && (
           <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select</button>
         )}
 
@@ -273,57 +297,74 @@ export default function Inspections() {
         </div>
       ) : (
         <div className="insp-history-list">
-          {grouped.map((item) => (
-            <div
-              key={item.id}
-              className={`insp-history-row ${selectMode && item.status === 'DRAFT' ? 'selectable' : ''}`}
-              onClick={() => handleRowClick(item)}
-            >
-              {selectMode && item.status === 'DRAFT' && (
-                <input
-                  type="checkbox"
-                  className="insp-checkbox"
-                  checked={selected.has(item.id)}
-                  onChange={() => toggleSelect(item.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
+          {grouped.map((item) => {
+            const canDelete = ['DRAFT', 'REVIEWED'].includes(item.status);
+            return (
+              <div
+                key={item.id}
+                className={`insp-history-row ${selectMode && canDelete ? 'selectable' : ''} ${showArchived ? 'insp-history-row-archived' : ''}`}
+                onClick={() => !showArchived && handleRowClick(item)}
+              >
+                {selectMode && canDelete && (
+                  <input
+                    type="checkbox"
+                    className="insp-checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggleSelect(item.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
 
-              <div className="insp-history-left">
-                <span className="dash-type-badge">{TYPE_LABELS[item.type] || item.type}</span>
-                <div className="insp-history-info">
-                  <span className="insp-history-prop">
-                    {item.property?.name || item.inspections?.[0]?.property?.name}
-                    {item.isGroup
-                      ? ` (${item.roomCount} room${item.roomCount !== 1 ? 's' : ''})`
-                      : item.room ? ` \u2014 ${item.room.label}` : ''}
+                <div className="insp-history-left">
+                  <span className="dash-type-badge">{TYPE_LABELS[item.type] || item.type}</span>
+                  <div className="insp-history-info">
+                    <span className="insp-history-prop">
+                      {item.property?.name || item.inspections?.[0]?.property?.name}
+                      {item.isGroup
+                        ? ` (${item.roomCount} room${item.roomCount !== 1 ? 's' : ''})`
+                        : item.room ? ` \u2014 ${item.room.label}` : ''}
+                    </span>
+                    <span className="insp-history-inspector">{timeAgo(item.createdAt)}</span>
+                  </div>
+                </div>
+
+                <div className="insp-history-right">
+                  <span className="insp-history-items">
+                    {item.isGroup ? `${item._count.items} items` : `${item._count?.items || 0} items`}
                   </span>
-                  <span className="insp-history-inspector">{timeAgo(item.createdAt)}</span>
+                  {showArchived ? (
+                    <span className="insp-archived-badge">Archived</span>
+                  ) : (
+                    <span
+                      className="insp-status-badge"
+                      style={{ color: STATUS_COLORS[item.status], borderColor: STATUS_COLORS[item.status] }}
+                    >
+                      {item.status}
+                    </span>
+                  )}
+                  {showArchived ? (
+                    <button
+                      className="btn-text-sm"
+                      onClick={(e) => { e.stopPropagation(); handleRestore(item); }}
+                      title="Restore"
+                    >
+                      Restore
+                    </button>
+                  ) : (
+                    !selectMode && canDelete && (
+                      <button
+                        className="insp-delete-btn"
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
+                        title={`Delete ${item.status.toLowerCase()}`}
+                      >
+                        &#128465;
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
-
-              <div className="insp-history-right">
-                <span className="insp-history-items">
-                  {item.isGroup ? `${item._count.items} items` : `${item._count?.items || 0} items`}
-                </span>
-                <span
-                  className="insp-status-badge"
-                  style={{ color: STATUS_COLORS[item.status], borderColor: STATUS_COLORS[item.status] }}
-                >
-                  {item.status}
-                </span>
-                {!selectMode && item.status === 'DRAFT' && (
-                  <button
-                    className="insp-delete-btn"
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
-                    title="Delete draft"
-                  >
-                    &#128465;
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -334,12 +375,19 @@ export default function Inspections() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleting}
-        title="Delete Draft"
-        message={
-          deleteTarget?.isGroup
+        title={deleteTarget?.status === 'REVIEWED' ? 'Archive Inspection' : 'Delete Draft'}
+        message={(() => {
+          if (!deleteTarget) return '';
+          if (deleteTarget.status === 'REVIEWED') {
+            return deleteTarget.isGroup
+              ? `Delete this completed quarterly inspection (${deleteTarget.roomCount} rooms)? The inspection record and any associated data will be archived. This cannot be undone.`
+              : 'Delete this completed inspection? The inspection record and any associated data will be archived. This cannot be undone.';
+          }
+          return deleteTarget.isGroup
             ? `Delete this quarterly draft (${deleteTarget.roomCount} rooms)? This cannot be undone.`
-            : 'Delete this draft inspection? This cannot be undone.'
-        }
+            : 'Delete this draft inspection? This cannot be undone.';
+        })()}
+        confirmLabel={deleteTarget?.status === 'REVIEWED' ? 'Archive' : 'Delete'}
       />
 
       <ConfirmDialog

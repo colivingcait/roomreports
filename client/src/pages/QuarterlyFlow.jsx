@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
+import Modal from '../components/Modal';
 
 const FLAG_CATEGORIES = [
   'Electrical', 'Plumbing', 'HVAC', 'Locks & Security', 'Appliances',
@@ -231,6 +232,8 @@ export default function QuarterlyFlow() {
   const [nextRoomId, setNextRoomId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showPartialModal, setShowPartialModal] = useState(false);
+  const [partialReason, setPartialReason] = useState('');
 
   const fetchBatch = useCallback(async () => {
     try {
@@ -284,18 +287,51 @@ export default function QuarterlyFlow() {
     navigate(`/quarterly/${propertyId}`);
   };
 
-  const handleSubmitAll = async () => {
+  const getIncompleteRooms = () => {
+    return data.inspections.filter((insp) => {
+      const items = insp.items.filter((i) => !i.zone.startsWith('_'));
+      const total = items.length;
+      const done = items.filter((i) => i.status).length;
+      return done < total;
+    }).map((insp) => ({
+      id: insp.roomId,
+      label: insp.roomLabel,
+      done: insp.items.filter((i) => !i.zone.startsWith('_') && i.status).length,
+      total: insp.items.filter((i) => !i.zone.startsWith('_')).length,
+    }));
+  };
+
+  const onSubmitClick = () => {
+    const incomplete = getIncompleteRooms();
+    if (incomplete.length > 0) {
+      setShowPartialModal(true);
+    } else {
+      doSubmit(false);
+    }
+  };
+
+  const doSubmit = async (partial) => {
     setSubmitting(true);
     setError('');
     try {
       for (const insp of data.inspections) {
-        if (insp.status === 'DRAFT') {
-          await api(`/api/inspections/${insp.id}/submit`, { method: 'POST' });
-        }
+        if (insp.status !== 'DRAFT') continue;
+        const items = insp.items.filter((i) => !i.zone.startsWith('_'));
+        const isIncomplete = items.filter((i) => i.status).length < items.length;
+
+        const body = partial && isIncomplete
+          ? { partial: true, partialReason }
+          : {};
+
+        await api(`/api/inspections/${insp.id}/submit`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
       }
       navigate('/dashboard', { state: { notification: `Quarterly inspection submitted for ${data.propertyName}` } });
     } catch (err) {
       setError(err.message);
+      setShowPartialModal(false);
     } finally {
       setSubmitting(false);
     }
@@ -375,12 +411,62 @@ export default function QuarterlyFlow() {
         <button className="btn-text" onClick={() => navigate('/dashboard')}>Save &amp; exit</button>
         <button
           className="q-submit-btn"
-          onClick={handleSubmitAll}
-          disabled={!allRoomsDone || submitting}
+          onClick={onSubmitClick}
+          disabled={submitting}
         >
-          {submitting ? 'Submitting...' : allRoomsDone ? 'Submit Inspection' : `${totalRooms - completedRooms} room${totalRooms - completedRooms !== 1 ? 's' : ''} remaining`}
+          {submitting ? 'Submitting...' : 'Submit Inspection'}
         </button>
       </div>
+
+      {/* Partial submit modal */}
+      <Modal
+        open={showPartialModal}
+        onClose={() => { setShowPartialModal(false); setPartialReason(''); }}
+        title="Partial Submission"
+      >
+        <div className="modal-form">
+          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>
+            The following rooms are not complete:
+          </p>
+          <ul className="partial-room-list">
+            {getIncompleteRooms().map((r) => (
+              <li key={r.id}>
+                <strong>{r.label}</strong> ({r.done}/{r.total} items)
+              </li>
+            ))}
+          </ul>
+
+          <label>
+            Reason for partial submission
+            <textarea
+              className="detail-textarea"
+              value={partialReason}
+              onChange={(e) => setPartialReason(e.target.value)}
+              placeholder="e.g. Room 3 locked — resident not home"
+              rows={3}
+            />
+          </label>
+
+          {error && <div className="auth-error">{error}</div>}
+
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              className="btn-secondary"
+              onClick={() => { setShowPartialModal(false); setPartialReason(''); }}
+            >
+              Go back
+            </button>
+            <button
+              className="btn-primary"
+              style={{ width: 'auto' }}
+              onClick={() => doSubmit(true)}
+              disabled={submitting || !partialReason.trim()}
+            >
+              {submitting ? 'Submitting...' : 'Submit anyway'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

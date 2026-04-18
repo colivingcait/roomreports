@@ -215,12 +215,18 @@ router.post('/', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const { propertyId, roomId, type, status, startDate, endDate } = req.query;
+    const { propertyId, roomId, type, status, startDate, endDate, archived } = req.query;
 
     const where = {
       organizationId: req.user.organizationId,
-      deletedAt: null,
     };
+
+    // archived=true: only archived, archived=only: same, else: only active
+    if (archived === 'true' || archived === 'only') {
+      where.deletedAt = { not: null };
+    } else {
+      where.deletedAt = null;
+    }
 
     if (propertyId) where.propertyId = propertyId;
     if (roomId) where.roomId = roomId;
@@ -362,6 +368,8 @@ router.put('/:id/items/:itemId', async (req, res) => {
 
 router.post('/:id/submit', async (req, res) => {
   try {
+    const { partial, partialReason } = req.body || {};
+
     const inspection = await prisma.inspection.findFirst({
       where: {
         id: req.params.id,
@@ -383,22 +391,45 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(400).json({ error: 'Inspection already submitted' });
     }
 
-    // Check that all items have a status set (ignore _Direction metadata)
-    const incomplete = inspection.items.filter((i) => !i.status && i.zone !== '_Direction');
-    if (incomplete.length > 0) {
+    // Check that all items have a status set (ignore metadata zones starting with _)
+    const incomplete = inspection.items.filter((i) => !i.status && !i.zone.startsWith('_'));
+
+    if (incomplete.length > 0 && !partial) {
       return res.status(400).json({
         error: `${incomplete.length} item(s) have not been completed`,
         incompleteItems: incomplete.map((i) => i.id),
       });
     }
 
-    // Update inspection status to SUBMITTED — maintenance items created on review
-    const updated = await prisma.inspection.update({
-      where: { id: inspection.id },
-      data: {
-        status: 'SUBMITTED',
-        completedAt: new Date(),
-      },
+    if (incomplete.length > 0 && partial && !partialReason?.trim()) {
+      return res.status(400).json({ error: 'partialReason is required for partial submission' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // If partial, store reason as synthetic item
+      if (incomplete.length > 0 && partial) {
+        await tx.inspectionItem.deleteMany({
+          where: { inspectionId: inspection.id, zone: '_PartialReason' },
+        });
+        await tx.inspectionItem.create({
+          data: {
+            inspectionId: inspection.id,
+            zone: '_PartialReason',
+            text: 'Partial submission',
+            options: [],
+            status: 'partial',
+            note: partialReason.trim(),
+          },
+        });
+      }
+
+      return tx.inspection.update({
+        where: { id: inspection.id },
+        data: {
+          status: 'SUBMITTED',
+          completedAt: new Date(),
+        },
+      });
     });
 
     const flaggedItems = inspection.items.filter((i) => i.flagCategory);
@@ -431,7 +462,7 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
-// ─── DELETE /api/inspections/:id — soft-delete a draft ──
+// ─── DELETE /api/inspections/:id — soft-delete DRAFT or REVIEWED ──
 
 router.delete('/:id', async (req, res) => {
   try {
@@ -447,8 +478,8 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Inspection not found' });
     }
 
-    if (inspection.status !== 'DRAFT') {
-      return res.status(400).json({ error: 'Can only delete DRAFT inspections' });
+    if (!['DRAFT', 'REVIEWED'].includes(inspection.status)) {
+      return res.status(400).json({ error: 'SUBMITTED inspections must be reviewed before deletion' });
     }
 
     await prisma.inspection.update({
@@ -463,7 +494,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ─── POST /api/inspections/bulk-delete — soft-delete multiple drafts ──
+// ─── POST /api/inspections/bulk-delete — soft-delete multiple DRAFT or REVIEWED ──
 
 router.post('/bulk-delete', async (req, res) => {
   try {
@@ -476,7 +507,7 @@ router.post('/bulk-delete', async (req, res) => {
       where: {
         id: { in: ids },
         organizationId: req.user.organizationId,
-        status: 'DRAFT',
+        status: { in: ['DRAFT', 'REVIEWED'] },
         deletedAt: null,
       },
       data: { deletedAt: new Date() },
@@ -485,6 +516,34 @@ router.post('/bulk-delete', async (req, res) => {
     return res.json({ deleted: result.count });
   } catch (error) {
     console.error('Bulk delete inspections error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/:id/restore — restore an archived inspection ──
+
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: { not: null },
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({ error: 'Archived inspection not found' });
+    }
+
+    const updated = await prisma.inspection.update({
+      where: { id: inspection.id },
+      data: { deletedAt: null },
+    });
+
+    return res.json({ inspection: updated });
+  } catch (error) {
+    console.error('Restore inspection error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
