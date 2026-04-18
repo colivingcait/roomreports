@@ -103,88 +103,106 @@ function generateCommonArea(property) {
 
 function generateRoomTurn(property, room) {
   const items = [];
+  const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
 
-  // General room condition
+  // Room Turn Clean
   items.push(
-    item('General', 'Walls — no marks, holes, or damage', CONDITION_OPTIONS),
-    item('General', 'Ceiling — no stains or damage', CONDITION_OPTIONS),
-    item('General', 'Floor — clean and undamaged', CONDITION_OPTIONS),
-    item('General', 'Door and lock functioning'),
-    item('General', 'Windows open/close properly'),
-    item('General', 'Window screens intact'),
-    item('General', 'Light switches working'),
-    item('General', 'Outlets working'),
-    item('General', 'Smoke detector present and working'),
+    pf('Room Turn Clean', 'All surfaces wiped down and sanitized'),
+    pf('Room Turn Clean', 'Floors mopped/vacuumed'),
+    pf('Room Turn Clean', 'Baseboards wiped clean'),
+    pf('Room Turn Clean', 'Ceiling fan(s) dusted'),
+    pf('Room Turn Clean', 'Vents/registers dusted'),
+    pf('Room Turn Clean', 'Windows wiped and dusted'),
+    pf('Room Turn Clean', 'Blinds cleaned'),
+    pf('Room Turn Clean', 'Light switches and outlets wiped down'),
+    pf('Room Turn Clean', 'Door and handle cleaned and sanitized'),
+    pf('Room Turn Clean', 'Closet shelves/rod wiped clean'),
   );
 
-  // Furniture (dynamic from room config)
+  // Door & Locks
+  items.push(
+    pf('Door & Locks', 'Door lock working and code removed'),
+    pf('Door & Locks', 'Keypad cleaned'),
+    pf('Door & Locks', 'Door closes and latches properly'),
+  );
+
+  // Mattress & Bedding
+  items.push(
+    pf('Mattress & Bedding', 'Mattress encasement replaced with new'),
+    pf('Mattress & Bedding', 'Mattress in good condition (no stains, sagging)'),
+  );
+
+  // Furniture & Electronics (per-furniture-item + standard)
   for (const f of room?.furniture || []) {
-    items.push(item('Furniture', `${f} — present and condition`, CONDITION_OPTIONS));
+    items.push(pf('Furniture & Electronics', `${f} present and in good condition`));
   }
+  items.push(
+    pf('Furniture & Electronics', 'TV remote present, working, and cleaned'),
+    pf('Furniture & Electronics', 'Fan remote present, working, and cleaned'),
+    pf('Furniture & Electronics', 'Trash can present and clean'),
+  );
 
-  // Features (dynamic from room config)
-  if (room?.features?.includes('Ensuite Bathroom')) {
-    items.push(
-      item('Ensuite Bathroom', 'Toilet clean and functioning', CLEAN_OPTIONS),
-      item('Ensuite Bathroom', 'Sink clean and draining', CLEAN_OPTIONS),
-      item('Ensuite Bathroom', 'Shower/tub clean', CLEAN_OPTIONS),
-      item('Ensuite Bathroom', 'Mirror clean'),
-      item('Ensuite Bathroom', 'Floor clean', CLEAN_OPTIONS),
-      item('Ensuite Bathroom', 'No mold or mildew'),
-      item('Ensuite Bathroom', 'Exhaust fan working'),
-    );
-  }
+  // Paint & Surfaces
+  items.push(
+    pf('Paint & Surfaces', 'Walls — paint touch-ups needed?'),
+    pf('Paint & Surfaces', 'Ceiling — paint touch-ups needed?'),
+    pf('Paint & Surfaces', 'Trim/baseboards — paint touch-ups needed?'),
+    pf('Paint & Surfaces', 'Door — paint touch-ups needed?'),
+  );
 
+  // Safety
+  items.push(
+    pf('Safety', 'Smoke detector present and tested'),
+    pf('Safety', 'Fire extinguisher present'),
+  );
+
+  // Pest Check
+  items.push(pf('Pest Check', 'No signs of pests'));
+
+  // Feature-specific (auto-added based on room features)
   if (room?.features?.includes('Mini Fridge')) {
-    items.push(
-      item('Appliances', 'Mini fridge — clean and functioning', CONDITION_OPTIONS),
-    );
+    items.push(pf('Features', 'Mini fridge cleaned inside and out, working'));
   }
-
-  if (room?.features?.includes('Microwave')) {
-    items.push(
-      item('Appliances', 'Microwave clean and working', CONDITION_OPTIONS),
-    );
-  }
-
   if (room?.features?.includes('Window AC')) {
-    items.push(
-      item('Appliances', 'Window AC — functioning and filter clean', CONDITION_OPTIONS),
-    );
+    items.push(pf('Features', 'Window AC filter cleaned, drains properly'));
   }
-
-  if (room?.features?.includes('In-Unit Washer/Dryer')) {
-    items.push(
-      item('Appliances', 'Washer — functioning', CONDITION_OPTIONS),
-      item('Appliances', 'Dryer — functioning and lint trap clean', CONDITION_OPTIONS),
-    );
+  if (room?.features?.includes('Microwave')) {
+    items.push(pf('Features', 'Microwave cleaned inside and out, working'));
   }
-
-  if (room?.features?.includes('Balcony/Patio')) {
-    items.push(
-      item('Balcony/Patio', 'Balcony/patio swept and clean'),
-      item('Balcony/Patio', 'Railing secure'),
-    );
-  }
-
   if (room?.features?.includes('Separate Entry')) {
     items.push(
-      item('Entry', 'Separate entry door and lock functioning'),
+      pf('Features', 'Separate entry lock working, code removed'),
+      pf('Features', 'Exterior entry light working'),
+    );
+  }
+  if (room?.features?.includes('Balcony/Patio')) {
+    items.push(pf('Features', 'Balcony/patio swept, railing secure'));
+  }
+  if (room?.features?.includes('Basement Room')) {
+    items.push(pf('Features', 'No basement moisture or seepage'));
+  }
+  if (room?.features?.includes('In-Unit Washer/Dryer')) {
+    items.push(pf('Features', 'Washer/dryer cleaned, vent clear'));
+  }
+
+  // Ensuite Bathroom (only if room has this feature)
+  if (room?.features?.includes('Ensuite Bathroom')) {
+    items.push(
+      pf('Ensuite Bathroom', 'Toilet cleaned and sanitized'),
+      pf('Ensuite Bathroom', 'Sink cleaned and draining properly'),
+      pf('Ensuite Bathroom', 'Shower/tub cleaned, draining, caulk intact'),
+      pf('Ensuite Bathroom', 'Shower curtain or door cleaned'),
+      pf('Ensuite Bathroom', 'Mirror cleaned'),
+      pf('Ensuite Bathroom', 'Exhaust fan cleaned and working'),
+      pf('Ensuite Bathroom', 'Floors cleaned'),
+      pf('Ensuite Bathroom', 'Under sink — no leaks, cleaned'),
+      pf('Ensuite Bathroom', 'Light fixtures working'),
+      pf('Ensuite Bathroom', 'No mold or mildew'),
     );
   }
 
-  // Cleaning checklist
-  items.push(
-    item('Cleaning', 'All surfaces dusted'),
-    item('Cleaning', 'Floor vacuumed/mopped'),
-    item('Cleaning', 'Inside closet/wardrobe cleaned'),
-    item('Cleaning', 'Windows cleaned'),
-    item('Cleaning', 'Trash removed'),
-    item('Cleaning', 'Linens fresh (if provided)', YES_NO),
-  );
-
   // Misc catch-all
-  items.push(item('Misc', 'Misc (catch-all for anything not covered above)', ['Pass', 'Fail']));
+  items.push(pf('Misc', 'Misc'));
 
   return items;
 }

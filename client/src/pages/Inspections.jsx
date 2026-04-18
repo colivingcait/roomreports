@@ -207,6 +207,10 @@ export default function Inspections() {
     } else if (item.status === 'DRAFT') {
       if (item.type === 'QUARTERLY') {
         navigate(`/quarterly/${item.property?.id}`);
+      } else if (item.type === 'COMMON_AREA') {
+        navigate(`/common-area/${item.id}`);
+      } else if (item.type === 'ROOM_TURN') {
+        navigate(`/room-turn/${item.id}`);
       } else {
         navigate(`/inspections/${item.id}`);
       }

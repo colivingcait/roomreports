@@ -281,6 +281,10 @@ export default function InspectionFlow() {
         navigate(`/common-area/${data.inspection.id}`, { replace: true });
         return;
       }
+      if (data.inspection?.type === 'ROOM_TURN' && data.inspection?.status === 'DRAFT') {
+        navigate(`/room-turn/${data.inspection.id}`, { replace: true });
+        return;
+      }
 
       setInspection(data.inspection);
       setItems(data.inspection.items || []);

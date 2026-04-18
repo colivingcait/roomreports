@@ -47,7 +47,13 @@ export default function CommonAreaFlow() {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      navigate('/dashboard', { state: { notification: `Common area inspection submitted for ${inspection?.property?.name}` } });
+      const typeLabel = inspection?.type === 'ROOM_TURN' ? 'Room turn' : 'Common area';
+      const noFlags = visibleItems.every((i) => i.status !== 'Fail');
+      const roomLabel = inspection?.room ? ` \u2014 ${inspection.room.label}` : '';
+      const notification = inspection?.type === 'ROOM_TURN' && noFlags
+        ? `Room Ready \u2713 ${inspection?.property?.name}${roomLabel}`
+        : `${typeLabel} inspection submitted for ${inspection?.property?.name}${roomLabel}`;
+      navigate('/dashboard', { state: { notification } });
     } catch (err) {
       setError(err.message);
       setShowPartialModal(false);
@@ -95,8 +101,13 @@ export default function CommonAreaFlow() {
           </div>
         </div>
         <div className="q-room-header-info">
-          <h1>{inspection.property?.name}</h1>
-          <span className="q-room-header-meta">Common Area Inspection &middot; {done}/{total}</span>
+          <h1>
+            {inspection.property?.name}
+            {inspection.room ? ` \u2014 ${inspection.room.label}` : ''}
+          </h1>
+          <span className="q-room-header-meta">
+            {inspection.type === 'ROOM_TURN' ? 'Room Turn' : 'Common Area'} Inspection &middot; {done}/{total}
+          </span>
         </div>
         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${progress}%` }} /></div>
       </div>

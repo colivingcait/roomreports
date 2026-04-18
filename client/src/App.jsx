@@ -58,6 +58,7 @@ function App() {
             <Route path="/quarterly/:propertyId" element={<QuarterlyFlow />} />
             <Route path="/quarterly/:propertyId/:roomId" element={<QuarterlyFlow />} />
             <Route path="/common-area/:inspectionId" element={<CommonAreaFlow />} />
+            <Route path="/room-turn/:inspectionId" element={<CommonAreaFlow />} />
 
             {/* Resident experience — minimal layout */}
             <Route element={<ResidentLayout />}>

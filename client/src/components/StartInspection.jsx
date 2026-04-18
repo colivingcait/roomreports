@@ -82,6 +82,8 @@ export default function StartInspection({ open, onClose }) {
       onClose();
       if (type === 'COMMON_AREA') {
         navigate(`/common-area/${data.inspection.id}`);
+      } else if (type === 'ROOM_TURN') {
+        navigate(`/room-turn/${data.inspection.id}`);
       } else {
         navigate(`/inspections/${data.inspection.id}`);
       }
