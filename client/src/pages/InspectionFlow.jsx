@@ -271,6 +271,14 @@ export default function InspectionFlow() {
       const res = await fetch(`/api/inspections/${id}`, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      // Quarterly inspections use the dedicated multi-room flow.
+      // Redirect DRAFT quarterly to /quarterly?propertyId=X
+      if (data.inspection?.type === 'QUARTERLY' && data.inspection?.status === 'DRAFT') {
+        navigate(`/quarterly?propertyId=${data.inspection.propertyId}`, { replace: true });
+        return;
+      }
+
       setInspection(data.inspection);
       setItems(data.inspection.items || []);
     } catch (err) {
@@ -278,7 +286,7 @@ export default function InspectionFlow() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => { fetchInspection(); }, [fetchInspection]);
 

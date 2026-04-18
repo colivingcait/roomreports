@@ -13,6 +13,18 @@ const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
 
+// Sort by numeric portion of room label (Room 1, Room 2, ...). Fallback to alphabetical.
+function sortRooms(inspections) {
+  return [...inspections].sort((a, b) => {
+    const la = a.roomLabel || '';
+    const lb = b.roomLabel || '';
+    const na = parseInt(la.match(/\d+/)?.[0], 10);
+    const nb = parseInt(lb.match(/\d+/)?.[0], 10);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return la.localeCompare(lb);
+  });
+}
+
 // ─── Flag Detail Drawer ─────────────────────────────────
 
 function FlagDrawer({ item, inspectionId, onUpdate }) {
@@ -220,6 +232,7 @@ export default function QuarterlyFlow() {
   const [loading, setLoading] = useState(true);
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [roomStatuses, setRoomStatuses] = useState({});
+  const [nextRoomId, setNextRoomId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -229,6 +242,8 @@ export default function QuarterlyFlow() {
         method: 'POST',
         body: JSON.stringify({ propertyId }),
       });
+      // Sort rooms numerically
+      d.inspections = sortRooms(d.inspections);
       setData(d);
       // Initialize room statuses
       const statuses = {};
@@ -252,10 +267,21 @@ export default function QuarterlyFlow() {
     const total = items.length;
     const done = items.filter((i) => i.status).length;
     const flags = items.filter((i) => i.status === 'Fail').length;
-    setRoomStatuses((prev) => ({
-      ...prev,
-      [roomId]: { ...prev[roomId], done, flags, total },
-    }));
+    const updated = {
+      ...roomStatuses,
+      [roomId]: { ...roomStatuses[roomId], done, flags, total },
+    };
+    setRoomStatuses(updated);
+
+    // Find the next uncompleted room (in sorted order) to highlight
+    const idx = data.inspections.findIndex((i) => i.roomId === roomId);
+    const nextInsp = data.inspections.slice(idx + 1).concat(data.inspections.slice(0, idx))
+      .find((i) => {
+        const s = updated[i.roomId];
+        return !s || s.done < s.total;
+      });
+    setNextRoomId(nextInsp?.roomId || null);
+
     setActiveRoomId(null);
   };
 
@@ -325,7 +351,11 @@ export default function QuarterlyFlow() {
           const room = { id: insp.roomId, label: insp.roomLabel, items: insp.items };
           const s = roomStatuses[insp.roomId] || { done: 0, total: insp.items.length };
           return (
-            <div key={insp.roomId} className="q-room-card" onClick={() => setActiveRoomId(insp.roomId)}>
+            <div
+              key={insp.roomId}
+              className={`q-room-card ${nextRoomId === insp.roomId ? 'q-room-card-next' : ''}`}
+              onClick={() => { setActiveRoomId(insp.roomId); setNextRoomId(null); }}
+            >
               <div className="q-room-card-bar" style={{ background: s.done === s.total && s.total > 0 ? '#6B8F71' : s.done > 0 ? '#C9A84C' : '#E8E4E1' }} />
               <div className="q-room-card-body">
                 <div className="q-room-card-top">
