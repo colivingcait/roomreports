@@ -316,10 +316,14 @@ export default function InspectionFlow() {
   const directionItem = items.find((i) => i.zone === '_Direction');
   const direction = directionItem?.status || null;
 
-  // Filter out the _Direction meta item from display
-  const visibleItems = items.filter((i) => i.zone !== '_Direction');
+  // Extract send-back reason (if PM sent it back for revision)
+  const sendBackItem = items.find((i) => i.zone === '_SendBackReason');
+  const sendBackReason = sendBackItem?.note || null;
 
-  // Group items by zone (excluding _Direction)
+  // Filter out metadata items from display
+  const visibleItems = items.filter((i) => !i.zone.startsWith('_'));
+
+  // Group items by zone (excluding metadata)
   const zones = [];
   const zoneMap = {};
   for (const item of visibleItems) {
@@ -372,6 +376,16 @@ export default function InspectionFlow() {
       {/* Zone sections */}
       <OfflineBanner />
       <div className="insp-body">
+        {!isSubmitted && sendBackReason && (
+          <div className="sendback-banner">
+            <span className="sendback-banner-icon">&#9888;</span>
+            <div className="sendback-banner-content">
+              <div className="sendback-banner-title">Sent back for revision</div>
+              <div className="sendback-banner-reason">{sendBackReason}</div>
+            </div>
+          </div>
+        )}
+
         {isSubmitted && (
           <div className="insp-submitted-banner">
             This inspection has been {inspection.status.toLowerCase()}.

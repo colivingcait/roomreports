@@ -137,7 +137,15 @@ export default function Inspections() {
       ) : (
         <div className="insp-history-list">
           {inspections.map((insp) => (
-            <div key={insp.id} className="insp-history-row" onClick={() => navigate(`/inspections/${insp.id}`)}>
+            <div
+              key={insp.id}
+              className="insp-history-row"
+              onClick={() => navigate(
+                insp.status === 'DRAFT'
+                  ? `/inspections/${insp.id}`
+                  : `/inspections/${insp.id}/review`,
+              )}
+            >
               <div className="insp-history-left">
                 <span className="dash-type-badge">{TYPE_LABELS[insp.type] || insp.type}</span>
                 <div className="insp-history-info">
