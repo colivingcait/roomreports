@@ -1,34 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import StartInspection from '../components/StartInspection';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
 };
-
-const MAINT_STATUS_COLORS = {
-  OPEN: '#C4703F', ASSIGNED: '#6B8F71', IN_PROGRESS: '#C9A84C', RESOLVED: '#B5B1AF',
+const TYPE_COLORS = {
+  QUARTERLY: { bg: '#E8F0E9', color: '#3B6D11' },
+  ROOM_TURN: { bg: '#FAEEDA', color: '#854F0B' },
+  COMMON_AREA: { bg: '#E3EDF7', color: '#2B5F8A' },
+  RESIDENT_SELF_CHECK: { bg: '#F5E8F0', color: '#8A2B6D' },
+  MOVE_IN_OUT: { bg: '#F0E8E3', color: '#6D3B11' },
 };
-const MAINT_STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
 
-const HEALTH_COLORS = { healthy: '#6B8F71', watch: '#C9A84C', attention: '#C4703F', green: '#6B8F71', yellow: '#C9A84C', red: '#C4703F' };
+function daysAgo(date) {
+  if (!date) return null;
+  return Math.floor((Date.now() - new Date(date)) / (1000 * 60 * 60 * 24));
+}
 
-function timeAgo(date) {
+function timeLabel(date) {
   if (!date) return 'Never';
-  const d = new Date(date);
-  const now = new Date();
-  const diff = Math.floor((now - d) / 1000);
-  if (diff < 60) return 'Just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const d = daysAgo(date);
+  if (d === 0) return 'Today';
+  if (d === 1) return 'Yesterday';
+  if (d < 7) return `${d}d ago`;
+  if (d < 30) return `${Math.floor(d / 7)}w ago`;
+  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState(null);
@@ -53,172 +54,163 @@ export default function Dashboard() {
   if (loading) return <div className="page-loading">Loading dashboard...</div>;
   if (!data) return null;
 
-  const { pendingReview = [], maintenance = {}, propertyHealth = [] } = data;
-  const statusCounts = maintenance.statusCounts || {};
+  const { pendingReview = [], maintenance = {}, propertyHealth = [], overdueRooms = [] } = data;
+  const sc = maintenance.statusCounts || {};
+
+  const startQuarterly = (propertyId, roomId) => {
+    fetch('/api/inspections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ type: 'QUARTERLY', propertyId, roomId }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.inspection) navigate(`/inspections/${d.inspection.id}`); });
+  };
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="page-subtitle">Welcome back, {user?.name}</p>
-        </div>
-        <button className="btn-primary-sm" onClick={() => setShowStart(true)}>
-          + New Inspection
-        </button>
+    <div className="db-page">
+      <div className="db-top">
+        <h1 className="db-title">Dashboard</h1>
+        <button className="db-new-btn" onClick={() => setShowStart(true)}>+ New Inspection</button>
       </div>
 
-      {notification && (
-        <div className="notification-bar">{notification}</div>
-      )}
+      {notification && <div className="notification-bar">{notification}</div>}
 
-      <div className="dash-grid">
-        {/* ─── Top Left: PENDING REVIEW ─── */}
-        <section className="dash-section dash-pending">
-          <div className="dash-section-header">
-            <h2>
-              Pending Review
-              {pendingReview.length > 0 && <span className="dash-count-badge">{pendingReview.length}</span>}
-            </h2>
-            {pendingReview.length > 4 && (
-              <button className="btn-text-sm" onClick={() => navigate('/inspections?status=SUBMITTED')}>
-                View All &rarr;
-              </button>
+      <div className="db-grid">
+
+        {/* ── TOP LEFT: PENDING REVIEW ── */}
+        <div className="db-card">
+          <div className="db-card-head">
+            <div className="db-card-title db-terracotta">
+              PENDING REVIEW
+              {pendingReview.length > 0 && <span className="db-badge db-badge-terracotta">{pendingReview.length}</span>}
+            </div>
+            {pendingReview.length > 0 && (
+              <button className="db-link" onClick={() => navigate('/inspections?status=SUBMITTED')}>View all &rarr;</button>
             )}
           </div>
-
-          {pendingReview.length === 0 ? (
-            <div className="dash-caught-up">
-              <span className="dash-caught-up-icon">&#10003;</span>
-              <span>All caught up</span>
-            </div>
-          ) : (
-            <div className="pending-list">
-              {pendingReview.slice(0, 4).map((p) => (
-                <div key={p.id} className="pending-row" onClick={() => navigate(`/inspections/${p.id}/review`)}>
-                  <div className="pending-row-left">
-                    <span className="dash-type-badge">{TYPE_LABELS[p.type] || p.type}</span>
-                    <div className="pending-row-info">
-                      <span className="pending-row-prop">
-                        {p.propertyName}
-                        {p.roomLabel && <span className="pending-row-room"> &rarr; {p.roomLabel}</span>}
-                      </span>
-                      <span className="pending-row-date">{timeAgo(p.completedAt)}</span>
-                    </div>
-                  </div>
-                  {p.flagCount > 0 && (
-                    <span className="pending-flag-count">&#9873; {p.flagCount}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* ─── Top Right: MAINTENANCE OVERVIEW ─── */}
-        <section className="dash-section">
-          <div className="dash-section-header">
-            <h2>Maintenance This Month</h2>
-            <button className="btn-text-sm" onClick={() => navigate('/maintenance')}>
-              View All &rarr;
-            </button>
-          </div>
-
-          <div className="maint-stats-grid">
-            {['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].map((s) => (
-              <button
-                key={s}
-                className="maint-stat-card"
-                onClick={() => navigate(`/maintenance?status=${s}`)}
-                style={{ borderLeftColor: MAINT_STATUS_COLORS[s] }}
-              >
-                <span className="maint-stat-count" style={{ color: MAINT_STATUS_COLORS[s] }}>
-                  {statusCounts[s] || 0}
-                </span>
-                <span className="maint-stat-label">{MAINT_STATUS_LABELS[s]}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* ─── Bottom Left: PROPERTY HEALTH ─── */}
-        <section className="dash-section">
-          <div className="dash-section-header">
-            <h2>Property Health</h2>
-            <button className="btn-text-sm" onClick={() => navigate('/properties')}>View All &rarr;</button>
-          </div>
-
-          {propertyHealth.length === 0 ? (
-            <p className="empty-text" style={{ padding: '0.5rem 0' }}>No properties yet</p>
-          ) : (
-            <div className="health-list">
-              {propertyHealth.map((p) => {
-                const color = HEALTH_COLORS[p.health] || '#6B8F71';
+          <div className="db-card-body">
+            {pendingReview.length === 0 ? (
+              <div className="db-empty">&check; All caught up</div>
+            ) : (
+              pendingReview.slice(0, 4).map((p) => {
+                const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };
                 return (
-                  <div key={p.id} className="health-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
-                    <div className="health-indicator" style={{ background: color }} />
-                    <div className="health-info">
-                      <div className="health-name">{p.name}</div>
-                      <div className="health-meta">
-                        {p.openMaintenanceCount > 0
-                          ? `${p.openMaintenanceCount} open issue${p.openMaintenanceCount !== 1 ? 's' : ''}`
-                          : 'No open issues'}
-                        <span className="dot" />
-                        <span>Inspected {timeAgo(p.lastInspectionDate)}</span>
+                  <div key={p.id} className="db-row" onClick={() => navigate(`/inspections/${p.id}/review`)}>
+                    <div className="db-row-left">
+                      <span className="db-type-pill" style={{ background: tc.bg, color: tc.color }}>
+                        {TYPE_LABELS[p.type] || p.type}
+                      </span>
+                      <div>
+                        <div className="db-row-title">
+                          {p.propertyName}{p.roomLabel ? ` \u2192 ${p.roomLabel}` : ''}
+                        </div>
+                        <div className="db-row-sub">{timeLabel(p.completedAt)}</div>
                       </div>
                     </div>
-                    <span className="health-count" style={{ color }}>
-                      {p.openMaintenanceCount}
-                    </span>
+                    {p.flagCount > 0 && (
+                      <span className="db-flag">&para; {p.flagCount}</span>
+                    )}
                   </div>
                 );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* ─── Bottom Right: RECENT OPEN MAINTENANCE ─── */}
-        <section className="dash-section">
-          <div className="dash-section-header">
-            <h2>Urgent Items</h2>
-            <button className="btn-text-sm" onClick={() => navigate('/maintenance')}>
-              View All &rarr;
-            </button>
+              })
+            )}
           </div>
+        </div>
 
-          {maintenance.recentOpen?.length === 0 ? (
-            <div className="dash-caught-up">
-              <span className="dash-caught-up-icon">&#10003;</span>
-              <span>No urgent items</span>
+        {/* ── TOP RIGHT: MAINTENANCE THIS MONTH ── */}
+        <div className="db-card">
+          <div className="db-card-head">
+            <div className="db-card-title db-sage">MAINTENANCE THIS MONTH</div>
+            <button className="db-link" onClick={() => navigate('/maintenance')}>View board &rarr;</button>
+          </div>
+          <div className="db-card-body">
+            <div className="db-stat-grid">
+              <button className="db-stat db-stat-open" onClick={() => navigate('/maintenance?status=OPEN')}>
+                <span className="db-stat-num">{sc.OPEN || 0}</span>
+                <span className="db-stat-label">OPEN</span>
+              </button>
+              <button className="db-stat db-stat-assigned" onClick={() => navigate('/maintenance?status=ASSIGNED')}>
+                <span className="db-stat-num">{sc.ASSIGNED || 0}</span>
+                <span className="db-stat-label">ASSIGNED</span>
+              </button>
+              <button className="db-stat db-stat-progress" onClick={() => navigate('/maintenance?status=IN_PROGRESS')}>
+                <span className="db-stat-num">{sc.IN_PROGRESS || 0}</span>
+                <span className="db-stat-label">IN PROGRESS</span>
+              </button>
+              <button className="db-stat db-stat-resolved" onClick={() => navigate('/maintenance?status=RESOLVED')}>
+                <span className="db-stat-num">{sc.RESOLVED || 0}</span>
+                <span className="db-stat-label">RESOLVED</span>
+              </button>
             </div>
-          ) : (
-            <div className="dash-maint-list">
-              {maintenance.recentOpen?.map((m) => (
-                <div key={m.id} className="dash-maint-row" onClick={() => navigate('/maintenance')}>
-                  <div className="dash-maint-left">
-                    <span className="dash-maint-desc">{m.description}</span>
-                    <span className="dash-maint-meta">
-                      {m.propertyName}{m.roomLabel ? ` / ${m.roomLabel}` : ''}
-                    </span>
+          </div>
+        </div>
+
+        {/* ── BOTTOM LEFT: PROPERTY HEALTH ── */}
+        <div className="db-card">
+          <div className="db-card-head">
+            <div className="db-card-title db-sage">PROPERTY HEALTH</div>
+          </div>
+          <div className="db-card-body">
+            {propertyHealth.length === 0 ? (
+              <div className="db-empty">No properties yet</div>
+            ) : (
+              propertyHealth.map((p) => {
+                const dotColor = p.health === 'red' ? '#C0392B' : p.health === 'yellow' ? '#D4A017' : '#6B8F71';
+                const d = daysAgo(p.lastInspectionDate);
+                return (
+                  <div key={p.id} className="db-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
+                    <div className="db-row-left">
+                      <span className="db-health-dot" style={{ background: dotColor }} />
+                      <div>
+                        <div className="db-row-title">{p.name}</div>
+                        <div className="db-row-sub">
+                          {p.openMaintenanceCount} open issue{p.openMaintenanceCount !== 1 ? 's' : ''}
+                          {' \u00b7 '}
+                          Inspected {d === null ? 'never' : d === 0 ? 'today' : `${d}d ago`}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="db-health-count" style={{ color: dotColor }}>{p.openMaintenanceCount}</span>
                   </div>
-                  <div className="dash-maint-right">
-                    {m.priority && (
-                      <span className={`dash-priority dash-priority-${m.priority.toLowerCase()}`}>
-                        {m.priority}
-                      </span>
-                    )}
-                    <span
-                      className="insp-status-badge"
-                      style={{ color: MAINT_STATUS_COLORS[m.status], borderColor: MAINT_STATUS_COLORS[m.status] }}
-                    >
-                      {MAINT_STATUS_LABELS[m.status]}
-                    </span>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── BOTTOM RIGHT: NEEDS ATTENTION ── */}
+        <div className="db-card">
+          <div className="db-card-head">
+            <div className="db-card-title db-terracotta">NEEDS ATTENTION</div>
+          </div>
+          <div className="db-card-body">
+            {overdueRooms.length === 0 ? (
+              <div className="db-empty">&check; All rooms on schedule</div>
+            ) : (
+              overdueRooms.slice(0, 5).map((r) => (
+                <div key={r.roomId} className="db-row">
+                  <div className="db-row-left">
+                    <div>
+                      <div className="db-row-title">{r.propertyName} &rarr; {r.roomLabel}</div>
+                      <div className="db-row-sub" style={{ color: r.daysSince === null ? '#C0392B' : '#C4703F' }}>
+                        {r.daysSince === null ? 'Never inspected' : `Last inspected ${r.daysSince} days ago`}
+                      </div>
+                    </div>
                   </div>
+                  <button
+                    className="db-inspect-btn"
+                    onClick={(e) => { e.stopPropagation(); startQuarterly(r.propertyId, r.roomId); }}
+                  >
+                    Inspect
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+              ))
+            )}
+          </div>
+        </div>
+
       </div>
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />

@@ -129,6 +129,46 @@ router.get('/', async (req, res) => {
       };
     });
 
+    // ─── Needs Attention ─── Overdue rooms (quarterly 90+ days or never)
+    const allProperties = await prisma.property.findMany({
+      where: { organizationId: orgId, deletedAt: null },
+      include: {
+        rooms: {
+          where: { deletedAt: null },
+          select: { id: true, label: true },
+        },
+      },
+    });
+
+    const overdueRooms = [];
+    for (const prop of allProperties) {
+      for (const room of prop.rooms) {
+        const lastQuarterly = await prisma.inspection.findFirst({
+          where: {
+            roomId: room.id,
+            type: 'QUARTERLY',
+            organizationId: orgId,
+            deletedAt: null,
+            status: { in: ['SUBMITTED', 'REVIEWED'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+        const daysSince = lastQuarterly
+          ? Math.floor((Date.now() - new Date(lastQuarterly.createdAt)) / (1000 * 60 * 60 * 24))
+          : null;
+        if (daysSince === null || daysSince >= 90) {
+          overdueRooms.push({
+            propertyId: prop.id,
+            propertyName: prop.name,
+            roomId: room.id,
+            roomLabel: room.label,
+            daysSince,
+          });
+        }
+      }
+    }
+
     return res.json({
       pendingReview,
       maintenance: {
@@ -137,6 +177,7 @@ router.get('/', async (req, res) => {
         recentOpen: recentMaintenance,
       },
       propertyHealth,
+      overdueRooms,
     });
   } catch (error) {
     console.error('Dashboard error:', error);
