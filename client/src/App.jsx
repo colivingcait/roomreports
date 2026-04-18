@@ -15,6 +15,7 @@ import InspectionFlow from './pages/InspectionFlow';
 import InspectionReview from './pages/InspectionReview';
 import QuarterlyFlow from './pages/QuarterlyFlow';
 import QuarterlyReview from './pages/QuarterlyReview';
+import CommonAreaFlow from './pages/CommonAreaFlow';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
 import ResidentHome from './pages/ResidentHome';
@@ -56,6 +57,7 @@ function App() {
             <Route path="/inspections/:id" element={<InspectionFlow />} />
             <Route path="/quarterly/:propertyId" element={<QuarterlyFlow />} />
             <Route path="/quarterly/:propertyId/:roomId" element={<QuarterlyFlow />} />
+            <Route path="/common-area/:inspectionId" element={<CommonAreaFlow />} />
 
             {/* Resident experience — minimal layout */}
             <Route element={<ResidentLayout />}>

@@ -272,10 +272,13 @@ export default function InspectionFlow() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      // Quarterly inspections use the dedicated multi-room flow.
-      // Redirect DRAFT quarterly to the multi-room flow
+      // Redirect to dedicated flows
       if (data.inspection?.type === 'QUARTERLY' && data.inspection?.status === 'DRAFT') {
         navigate(`/quarterly/${data.inspection.propertyId}`, { replace: true });
+        return;
+      }
+      if (data.inspection?.type === 'COMMON_AREA' && data.inspection?.status === 'DRAFT') {
+        navigate(`/common-area/${data.inspection.id}`, { replace: true });
         return;
       }
 

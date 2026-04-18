@@ -21,80 +21,79 @@ function item(zone, text, options = STATUS_OPTIONS) {
 
 function generateCommonArea(property) {
   const items = [];
+  const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
 
-  // Entryway / Exterior
-  items.push(
-    item('Entryway', 'Front door and lock functioning'),
-    item('Entryway', 'Doorbell / intercom working'),
-    item('Entryway', 'Mailbox area clean and organized'),
-    item('Entryway', 'Hallway floors swept/mopped'),
-    item('Entryway', 'Hallway lights working'),
-    item('Entryway', 'Shoe rack / storage area tidy'),
-  );
-
-  // Living / Common Room
-  items.push(
-    item('Common Room', 'Floors vacuumed/mopped'),
-    item('Common Room', 'Furniture clean and in good condition', CONDITION_OPTIONS),
-    item('Common Room', 'Windows clean'),
-    item('Common Room', 'Blinds/curtains condition', CONDITION_OPTIONS),
-    item('Common Room', 'Light fixtures working'),
-    item('Common Room', 'Trash emptied'),
-    item('Common Room', 'TV/entertainment area tidy'),
-  );
-
-  // Kitchens (dynamic per property)
+  // Kitchens (repeat per labeled kitchen)
   for (const kitchen of property.kitchens || []) {
     const z = kitchen.label || 'Kitchen';
     items.push(
-      item(z, 'Countertops wiped down', CLEAN_OPTIONS),
-      item(z, 'Sink clean and draining', CLEAN_OPTIONS),
-      item(z, 'Stovetop/oven clean', CLEAN_OPTIONS),
-      item(z, 'Microwave clean (inside and out)', CLEAN_OPTIONS),
-      item(z, 'Refrigerator clean (interior)', CLEAN_OPTIONS),
-      item(z, 'Refrigerator clean (exterior)', CLEAN_OPTIONS),
-      item(z, 'Dishwasher empty and clean'),
-      item(z, 'Trash and recycling emptied'),
-      item(z, 'Floor swept and mopped', CLEAN_OPTIONS),
-      item(z, 'Cabinets organized'),
-      item(z, 'No expired food'),
-      item(z, 'Paper towels / soap stocked', YES_NO),
+      pf(z, 'Counters and surfaces clean'),
+      pf(z, 'Sink clean and draining properly'),
+      pf(z, 'Stovetop and oven clean'),
+      pf(z, 'Refrigerator clean, temp OK, no expired food'),
+      pf(z, 'Microwave clean and working'),
+      pf(z, 'Disposal working (if applicable)'),
+      pf(z, 'Dishwasher clean and working (if applicable)'),
+      pf(z, 'Cabinets clean'),
+      pf(z, 'Floors clean, no damage'),
+      pf(z, 'Trash and recycling taken to curb'),
+      pf(z, 'Light fixtures working'),
+      pf(z, 'No pest evidence'),
+      pf(z, 'No mold or mildew'),
+      pf(z, 'No unusual odors'),
+      pf(z, 'Supplies stocked (paper towels, dish soap, Clorox wipes)'),
     );
   }
 
-  // Bathrooms (dynamic per property)
+  // Shared Bathrooms (repeat per labeled bathroom)
   for (const bathroom of property.bathrooms || []) {
-    const z = bathroom.label || 'Bathroom';
+    const z = bathroom.label || 'Shared Bathroom';
     items.push(
-      item(z, 'Toilet clean', CLEAN_OPTIONS),
-      item(z, 'Sink and counter clean', CLEAN_OPTIONS),
-      item(z, 'Mirror clean'),
-      item(z, 'Shower/tub clean', CLEAN_OPTIONS),
-      item(z, 'Floor clean', CLEAN_OPTIONS),
-      item(z, 'Trash emptied'),
-      item(z, 'Toilet paper stocked', YES_NO),
-      item(z, 'Hand soap stocked', YES_NO),
-      item(z, 'Drain flowing properly'),
-      item(z, 'No mold or mildew'),
-      item(z, 'Exhaust fan working'),
+      pf(z, 'Toilet clean, flushing properly, no leaks'),
+      pf(z, 'Sink clean and draining properly'),
+      pf(z, 'Shower/tub clean, draining, caulk intact'),
+      pf(z, 'Shower curtain or door clean & intact'),
+      pf(z, 'Mirror clean'),
+      pf(z, 'Exhaust fan clean & working'),
+      pf(z, 'Floors clean, no damage'),
+      pf(z, 'No leaks under sink'),
+      pf(z, 'Light fixtures working'),
+      pf(z, 'Supplies stocked (toilet paper, hand soap)'),
+      pf(z, 'No mold or mildew'),
+      pf(z, 'No pest evidence'),
+      pf(z, 'No unusual odors'),
     );
   }
 
-  // Laundry
+  // Common Areas
   items.push(
-    item('Laundry', 'Washer clean and empty'),
-    item('Laundry', 'Dryer lint trap cleaned'),
-    item('Laundry', 'Laundry area floor clean', CLEAN_OPTIONS),
-    item('Laundry', 'Detergent / supplies stocked', YES_NO),
+    pf('Common Areas', 'Furniture clean and in good condition'),
+    pf('Common Areas', 'Floors clean, no damage'),
+    pf('Common Areas', 'Windows/blinds clean'),
+    pf('Common Areas', 'Light fixtures dusted & working'),
+    pf('Common Areas', 'No clutter or personal items left out'),
+    pf('Common Areas', 'Vents clean and working'),
+    pf('Common Areas', 'Washer and dryer clean and working'),
+    pf('Common Areas', 'Lint trap cleaned, no debris around machines'),
   );
 
-  // Outdoor / Exterior
+  // Exterior
   items.push(
-    item('Exterior', 'Porch/patio swept'),
-    item('Exterior', 'Outdoor furniture condition', CONDITION_OPTIONS),
-    item('Exterior', 'Trash bins at curb / organized'),
-    item('Exterior', 'Yard / lawn maintained'),
-    item('Exterior', 'Exterior lights working'),
+    pf('Exterior', 'Porch/steps clean, no hazards'),
+    pf('Exterior', 'Exterior lighting working (front and back)'),
+    pf('Exterior', 'Front door and lock functional'),
+    pf('Exterior', 'Back door and lock functional'),
+    pf('Exterior', 'Landscaping maintained'),
+    pf('Exterior', 'Address numbers visible'),
+    pf('Exterior', 'Back porch/patio clean, no hazards'),
+    pf('Exterior', 'Trash cans/dumpster area clean and organized'),
+    pf('Exterior', 'Parking area clear, no debris'),
+    pf('Exterior', 'No standing water or drainage issues'),
+  );
+
+  // Misc
+  items.push(
+    pf('Misc', 'Misc (catch-all for anything not covered above)'),
   );
 
   return items;

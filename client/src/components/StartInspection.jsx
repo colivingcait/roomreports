@@ -80,7 +80,11 @@ export default function StartInspection({ open, onClose }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       onClose();
-      navigate(`/inspections/${data.inspection.id}`);
+      if (type === 'COMMON_AREA') {
+        navigate(`/common-area/${data.inspection.id}`);
+      } else {
+        navigate(`/inspections/${data.inspection.id}`);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
