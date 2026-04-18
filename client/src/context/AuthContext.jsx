@@ -43,12 +43,13 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const signup = async (email, password, name, organizationName) => {
+  const signup = async (payload) => {
+    // payload: { email, password, name, organizationName? , propertyInviteToken? }
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, password, name, organizationName }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);

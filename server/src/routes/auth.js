@@ -6,8 +6,78 @@ import { lucia } from '../lib/auth.js';
 import { google } from '../lib/oauth.js';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { verifyPropertyInvite } from '../lib/propertyInvite.js';
 
 const router = Router();
+
+// ─── GET /api/auth/join/:slug — friendly URL for residents ──
+// Resolves a slug (derived from property name + address) to an invite token.
+// Public endpoint.
+
+function slugify(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+router.get('/join/:slug', async (req, res) => {
+  try {
+    const target = req.params.slug.toLowerCase();
+
+    const properties = await prisma.property.findMany({
+      where: { deletedAt: null },
+      include: { organization: { select: { name: true } } },
+    });
+
+    // Try matching by name slug first, then by (address + name) slug
+    let match = properties.find((p) => slugify(p.name) === target);
+    if (!match) {
+      match = properties.find((p) => slugify(p.address + p.name) === target);
+    }
+    if (!match) {
+      // Try address-number + name (e.g. "1939candace" from "1939 Main St" + "Candace")
+      match = properties.find((p) => {
+        const addrNum = (p.address || '').match(/\d+/)?.[0] || '';
+        return slugify(addrNum + p.name) === target;
+      });
+    }
+
+    if (!match) return res.status(404).json({ error: 'Property not found' });
+
+    const { signPropertyInvite } = await import('../lib/propertyInvite.js');
+    const token = signPropertyInvite(match.id, match.organizationId);
+    return res.json({
+      token,
+      propertyName: match.name,
+      organizationName: match.organization.name,
+    });
+  } catch (error) {
+    console.error('Join slug error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/auth/property-invite/:token — public endpoint ──
+// Returns property/org info so the signup page knows who's being invited
+
+router.get('/property-invite/:token', async (req, res) => {
+  try {
+    const info = verifyPropertyInvite(req.params.token);
+    if (!info) return res.status(400).json({ error: 'Invalid invitation link' });
+
+    const property = await prisma.property.findFirst({
+      where: { id: info.propertyId, organizationId: info.organizationId, deletedAt: null },
+      include: { organization: { select: { name: true } } },
+    });
+    if (!property) return res.status(404).json({ error: 'Property no longer exists' });
+
+    return res.json({
+      propertyName: property.name,
+      organizationName: property.organization.name,
+    });
+  } catch (error) {
+    console.error('Property invite info error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // ─── POST /api/auth/signup ──────────────────────────────
 // Creates a new Organization + User (OWNER role), returns session.
@@ -17,14 +87,39 @@ const router = Router();
 //   -d '{"email":"owner@example.com","password":"password123","name":"Jane Doe","organizationName":"Acme Coliving"}'
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, name, organizationName } = req.body;
+    const { email, password, name, organizationName, propertyInviteToken } = req.body;
 
-    if (!email || !password || !name || !organizationName) {
-      return res.status(400).json({ error: 'email, password, name, and organizationName are required' });
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'email, password, and name are required' });
     }
 
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    // Resident signup via QR code
+    let inviteInfo = null;
+    if (propertyInviteToken) {
+      inviteInfo = verifyPropertyInvite(propertyInviteToken);
+      if (!inviteInfo) {
+        return res.status(400).json({ error: 'Invalid or expired invitation link' });
+      }
+      // Verify property still exists
+      const property = await prisma.property.findFirst({
+        where: {
+          id: inviteInfo.propertyId,
+          organizationId: inviteInfo.organizationId,
+          deletedAt: null,
+        },
+      });
+      if (!property) {
+        return res.status(400).json({ error: 'Property no longer exists' });
+      }
+    }
+
+    // New org signup requires organizationName (non-resident)
+    if (!inviteInfo && !organizationName) {
+      return res.status(400).json({ error: 'organizationName is required' });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -42,10 +137,29 @@ router.post('/signup', async (req, res) => {
     const userId = generateIdFromEntropySize(10);
 
     const user = await prisma.$transaction(async (tx) => {
+      if (inviteInfo) {
+        // Resident signup: join existing organization as RESIDENT
+        const created = await tx.user.create({
+          data: {
+            id: userId,
+            email,
+            name,
+            hashedPassword,
+            role: 'RESIDENT',
+            organizationId: inviteInfo.organizationId,
+          },
+        });
+        // Assign to property
+        await tx.propertyAssignment.create({
+          data: { userId: created.id, propertyId: inviteInfo.propertyId },
+        });
+        return created;
+      }
+
+      // New org signup as OWNER
       const org = await tx.organization.create({
         data: { name: organizationName },
       });
-
       return tx.user.create({
         data: {
           id: userId,

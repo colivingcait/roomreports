@@ -1,24 +1,50 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Signup() {
   const { signup } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('invite');
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [organizationName, setOrganizationName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inviteInfo, setInviteInfo] = useState(null);
+  const [inviteLoading, setInviteLoading] = useState(!!inviteToken);
+  const [inviteError, setInviteError] = useState('');
+
+  // If there's an invite token, fetch property/org info
+  useEffect(() => {
+    if (!inviteToken) return;
+    fetch(`/api/auth/property-invite/${inviteToken}`)
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        setInviteInfo(data);
+      })
+      .catch((err) => setInviteError(err.message))
+      .finally(() => setInviteLoading(false));
+  }, [inviteToken]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await signup(email, password, name, organizationName);
-      navigate('/dashboard');
+      const payload = { email, password, name };
+      if (inviteToken && inviteInfo) {
+        payload.propertyInviteToken = inviteToken;
+      } else {
+        payload.organizationName = organizationName;
+      }
+      await signup(payload);
+      // Residents route to /resident, others to /dashboard (AuthContext handles)
+      navigate(inviteToken ? '/resident' : '/dashboard');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -26,6 +52,83 @@ export default function Signup() {
     }
   };
 
+  // Invite link — show resident signup form
+  if (inviteToken) {
+    if (inviteLoading) {
+      return (
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <p style={{ color: '#8A8583' }}>Loading...</p>
+        </div>
+      );
+    }
+    if (inviteError) {
+      return (
+        <>
+          <div className="auth-error">{inviteError}</div>
+          <p className="auth-footer" style={{ marginTop: '1rem' }}>
+            Contact your property manager for a new invitation link.
+          </p>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <form onSubmit={handleSubmit} className="auth-form">
+          <h2>Welcome to {inviteInfo.propertyName}</h2>
+          <p style={{ fontSize: '0.85rem', color: '#8A8583', marginTop: '-0.5rem', marginBottom: '1.25rem' }}>
+            Create your resident account to get started.
+          </p>
+
+          {error && <div className="auth-error">{error}</div>}
+
+          <label>
+            Your name
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Jane Doe"
+              required
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              minLength={8}
+              required
+            />
+          </label>
+
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Creating account...' : 'Create account'}
+          </button>
+        </form>
+
+        <p className="auth-footer">
+          Already have an account? <Link to="/login">Sign in</Link>
+        </p>
+      </>
+    );
+  }
+
+  // Standard signup (OWNER)
   return (
     <>
       <form onSubmit={handleSubmit} className="auth-form">

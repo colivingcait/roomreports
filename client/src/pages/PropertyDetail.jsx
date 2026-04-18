@@ -253,6 +253,16 @@ export default function PropertyDetail() {
   const [deleteProperty, setDeleteProperty] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [qrToken, setQrToken] = useState('');
+
+  useEffect(() => {
+    if (showQR && !qrToken) {
+      fetch(`/api/properties/${id}/qr-token`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((d) => setQrToken(d.token || ''))
+        .catch(() => {});
+    }
+  }, [showQR, qrToken, id]);
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -352,20 +362,51 @@ export default function PropertyDetail() {
         confirmLabel="Archive"
       />
 
-      <Modal open={showQR} onClose={() => setShowQR(false)} title="Resident Signup QR Code">
+      <Modal open={showQR} onClose={() => setShowQR(false)} title="Resident Invite">
         <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-          <QRCodeSVG
-            value={`${window.location.origin}/signup?property=${id}`}
-            size={200}
-            level="M"
-            fgColor="#4A4543"
-          />
-          <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#8A8583' }}>
-            Post this QR code at <strong>{property.name}</strong> so residents can scan and sign up.
-          </p>
-          <p style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#B5B1AF', wordBreak: 'break-all' }}>
-            {window.location.origin}/signup?property={id}
-          </p>
+          {!qrToken ? (
+            <p style={{ color: '#8A8583' }}>Generating QR code...</p>
+          ) : (
+            <>
+              <QRCodeSVG
+                value={`${window.location.origin}/signup?invite=${qrToken}`}
+                size={200}
+                level="M"
+                fgColor="#4A4543"
+              />
+              <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#8A8583' }}>
+                Post this QR code at <strong>{property.name}</strong> so residents can scan and join.
+              </p>
+
+              {(() => {
+                const addrNum = (property.address || '').match(/\d+/)?.[0] || '';
+                const nameSlug = property.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const slug = addrNum ? `${addrNum}${nameSlug}` : nameSlug;
+                const friendlyUrl = `${window.location.origin}/join/${slug}`;
+                return (
+                  <div className="credentials-box" style={{ marginTop: '1rem', textAlign: 'left' }}>
+                    <div className="credential-row">
+                      <span className="credential-label">Share link</span>
+                      <code className="credential-value">{friendlyUrl}</code>
+                    </div>
+                    <div className="credential-actions" style={{ marginTop: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => navigator.clipboard.writeText(friendlyUrl)}
+                      >
+                        Copy Link
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <p style={{ marginTop: '0.75rem', fontSize: '0.7rem', color: '#B5B1AF' }}>
+                Residents who use the QR code or link will be added as RESIDENT and assigned to this property.
+              </p>
+            </>
+          )}
         </div>
       </Modal>
     </div>

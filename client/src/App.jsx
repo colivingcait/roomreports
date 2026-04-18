@@ -21,6 +21,7 @@ import Team from './pages/Team';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
 import ResidentDone from './pages/ResidentDone';
+import JoinSlug from './pages/JoinSlug';
 
 function DefaultRedirect() {
   const { user } = useAuth();
@@ -33,6 +34,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          {/* Public friendly join URL: /join/:slug → /signup?invite=... */}
+          <Route path="/join/:slug" element={<JoinSlug />} />
+
           {/* Auth pages — redirect to home if already logged in */}
           <Route element={<AuthLayout />}>
             <Route path="/login" element={<Login />} />

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { signPropertyInvite } from '../lib/propertyInvite.js';
 
 const router = Router();
 
@@ -230,6 +231,22 @@ router.get('/:id/overview', async (req, res) => {
     });
   } catch (error) {
     console.error('Property overview error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/properties/:id/qr-token — signed token for resident QR code
+router.get('/:id/qr-token', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const property = await prisma.property.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    const token = signPropertyInvite(property.id, req.user.organizationId);
+    return res.json({ token });
+  } catch (error) {
+    console.error('QR token error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
