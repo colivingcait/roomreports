@@ -11,6 +11,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import teamRoutes from './routes/team.js';
 import searchRoutes from './routes/search.js';
 import suggestionsRoutes from './routes/suggestions.js';
+import publicInspectionRoutes from './routes/publicInspections.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,6 +39,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.use('/api/public', publicInspectionRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/inspections', inspectionRoutes);

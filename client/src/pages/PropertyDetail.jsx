@@ -352,6 +352,41 @@ export default function PropertyDetail() {
         ))}
       </div>
 
+      {/* Resident Links */}
+      {(() => {
+        const addrNum = (property.address || '').match(/\d+/)?.[0] || '';
+        const nameSlug = property.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const slug = addrNum ? `${addrNum}-${nameSlug}` : nameSlug;
+        const moveInUrl = `${window.location.origin}/movein/${slug}`;
+        const selfCheckUrl = `${window.location.origin}/selfcheck/${slug}`;
+        return (
+          <div className="detail-section" style={{ marginTop: '1rem' }}>
+            <div className="section-header"><h3>Resident Links</h3></div>
+            <p className="empty-text" style={{ marginBottom: '0.75rem' }}>
+              Share these links or print the QR codes for residents. No login required.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="pub-link-card">
+                <h4>Move-In Inspection</h4>
+                <div className="pub-link-qr">
+                  <QRCodeSVG value={moveInUrl} size={120} level="M" fgColor="#4A4543" />
+                </div>
+                <code className="pub-link-url">{moveInUrl}</code>
+                <button className="btn-primary-xs" onClick={() => navigator.clipboard.writeText(moveInUrl)}>Copy Link</button>
+              </div>
+              <div className="pub-link-card">
+                <h4>Monthly Self-Check</h4>
+                <div className="pub-link-qr">
+                  <QRCodeSVG value={selfCheckUrl} size={120} level="M" fgColor="#4A4543" />
+                </div>
+                <code className="pub-link-url">{selfCheckUrl}</code>
+                <button className="btn-primary-xs" onClick={() => navigator.clipboard.writeText(selfCheckUrl)}>Copy Link</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <ConfirmDialog
         open={deleteProperty}
         onClose={() => setDeleteProperty(false)}

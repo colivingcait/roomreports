@@ -230,7 +230,7 @@ model Inspection {
   status         InspectionStatus @default(DRAFT)
   propertyId     String
   roomId         String?
-  inspectorId    String
+  inspectorId    String?
   inspectorName  String
   inspectorRole  Role
   organizationId String
@@ -241,7 +241,7 @@ model Inspection {
 
   property         Property          @relation(fields: [propertyId], references: [id])
   room             Room?             @relation(fields: [roomId], references: [id])
-  inspector        User              @relation(fields: [inspectorId], references: [id])
+  inspector        User?             @relation(fields: [inspectorId], references: [id])
   organization     Organization      @relation(fields: [organizationId], references: [id])
   items            InspectionItem[]
   maintenanceItems MaintenanceItem[]
