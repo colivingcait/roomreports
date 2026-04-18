@@ -13,8 +13,7 @@ const MAINT_STATUS_COLORS = {
 };
 const MAINT_STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
 
-const HEALTH_LABELS = { healthy: 'Healthy', watch: 'Watch', attention: 'Needs Attention' };
-const HEALTH_COLORS = { healthy: '#6B8F71', watch: '#C9A84C', attention: '#C4703F' };
+const HEALTH_COLORS = { healthy: '#6B8F71', watch: '#C9A84C', attention: '#C4703F', green: '#6B8F71', yellow: '#C9A84C', red: '#C4703F' };
 
 function timeAgo(date) {
   if (!date) return 'Never';
@@ -80,6 +79,11 @@ export default function Dashboard() {
             Pending Review
             {pendingReview.length > 0 && <span className="dash-count-badge">{pendingReview.length}</span>}
           </h2>
+          {pendingReview.length > 4 && (
+            <button className="btn-text-sm" onClick={() => navigate('/inspections?status=SUBMITTED')}>
+              View All &rarr;
+            </button>
+          )}
         </div>
 
         {pendingReview.length === 0 ? (
@@ -89,21 +93,19 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="pending-grid">
-            {pendingReview.map((p) => (
+            {pendingReview.slice(0, 4).map((p) => (
               <div key={p.id} className="pending-card" onClick={() => navigate(`/inspections/${p.id}/review`)}>
                 <div className="pending-card-top">
                   <span className="dash-type-badge">{TYPE_LABELS[p.type] || p.type}</span>
                   {p.flagCount > 0 && (
-                    <span className="pending-flag-count">&#9873; {p.flagCount} issue{p.flagCount !== 1 ? 's' : ''}</span>
+                    <span className="pending-flag-count">&#9873; {p.flagCount}</span>
                   )}
                 </div>
                 <h3 className="pending-card-title">
                   {p.propertyName}
-                  {p.roomLabel && <span className="pending-card-room"> / {p.roomLabel}</span>}
+                  {p.roomLabel && <span className="pending-card-room"> &rarr; {p.roomLabel}</span>}
                 </h3>
                 <div className="pending-card-meta">
-                  <span>{p.inspectorName} ({p.inspectorRole})</span>
-                  <span className="dot" />
                   <span>{timeAgo(p.completedAt)}</span>
                 </div>
               </div>
@@ -177,28 +179,25 @@ export default function Dashboard() {
           <p className="empty-text" style={{ padding: '0.5rem 0' }}>No properties yet</p>
         ) : (
           <div className="health-list">
-            {propertyHealth.map((p) => (
-              <div key={p.id} className="health-row" onClick={() => navigate(`/properties/${p.id}`)}>
-                <div className="health-indicator" style={{ background: HEALTH_COLORS[p.health] }} />
-                <div className="health-info">
-                  <div className="health-name">{p.name}</div>
-                  <div className="health-meta">
-                    {p.openMaintenanceCount > 0
-                      ? `${p.openMaintenanceCount} open maintenance`
-                      : 'No open issues'}
-                    {p.urgentCount > 0 && (
-                      <span className="health-urgent"> &middot; {p.urgentCount} urgent</span>
-                    )}
-                    {p.pendingReviewCount > 0 && (
-                      <span className="health-pending"> &middot; {p.pendingReviewCount} pending review</span>
-                    )}
+            {propertyHealth.map((p) => {
+              const color = HEALTH_COLORS[p.health] || '#6B8F71';
+              return (
+                <div key={p.id} className="health-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
+                  <div className="health-indicator" style={{ background: color }} />
+                  <div className="health-info">
+                    <div className="health-name">{p.name}</div>
+                    <div className="health-meta">
+                      {p.openMaintenanceCount > 0
+                        ? `${p.openMaintenanceCount} open issue${p.openMaintenanceCount !== 1 ? 's' : ''}`
+                        : 'No open issues'}
+                    </div>
                   </div>
+                  <span className="health-count" style={{ color }}>
+                    {p.openMaintenanceCount}
+                  </span>
                 </div>
-                <span className="health-label" style={{ color: HEALTH_COLORS[p.health] }}>
-                  {HEALTH_LABELS[p.health]}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

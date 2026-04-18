@@ -9,6 +9,7 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Properties from './pages/Properties';
 import PropertyDetail from './pages/PropertyDetail';
+import PropertyOverview from './pages/PropertyOverview';
 import Inspections from './pages/Inspections';
 import InspectionFlow from './pages/InspectionFlow';
 import InspectionReview from './pages/InspectionReview';
@@ -41,6 +42,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/properties" element={<Properties />} />
               <Route path="/properties/:id" element={<PropertyDetail />} />
+              <Route path="/properties/:id/overview" element={<PropertyOverview />} />
               <Route path="/inspections" element={<Inspections />} />
               <Route path="/inspections/:id/review" element={<InspectionReview />} />
               <Route path="/maintenance" element={<Maintenance />} />

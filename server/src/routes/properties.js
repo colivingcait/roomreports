@@ -65,6 +65,173 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
   }
 });
 
+// GET /api/properties/:id/overview — single-property mini-dashboard
+router.get('/:id/overview', async (req, res) => {
+  try {
+    const property = await prisma.property.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        rooms: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
+        kitchens: { where: { deletedAt: null } },
+        bathrooms: { where: { deletedAt: null } },
+      },
+    });
+
+    if (!property) {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+    // Open maintenance items grouped by room
+    const maintenance = await prisma.maintenanceItem.findMany({
+      where: {
+        propertyId: property.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+      },
+      include: {
+        room: { select: { id: true, label: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Per-room maintenance counts
+    const roomMaintCounts = {};
+    const commonAreaMaint = [];
+    for (const m of maintenance) {
+      if (m.roomId) {
+        roomMaintCounts[m.roomId] = (roomMaintCounts[m.roomId] || 0) + 1;
+      } else {
+        commonAreaMaint.push(m);
+      }
+    }
+
+    // Recent inspections for this property
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        propertyId: property.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        room: { select: { id: true, label: true } },
+        inspector: { select: { name: true, role: true } },
+        items: {
+          where: { flagCategory: { not: null } },
+          select: { id: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    // Per-room last inspection
+    const roomLastInspection = {};
+    for (const insp of inspections) {
+      if (insp.roomId && !roomLastInspection[insp.roomId]) {
+        roomLastInspection[insp.roomId] = {
+          date: insp.createdAt,
+          type: insp.type,
+          status: insp.status,
+        };
+      }
+    }
+
+    // Common area last inspection
+    const lastCommonArea = inspections.find((i) => i.type === 'COMMON_AREA');
+    const daysSinceCommonArea = lastCommonArea
+      ? Math.floor((Date.now() - new Date(lastCommonArea.createdAt)) / (1000 * 60 * 60 * 24))
+      : null;
+
+    // Overdue rooms: last quarterly > 90 days ago or never
+    const overdueRooms = [];
+    for (const room of property.rooms) {
+      const lastQuarterly = inspections.find(
+        (i) => i.roomId === room.id && i.type === 'QUARTERLY',
+      );
+      const daysSince = lastQuarterly
+        ? Math.floor((Date.now() - new Date(lastQuarterly.createdAt)) / (1000 * 60 * 60 * 24))
+        : null;
+      if (daysSince === null || daysSince >= 90) {
+        overdueRooms.push({
+          id: room.id,
+          label: room.label,
+          daysSince,
+        });
+      }
+    }
+
+    // Build room cards data
+    const roomCards = property.rooms.map((r) => ({
+      id: r.id,
+      label: r.label,
+      features: r.features,
+      furniture: r.furniture,
+      openMaintenanceCount: roomMaintCounts[r.id] || 0,
+      lastInspection: roomLastInspection[r.id] || null,
+    }));
+
+    // Overall health
+    const totalOpen = maintenance.length;
+    const health = totalOpen >= 6 ? 'red' : totalOpen >= 3 ? 'yellow' : 'green';
+
+    // Maintenance grouped by room for display
+    const maintByRoom = {};
+    for (const m of maintenance) {
+      const key = m.roomId || '_common';
+      const label = m.room?.label || 'Common Areas';
+      if (!maintByRoom[key]) maintByRoom[key] = { label, items: [] };
+      maintByRoom[key].items.push({
+        id: m.id,
+        description: m.description,
+        zone: m.zone,
+        status: m.status,
+        flagCategory: m.flagCategory,
+        priority: m.priority,
+        createdAt: m.createdAt,
+      });
+    }
+
+    return res.json({
+      property: {
+        id: property.id,
+        name: property.name,
+        address: property.address,
+        roomCount: property.rooms.length,
+        kitchenCount: property.kitchens.length,
+        bathroomCount: property.bathrooms.length,
+      },
+      health,
+      totalOpenMaintenance: totalOpen,
+      roomCards,
+      maintenanceByRoom: maintByRoom,
+      recentInspections: inspections.map((i) => ({
+        id: i.id,
+        type: i.type,
+        status: i.status,
+        createdAt: i.createdAt,
+        completedAt: i.completedAt,
+        roomLabel: i.room?.label || null,
+        inspectorName: i.inspector?.name,
+        flagCount: i.items.length,
+      })),
+      commonArea: {
+        lastInspectionDate: lastCommonArea?.createdAt || null,
+        daysSince: daysSinceCommonArea,
+        openFlags: commonAreaMaint.length,
+      },
+      overdueRooms,
+    });
+  } catch (error) {
+    console.error('Property overview error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/properties/:id — get property with rooms, kitchens, bathrooms
 router.get('/:id', async (req, res) => {
   try {

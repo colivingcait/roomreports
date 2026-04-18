@@ -3682,3 +3682,344 @@ button.review-photo-thumb {
   background: none;
   cursor: zoom-in;
 }
+
+/* ─── Dashboard Health Count ─────────────────────────── */
+
+.health-count {
+  font-size: 1.25rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ─── Property Overview ──────────────────────────────── */
+
+.po-breadcrumb {
+  font-size: 0.8rem;
+  color: #8A8583;
+  margin-bottom: 0.75rem;
+}
+
+.po-breadcrumb a {
+  color: #6B8F71;
+  text-decoration: none;
+}
+
+.po-breadcrumb a:hover { text-decoration: underline; }
+
+.po-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.po-header-left h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #4A4543;
+}
+
+.po-address {
+  font-size: 0.85rem;
+  color: #8A8583;
+  margin-top: 0.125rem;
+}
+
+.po-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: #B5B1AF;
+  margin-top: 0.375rem;
+}
+
+.po-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.po-health-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.75rem;
+  border: 2px solid;
+  border-radius: 100px;
+}
+
+.po-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.po-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.po-section {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.po-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6B8F71;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.po-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .po-split { grid-template-columns: 1fr; }
+}
+
+/* ─── Room Grid ──────────────────────────────────────── */
+
+.po-room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .po-room-grid { grid-template-columns: 1fr; }
+}
+
+.po-room-card {
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: default;
+}
+
+.po-room-card:hover {
+  border-color: #6B8F71;
+  box-shadow: 0 2px 8px rgba(107, 143, 113, 0.1);
+}
+
+.po-room-health-bar {
+  height: 4px;
+  width: 100%;
+  transition: background 0.3s;
+}
+
+.po-room-body { padding: 0.75rem 0.875rem; }
+
+.po-room-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4A4543;
+  margin-bottom: 0.25rem;
+}
+
+.po-room-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.7rem;
+  color: #8A8583;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.po-room-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.po-feature-tag {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.375rem;
+  background: #F5F2EF;
+  color: #8A8583;
+  border-radius: 100px;
+}
+
+/* ─── Maintenance by Room ────────────────────────────── */
+
+.po-maint-groups { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.po-maint-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4A4543;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #F5F2EF;
+}
+
+.po-maint-group-count {
+  background: #C4703F;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.375rem;
+  border-radius: 100px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.po-maint-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  gap: 0.5rem;
+}
+
+.po-maint-item:hover { background: #FDFCFB; margin: 0 -0.375rem; padding-left: 0.375rem; padding-right: 0.375rem; border-radius: 6px; }
+
+.po-maint-item-left { flex: 1; min-width: 0; }
+
+.po-maint-desc {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #4A4543;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.po-maint-zone {
+  font-size: 0.65rem;
+  color: #B5B1AF;
+  display: block;
+  margin-top: 0.125rem;
+}
+
+.po-maint-item-right {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ─── Timeline ───────────────────────────────────────── */
+
+.po-timeline { display: flex; flex-direction: column; }
+
+.po-timeline-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #F5F2EF;
+  cursor: pointer;
+  gap: 0.5rem;
+}
+
+.po-timeline-item:last-child { border-bottom: none; }
+.po-timeline-item:hover { background: #FDFCFB; margin: 0 -0.375rem; padding-left: 0.375rem; padding-right: 0.375rem; border-radius: 6px; }
+
+.po-timeline-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.po-timeline-date {
+  font-size: 0.7rem;
+  color: #B5B1AF;
+  min-width: 50px;
+}
+
+.po-timeline-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.po-timeline-room { font-size: 0.75rem; color: #4A4543; font-weight: 500; }
+.po-timeline-inspector { font-size: 0.7rem; color: #B5B1AF; }
+
+/* ─── Common Area Status ─────────────────────────────── */
+
+.po-ca-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.po-ca-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.po-ca-info { flex: 1; }
+
+.po-ca-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4A4543;
+}
+
+.po-ca-flags {
+  font-size: 0.75rem;
+  color: #C4703F;
+  margin-top: 0.125rem;
+}
+
+/* ─── Overdue Rooms ──────────────────────────────────── */
+
+.po-overdue-list { display: flex; flex-direction: column; }
+
+.po-overdue-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #F5F2EF;
+}
+
+.po-overdue-item:last-child { border-bottom: none; }
+
+.po-overdue-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4A4543;
+  display: block;
+}
+
+.po-overdue-since {
+  font-size: 0.7rem;
+  color: #C4703F;
+  display: block;
+  margin-top: 0.125rem;
+}
