@@ -8,6 +8,24 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+// Legacy category mapping
+const LEGACY_CATEGORY_MAP = {
+  'Maintenance': 'General',
+  'Pest': 'Pest Control',
+  'Lease Violation': 'General',
+  'Cleanliness': 'Cleaning',
+  'Other': 'General',
+};
+const normalizeCategory = (c) => LEGACY_CATEGORY_MAP[c] || c;
+
+// Given a new category, return the list of DB values that should match (new + legacy)
+function matchingCategories(newCategory) {
+  const legacy = Object.entries(LEGACY_CATEGORY_MAP)
+    .filter(([, newCat]) => newCat === newCategory)
+    .map(([oldCat]) => oldCat);
+  return [newCategory, ...legacy];
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -30,7 +48,7 @@ router.get('/', async (req, res) => {
 
     if (propertyId) where.propertyId = propertyId;
     if (status) where.status = status;
-    if (flagCategory) where.flagCategory = flagCategory;
+    if (flagCategory) where.flagCategory = { in: matchingCategories(flagCategory) };
 
     if (startDate || endDate) {
       where.createdAt = {};
@@ -62,7 +80,13 @@ router.get('/', async (req, res) => {
       statusCounts[c.status] = c._count;
     }
 
-    return res.json({ items, statusCounts });
+    // Normalize legacy categories on the way out
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      flagCategory: normalizeCategory(item.flagCategory),
+    }));
+
+    return res.json({ items: normalizedItems, statusCounts });
   } catch (error) {
     console.error('List maintenance error:', error);
     return res.status(500).json({ error: 'Internal server error' });

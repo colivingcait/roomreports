@@ -10,6 +10,7 @@ import maintenanceRoutes from './routes/maintenance.js';
 import dashboardRoutes from './routes/dashboard.js';
 import teamRoutes from './routes/team.js';
 import searchRoutes from './routes/search.js';
+import suggestionsRoutes from './routes/suggestions.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +46,7 @@ app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/suggestions', suggestionsRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

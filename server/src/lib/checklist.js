@@ -141,6 +141,12 @@ function generateRoomTurn(property, room) {
     );
   }
 
+  if (room?.features?.includes('Microwave')) {
+    items.push(
+      item('Appliances', 'Microwave clean and working', CONDITION_OPTIONS),
+    );
+  }
+
   if (room?.features?.includes('Window AC')) {
     items.push(
       item('Appliances', 'Window AC — functioning and filter clean', CONDITION_OPTIONS),
@@ -176,6 +182,9 @@ function generateRoomTurn(property, room) {
     item('Cleaning', 'Trash removed'),
     item('Cleaning', 'Linens fresh (if provided)', YES_NO),
   );
+
+  // Misc catch-all
+  items.push(item('Misc', 'Misc (catch-all for anything not covered above)', ['Pass', 'Fail']));
 
   return items;
 }
@@ -227,6 +236,9 @@ function generateQuarterly(property, room) {
   if (room?.features?.includes('Mini Fridge')) {
     items.push(pf('Features', 'Mini fridge clean and working'));
   }
+  if (room?.features?.includes('Microwave')) {
+    items.push(pf('Features', 'Microwave clean and working'));
+  }
   if (room?.features?.includes('Separate Entry')) {
     items.push(pf('Features', 'Separate entry lock functional'));
   }
@@ -236,6 +248,9 @@ function generateQuarterly(property, room) {
   if (room?.features?.includes('Basement Room')) {
     items.push(pf('Features', 'No basement moisture or seepage'));
   }
+
+  // Misc catch-all
+  items.push(pf('Misc', 'Misc (catch-all for anything not covered above)'));
 
   return items;
 }
@@ -405,6 +420,9 @@ function generateMoveInOut(property, room, direction) {
     item('Overall', 'General cleanliness', CLEAN_OPTIONS),
     item('Overall', 'Keys and access devices returned', YES_NO),
   );
+
+  // Misc catch-all
+  items.push(item('Misc', 'Misc (catch-all for anything not covered above)', ['Pass', 'Fail']));
 
   return items;
 }

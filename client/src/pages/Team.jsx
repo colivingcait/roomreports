@@ -42,6 +42,13 @@ export default function Team() {
   const [resetResult, setResetResult] = useState(null);
   const [resetting, setResetting] = useState(false);
 
+  // Feature suggestion
+  const [suggestion, setSuggestion] = useState('');
+  const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
+  const [suggestionSuccess, setSuggestionSuccess] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestionsList, setShowSuggestionsList] = useState(false);
+
   const fetchData = useCallback(async () => {
     try {
       const [teamData, propData] = await Promise.all([
@@ -132,6 +139,30 @@ export default function Team() {
       setResetResult({ email: data.user.email, password: data.password });
     } catch { /* ignore */ }
     finally { setResetting(false); }
+  };
+
+  const handleSubmitSuggestion = async (e) => {
+    e.preventDefault();
+    if (!suggestion.trim()) return;
+    setSubmittingSuggestion(true);
+    try {
+      await api('/api/suggestions', {
+        method: 'POST',
+        body: JSON.stringify({ suggestion: suggestion.trim() }),
+      });
+      setSuggestion('');
+      setSuggestionSuccess(true);
+      setTimeout(() => setSuggestionSuccess(false), 3000);
+    } catch { /* ignore */ }
+    finally { setSubmittingSuggestion(false); }
+  };
+
+  const loadSuggestions = async () => {
+    try {
+      const data = await api('/api/suggestions');
+      setSuggestions(data.suggestions || []);
+      setShowSuggestionsList(true);
+    } catch { /* ignore */ }
   };
 
   const toggleProperty = (pid) => {
@@ -260,6 +291,66 @@ export default function Team() {
           </div>
         </div>
       )}
+
+      {/* Suggest a Feature */}
+      <div style={{ marginTop: '1.5rem' }}>
+        <h3 className="team-section-title">Suggest a Feature</h3>
+        <div className="suggestion-box">
+          <p className="suggestion-help">
+            Have an idea for something RoomReport could do better? Let us know.
+          </p>
+          <form onSubmit={handleSubmitSuggestion} className="suggestion-form">
+            <textarea
+              className="detail-textarea"
+              value={suggestion}
+              onChange={(e) => setSuggestion(e.target.value)}
+              placeholder="I'd love it if..."
+              rows={3}
+            />
+            <div className="suggestion-actions">
+              {suggestionSuccess && (
+                <span className="suggestion-success">{'\u2713'} Thanks for the suggestion!</span>
+              )}
+              <button
+                type="submit"
+                className="btn-primary-sm"
+                disabled={submittingSuggestion || !suggestion.trim()}
+              >
+                {submittingSuggestion ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </form>
+          {(isOwner || user?.role === 'PM') && (
+            <div className="suggestion-admin">
+              <button className="btn-text-sm" onClick={loadSuggestions}>
+                View submitted suggestions &rarr;
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Suggestions list modal */}
+      <Modal
+        open={showSuggestionsList}
+        onClose={() => setShowSuggestionsList(false)}
+        title="Submitted Suggestions"
+      >
+        {suggestions.length === 0 ? (
+          <p className="empty-text">No suggestions yet</p>
+        ) : (
+          <div className="suggestion-list">
+            {suggestions.map((s) => (
+              <div key={s.id} className="suggestion-item">
+                <p className="suggestion-text">{s.suggestion}</p>
+                <div className="suggestion-meta">
+                  {s.userName} &middot; {new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* Invite Modal */}
       <Modal

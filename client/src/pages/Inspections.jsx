@@ -6,7 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
+  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 const STATUS_COLORS = { DRAFT: '#C4703F', SUBMITTED: '#6B8F71', REVIEWED: '#8A8583' };
 

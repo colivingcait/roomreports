@@ -8,7 +8,7 @@ const INSPECTION_TYPES = [
   { value: 'ROOM_TURN', label: 'Room Turn', needsRoom: true },
   { value: 'QUARTERLY', label: 'Quarterly', needsRoom: false },
   { value: 'RESIDENT_SELF_CHECK', label: 'Resident Self-Check', needsRoom: true },
-  { value: 'MOVE_IN_OUT', label: 'Move-In/Out', needsRoom: true },
+  { value: 'MOVE_IN_OUT', label: 'Move-In', needsRoom: true },
 ];
 
 const ROLE_TYPES = {

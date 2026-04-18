@@ -4,10 +4,10 @@ import StartInspection from '../components/StartInspection';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
+  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 
-const MAINT_STATUS_COLORS = { OPEN: '#C4703F', ASSIGNED: '#6B8F71', IN_PROGRESS: '#C9A84C' };
+const MAINT_STATUS_COLORS = { OPEN: '#C0392B', ASSIGNED: '#D85A30', IN_PROGRESS: '#BA7517', RESOLVED: '#3B6D11' };
 const MAINT_STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress' };
 const HEALTH_COLORS = { green: '#6B8F71', yellow: '#C9A84C', red: '#C4703F' };
 const HEALTH_LABELS = { green: 'Healthy', yellow: 'Watch', red: 'Needs Attention' };
@@ -144,7 +144,7 @@ export default function PropertyOverview() {
                       <div className="po-room-expanded-section">
                         <h4 className="po-expanded-title">Open Maintenance</h4>
                         {roomMaint.length === 0 ? (
-                          <div className="po-expanded-empty">&check; No open maintenance</div>
+                          <div className="po-expanded-empty">{'\u2713'} No open maintenance</div>
                         ) : (
                           <div className="po-expanded-list">
                             {roomMaint.map((m) => (

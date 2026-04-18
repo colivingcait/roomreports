@@ -1895,21 +1895,21 @@ body {
   margin-top: 0.25rem;
 }
 
-.db-stat-open { background: #FAECE7; }
-.db-stat-open .db-stat-num { color: #993C1D; }
-.db-stat-open .db-stat-label { color: #993C1D; }
+.db-stat-open { background: #FCEBEB; }
+.db-stat-open .db-stat-num { color: #C0392B; }
+.db-stat-open .db-stat-label { color: #C0392B; }
 
-.db-stat-assigned { background: #E8F0E9; }
-.db-stat-assigned .db-stat-num { color: #3B6D11; }
-.db-stat-assigned .db-stat-label { color: #3B6D11; }
+.db-stat-assigned { background: #FAECE7; }
+.db-stat-assigned .db-stat-num { color: #D85A30; }
+.db-stat-assigned .db-stat-label { color: #D85A30; }
 
 .db-stat-progress { background: #FAEEDA; }
-.db-stat-progress .db-stat-num { color: #854F0B; }
-.db-stat-progress .db-stat-label { color: #854F0B; }
+.db-stat-progress .db-stat-num { color: #BA7517; }
+.db-stat-progress .db-stat-label { color: #BA7517; }
 
-.db-stat-resolved { background: #F0EDEB; }
-.db-stat-resolved .db-stat-num { color: #8A8583; }
-.db-stat-resolved .db-stat-label { color: #8A8583; }
+.db-stat-resolved { background: #E8F0E9; }
+.db-stat-resolved .db-stat-num { color: #3B6D11; }
+.db-stat-resolved .db-stat-label { color: #3B6D11; }
 
 .db-health-dot {
   width: 10px;
@@ -4658,4 +4658,72 @@ button.review-photo-thumb {
   color: #4A4543;
   font-weight: 500;
   flex: 1;
+}
+
+/* ─── Suggest a Feature ──────────────────────────────── */
+
+.suggestion-box {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.suggestion-help {
+  font-size: 0.85rem;
+  color: #8A8583;
+  margin-bottom: 0.625rem;
+  line-height: 1.4;
+}
+
+.suggestion-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.suggestion-success {
+  font-size: 0.85rem;
+  color: #3B6D11;
+  font-weight: 500;
+}
+
+.suggestion-admin {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #F5F2EF;
+}
+
+.suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  padding: 0.625rem 0.875rem;
+  background: #FAF8F5;
+  border: 1px solid #E8E4E1;
+  border-radius: 8px;
+}
+
+.suggestion-text {
+  font-size: 0.875rem;
+  color: #4A4543;
+  line-height: 1.4;
+  margin-bottom: 0.375rem;
+}
+
+.suggestion-meta {
+  font-size: 0.7rem;
+  color: #8A8583;
 }

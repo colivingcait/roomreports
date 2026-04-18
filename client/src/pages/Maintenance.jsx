@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { FLAG_CATEGORIES as CATEGORIES } from '../../../shared/index.js';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
-const STATUS_COLORS = { OPEN: '#C4703F', ASSIGNED: '#6B8F71', IN_PROGRESS: '#C9A84C', RESOLVED: '#B5B1AF' };
-const CATEGORIES = ['Maintenance', 'Pest', 'Safety', 'Cleanliness', 'Lease Violation', 'Other'];
+const STATUS_COLORS = { OPEN: '#C0392B', ASSIGNED: '#D85A30', IN_PROGRESS: '#BA7517', RESOLVED: '#3B6D11' };
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -216,7 +216,7 @@ export default function Maintenance() {
   const [statusCounts, setStatusCounts] = useState({});
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('list');
+  const [view, setView] = useState('kanban');
 
   // Filters (status pre-populated from URL if provided)
   const [filterProperty, setFilterProperty] = useState('');

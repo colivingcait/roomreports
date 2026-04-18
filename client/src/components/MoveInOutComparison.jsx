@@ -32,7 +32,7 @@ export default function MoveInOutComparison({ roomId }) {
   if (!moveIn && !moveOut) {
     return (
       <div className="cmp-empty">
-        <p>No Move-In/Out inspections yet for this room.</p>
+        <p>No Move-In inspections yet for this room.</p>
       </div>
     );
   }
@@ -69,7 +69,7 @@ export default function MoveInOutComparison({ roomId }) {
     <div className="cmp-container">
       <div className="cmp-header">
         <div>
-          <h3>Move-In/Out Comparison</h3>
+          <h3>Move-In Comparison</h3>
           <span className="cmp-subtitle">{property?.name} — {room?.label}</span>
         </div>
       </div>

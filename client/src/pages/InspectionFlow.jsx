@@ -5,7 +5,7 @@ import { queuePhoto } from '../lib/offlineStore';
 import OfflineBanner from '../components/OfflineBanner';
 import MoveInOutComparison from '../components/MoveInOutComparison';
 
-const FLAG_CATEGORIES = ['Maintenance', 'Pest', 'Safety', 'Cleanliness', 'Lease Violation', 'Other'];
+import { FLAG_CATEGORIES } from '../../../shared/index.js';
 const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
 const GOOD_STATUSES = ['Pass', 'Good', 'Clean', 'Yes'];
 const BAD_STATUSES = ['Fail', 'Poor', 'Dirty', 'No', 'Missing'];
@@ -422,7 +422,7 @@ export default function InspectionFlow() {
         {/* Required photo notice for MOVE_IN_OUT */}
         {isMoveInOut && !isSubmitted && (
           <div className="insp-notice">
-            <strong>Move-In/Out inspection:</strong> A photo is strongly recommended on every item to document condition for security deposit disputes.
+            <strong>Move-In inspection:</strong> A photo is strongly recommended on every item to document condition for security deposit disputes.
           </div>
         )}
 

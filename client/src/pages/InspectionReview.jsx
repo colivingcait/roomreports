@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
+  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 
 const STATUS_COLORS = { DRAFT: '#C4703F', SUBMITTED: '#C4703F', REVIEWED: '#6B8F71' };

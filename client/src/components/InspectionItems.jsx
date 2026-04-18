@@ -1,11 +1,8 @@
 import { useState, useRef } from 'react';
 import { queuePhoto } from '../lib/offlineStore';
+import { FLAG_CATEGORIES } from '../../../shared/index.js';
 
-export const FLAG_CATEGORIES = [
-  'Electrical', 'Plumbing', 'HVAC', 'Locks & Security', 'Appliances',
-  'Pest Control', 'Exterior & Landscaping', 'Cleaning', 'Furniture & Fixtures',
-  'Safety', 'Internet & Tech', 'Surfaces', 'General',
-];
+export { FLAG_CATEGORIES };
 
 export function FlagDrawer({ item, inspectionId, onUpdate }) {
   const fileRef = useRef();

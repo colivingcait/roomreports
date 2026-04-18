@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
+  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 
 export default function SearchBar({ onClose }) {

@@ -92,6 +92,20 @@ model Session {
   @@map("sessions")
 }
 
+// ─── FeatureSuggestion ──────────────────────────────────
+
+model FeatureSuggestion {
+  id             String   @id @default(cuid())
+  suggestion     String
+  userName       String
+  userEmail      String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("feature_suggestions")
+}
+
 // ─── Invitation ─────────────────────────────────────────
 
 model Invitation {

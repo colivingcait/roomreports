@@ -4,7 +4,7 @@ import StartInspection from '../components/StartInspection';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In/Out',
+  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 const TYPE_COLORS = {
   QUARTERLY: { bg: '#E8F0E9', color: '#3B6D11' },
@@ -92,7 +92,7 @@ export default function Dashboard() {
           </div>
           <div className="db-card-body">
             {pendingReview.length === 0 ? (
-              <div className="db-empty">&check; All caught up</div>
+              <div className="db-empty">{'\u2713'} All caught up</div>
             ) : (
               pendingReview.slice(0, 4).map((p) => {
                 const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };
@@ -200,7 +200,7 @@ export default function Dashboard() {
           </div>
           <div className="db-card-body">
             {overdueRooms.length === 0 ? (
-              <div className="db-empty">&check; All rooms on schedule</div>
+              <div className="db-empty">{'\u2713'} All rooms on schedule</div>
             ) : (
               overdueRooms.slice(0, 5).map((r) => (
                 <div key={r.roomId} className="db-row">
