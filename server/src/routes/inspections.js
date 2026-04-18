@@ -431,6 +431,64 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
+// ─── DELETE /api/inspections/:id — soft-delete a draft ──
+
+router.delete('/:id', async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({ error: 'Inspection not found' });
+    }
+
+    if (inspection.status !== 'DRAFT') {
+      return res.status(400).json({ error: 'Can only delete DRAFT inspections' });
+    }
+
+    await prisma.inspection.update({
+      where: { id: inspection.id },
+      data: { deletedAt: new Date() },
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete inspection error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/bulk-delete — soft-delete multiple drafts ──
+
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const result = await prisma.inspection.updateMany({
+      where: {
+        id: { in: ids },
+        organizationId: req.user.organizationId,
+        status: 'DRAFT',
+        deletedAt: null,
+      },
+      data: { deletedAt: new Date() },
+    });
+
+    return res.json({ deleted: result.count });
+  } catch (error) {
+    console.error('Bulk delete inspections error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/inspections/pending — SUBMITTED for dashboard ──
 
 router.get('/pending', async (req, res) => {

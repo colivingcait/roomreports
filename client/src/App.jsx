@@ -52,7 +52,8 @@ function App() {
 
             {/* Full-screen inspection flows (no nav) */}
             <Route path="/inspections/:id" element={<InspectionFlow />} />
-            <Route path="/quarterly" element={<QuarterlyFlow />} />
+            <Route path="/quarterly/:propertyId" element={<QuarterlyFlow />} />
+            <Route path="/quarterly/:propertyId/:roomId" element={<QuarterlyFlow />} />
 
             {/* Resident experience — minimal layout */}
             <Route element={<ResidentLayout />}>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
 
@@ -13,7 +13,6 @@ const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
 
-// Sort by numeric portion of room label (Room 1, Room 2, ...). Fallback to alphabetical.
 function sortRooms(inspections) {
   return [...inspections].sort((a, b) => {
     const la = a.roomLabel || '';
@@ -136,8 +135,7 @@ function ChecklistItem({ item, inspectionId, saveItem, onItemUpdate }) {
           inspectionId={inspectionId}
           onUpdate={(updated) => {
             onItemUpdate(updated);
-            const { photos, ...saveable } = updated;
-            saveItem(item.id, { flagCategory: saveable.flagCategory, note: saveable.note, isMaintenance: saveable.isMaintenance });
+            saveItem(item.id, { flagCategory: updated.flagCategory, note: updated.note, isMaintenance: updated.isMaintenance });
           }}
         />
       )}
@@ -226,11 +224,9 @@ function RoomChecklist({ inspection, onBack, onDone, propertyName }) {
 
 export default function QuarterlyFlow() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const propertyId = searchParams.get('propertyId');
+  const { propertyId, roomId: activeRoomId } = useParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeRoomId, setActiveRoomId] = useState(null);
   const [roomStatuses, setRoomStatuses] = useState({});
   const [nextRoomId, setNextRoomId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -242,10 +238,8 @@ export default function QuarterlyFlow() {
         method: 'POST',
         body: JSON.stringify({ propertyId }),
       });
-      // Sort rooms numerically
       d.inspections = sortRooms(d.inspections);
       setData(d);
-      // Initialize room statuses
       const statuses = {};
       for (const insp of d.inspections) {
         const total = insp.items.length;
@@ -263,18 +257,18 @@ export default function QuarterlyFlow() {
 
   useEffect(() => { if (propertyId) fetchBatch(); }, [propertyId, fetchBatch]);
 
-  const handleRoomDone = (roomId, items) => {
+  const handleRoomDone = (doneRoomId, items) => {
     const total = items.length;
     const done = items.filter((i) => i.status).length;
     const flags = items.filter((i) => i.status === 'Fail').length;
     const updated = {
       ...roomStatuses,
-      [roomId]: { ...roomStatuses[roomId], done, flags, total },
+      [doneRoomId]: { ...roomStatuses[doneRoomId], done, flags, total },
     };
     setRoomStatuses(updated);
 
-    // Find the next uncompleted room (in sorted order) to highlight
-    const idx = data.inspections.findIndex((i) => i.roomId === roomId);
+    // Find next uncompleted room
+    const idx = data.inspections.findIndex((i) => i.roomId === doneRoomId);
     const nextInsp = data.inspections.slice(idx + 1).concat(data.inspections.slice(0, idx))
       .find((i) => {
         const s = updated[i.roomId];
@@ -282,7 +276,12 @@ export default function QuarterlyFlow() {
       });
     setNextRoomId(nextInsp?.roomId || null);
 
-    setActiveRoomId(null);
+    // Navigate back to room grid (pop room from history)
+    navigate(`/quarterly/${propertyId}`, { replace: true });
+  };
+
+  const handleBackToRooms = () => {
+    navigate(`/quarterly/${propertyId}`);
   };
 
   const handleSubmitAll = async () => {
@@ -306,7 +305,7 @@ export default function QuarterlyFlow() {
   if (error && !data) return <div className="page-container"><div className="auth-error">{error}</div></div>;
   if (!data) return null;
 
-  // If a room is active, show its checklist
+  // If a room is active (via URL param), show its checklist
   if (activeRoomId) {
     const insp = data.inspections.find((i) => i.roomId === activeRoomId);
     if (insp) {
@@ -314,7 +313,7 @@ export default function QuarterlyFlow() {
         <RoomChecklist
           inspection={insp}
           propertyName={data.propertyName}
-          onBack={() => setActiveRoomId(null)}
+          onBack={handleBackToRooms}
           onDone={(items) => handleRoomDone(activeRoomId, items)}
         />
       );
@@ -326,8 +325,8 @@ export default function QuarterlyFlow() {
   const completedRooms = Object.values(roomStatuses).filter((s) => s.done === s.total).length;
   const allRoomsDone = completedRooms === totalRooms;
 
-  const roomStatusBadge = (roomId) => {
-    const s = roomStatuses[roomId];
+  const roomStatusBadge = (rid) => {
+    const s = roomStatuses[rid];
     if (!s || s.done === 0) return { label: 'Start', color: '#8A8583', bg: '#F0EDEB' };
     if (s.done < s.total) return { label: `${s.done}/${s.total}`, color: '#854F0B', bg: '#FAEEDA' };
     if (s.flags > 0) return { label: `Done \u00b7 ${s.flags} flag${s.flags !== 1 ? 's' : ''}`, color: '#C0392B', bg: '#FCEBEB' };
@@ -337,7 +336,7 @@ export default function QuarterlyFlow() {
   return (
     <div className="q-flow-page">
       <div className="q-flow-header">
-        <button className="btn-text" onClick={() => navigate('/dashboard')}>&larr; Dashboard</button>
+        <button className="btn-text" onClick={() => navigate('/dashboard')}>Save &amp; exit</button>
         <h1>Quarterly Inspection</h1>
         <p className="q-flow-subtitle">{data.propertyName} &middot; {completedRooms}/{totalRooms} rooms completed</p>
         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${totalRooms > 0 ? (completedRooms / totalRooms) * 100 : 0}%` }} /></div>
@@ -348,13 +347,12 @@ export default function QuarterlyFlow() {
       <div className="q-room-grid">
         {data.inspections.map((insp) => {
           const badge = roomStatusBadge(insp.roomId);
-          const room = { id: insp.roomId, label: insp.roomLabel, items: insp.items };
           const s = roomStatuses[insp.roomId] || { done: 0, total: insp.items.length };
           return (
             <div
               key={insp.roomId}
               className={`q-room-card ${nextRoomId === insp.roomId ? 'q-room-card-next' : ''}`}
-              onClick={() => { setActiveRoomId(insp.roomId); setNextRoomId(null); }}
+              onClick={() => { setNextRoomId(null); navigate(`/quarterly/${propertyId}/${insp.roomId}`); }}
             >
               <div className="q-room-card-bar" style={{ background: s.done === s.total && s.total > 0 ? '#6B8F71' : s.done > 0 ? '#C9A84C' : '#E8E4E1' }} />
               <div className="q-room-card-body">

@@ -63,7 +63,7 @@ export default function StartInspection({ open, onClose }) {
       // Quarterly gets its own multi-room flow
       if (type === 'QUARTERLY') {
         onClose();
-        navigate(`/quarterly?propertyId=${propertyId}`);
+        navigate(`/quarterly/${propertyId}`);
         return;
       }
 

@@ -273,9 +273,9 @@ export default function InspectionFlow() {
       if (!res.ok) throw new Error(data.error);
 
       // Quarterly inspections use the dedicated multi-room flow.
-      // Redirect DRAFT quarterly to /quarterly?propertyId=X
+      // Redirect DRAFT quarterly to the multi-room flow
       if (data.inspection?.type === 'QUARTERLY' && data.inspection?.status === 'DRAFT') {
-        navigate(`/quarterly?propertyId=${data.inspection.propertyId}`, { replace: true });
+        navigate(`/quarterly/${data.inspection.propertyId}`, { replace: true });
         return;
       }
 

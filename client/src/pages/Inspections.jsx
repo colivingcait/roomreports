@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 import RoomHistory from '../components/RoomHistory';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
@@ -19,9 +20,52 @@ function timeAgo(date) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+const api = (path, opts = {}) =>
+  fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
+    .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
+
+// Group quarterly inspections by property+date (within same day = one batch)
+function groupInspections(inspections) {
+  const grouped = [];
+  const quarterlyBuckets = {};
+
+  for (const insp of inspections) {
+    if (insp.type === 'QUARTERLY') {
+      const dateKey = new Date(insp.createdAt).toDateString();
+      const key = `${insp.property?.id || ''}-${dateKey}-${insp.status}`;
+      if (!quarterlyBuckets[key]) {
+        quarterlyBuckets[key] = {
+          id: `qgroup-${key}`,
+          isGroup: true,
+          type: 'QUARTERLY',
+          status: insp.status,
+          property: insp.property,
+          createdAt: insp.createdAt,
+          inspections: [],
+          _count: { items: 0 },
+        };
+        grouped.push(quarterlyBuckets[key]);
+      }
+      quarterlyBuckets[key].inspections.push(insp);
+      quarterlyBuckets[key]._count.items += insp._count?.items || 0;
+    } else {
+      grouped.push(insp);
+    }
+  }
+
+  // Set room count label for quarterly groups
+  for (const g of Object.values(quarterlyBuckets)) {
+    g.roomCount = g.inspections.length;
+    g.propertyId = g.property?.id;
+  }
+
+  return grouped;
+}
+
 export default function Inspections() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [inspections, setInspections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
@@ -32,17 +76,24 @@ export default function Inspections() {
   const [filterProperty, setFilterProperty] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
   const [filterType, setFilterType] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
   const [rooms, setRooms] = useState([]);
 
-  // Load properties
+  // Selection mode
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+
+  // Delete
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+
   useEffect(() => {
     fetch('/api/properties', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setProperties(d.properties || []));
   }, []);
 
-  // Load rooms when property changes
   useEffect(() => {
     if (filterProperty) {
       fetch(`/api/properties/${filterProperty}`, { credentials: 'include' })
@@ -54,8 +105,7 @@ export default function Inspections() {
     }
   }, [filterProperty]);
 
-  // Fetch inspections with filters
-  useEffect(() => {
+  const fetchInspections = () => {
     const params = new URLSearchParams();
     if (filterProperty) params.set('propertyId', filterProperty);
     if (filterRoom) params.set('roomId', filterRoom);
@@ -67,7 +117,80 @@ export default function Inspections() {
       .then((r) => r.json())
       .then((d) => setInspections(d.inspections || []))
       .finally(() => setLoading(false));
-  }, [filterProperty, filterRoom, filterType, filterStatus]);
+  };
+
+  useEffect(() => { fetchInspections(); }, [filterProperty, filterRoom, filterType, filterStatus]);
+
+  const grouped = groupInspections(inspections);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      if (deleteTarget.isGroup) {
+        const ids = deleteTarget.inspections.map((i) => i.id);
+        await api('/api/inspections/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+      } else {
+        await api(`/api/inspections/${deleteTarget.id}`, { method: 'DELETE' });
+      }
+      setDeleteTarget(null);
+      fetchInspections();
+    } catch { /* ignore */ }
+    finally { setDeleting(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    setDeleting(true);
+    try {
+      // Expand any quarterly groups into individual IDs
+      const ids = [];
+      for (const item of grouped) {
+        if (!selected.has(item.id)) continue;
+        if (item.isGroup) {
+          for (const i of item.inspections) ids.push(i.id);
+        } else {
+          ids.push(item.id);
+        }
+      }
+      await api('/api/inspections/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+      setSelected(new Set());
+      setSelectMode(false);
+      setBulkDeleteConfirm(false);
+      fetchInspections();
+    } catch { /* ignore */ }
+    finally { setDeleting(false); }
+  };
+
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllDrafts = () => {
+    const draftIds = grouped.filter((i) => i.status === 'DRAFT').map((i) => i.id);
+    setSelected(new Set(draftIds));
+  };
+
+  const handleRowClick = (item) => {
+    if (selectMode) {
+      if (item.status === 'DRAFT') toggleSelect(item.id);
+      return;
+    }
+    if (item.isGroup) {
+      navigate(`/quarterly/${item.propertyId}`);
+    } else if (item.status === 'DRAFT') {
+      if (item.type === 'QUARTERLY') {
+        navigate(`/quarterly/${item.property?.id}`);
+      } else {
+        navigate(`/inspections/${item.id}`);
+      }
+    } else {
+      navigate(`/inspections/${item.id}/review`);
+    }
+  };
 
   return (
     <div className="page-container">
@@ -76,16 +199,32 @@ export default function Inspections() {
           <h1>Inspections</h1>
           <p className="page-subtitle">{inspections.length} inspection{inspections.length !== 1 ? 's' : ''}</p>
         </div>
-        <button className="btn-primary-sm" onClick={() => setShowStart(true)}>
-          + New Inspection
-        </button>
+        <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
       </div>
 
-      {notification && (
-        <div className="notification-bar">{notification}</div>
+      {notification && <div className="notification-bar">{notification}</div>}
+
+      {/* Bulk select bar */}
+      {selectMode && (
+        <div className="bulk-bar">
+          <div className="bulk-bar-left">
+            <span className="bulk-count">{selected.size} selected</span>
+            <button className="btn-text-sm" onClick={selectAllDrafts}>Select all drafts</button>
+          </div>
+          <div className="bulk-bar-right">
+            <button className="btn-text-sm" onClick={() => { setSelectMode(false); setSelected(new Set()); }}>Cancel</button>
+            <button
+              className="btn-danger-sm"
+              onClick={() => setBulkDeleteConfirm(true)}
+              disabled={selected.size === 0}
+            >
+              Delete selected
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Filter bar */}
+      {/* Filters */}
       <div className="insp-filters">
         <select className="filter-select" value={filterProperty} onChange={(e) => { setFilterProperty(e.target.value); setFilterRoom(''); }}>
           <option value="">All Properties</option>
@@ -111,62 +250,77 @@ export default function Inspections() {
           <option value="REVIEWED">Reviewed</option>
         </select>
 
+        {!selectMode && (
+          <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select</button>
+        )}
+
         {(filterProperty || filterType || filterStatus || filterRoom) && (
-          <button
-            className="btn-text-sm"
-            onClick={() => { setFilterProperty(''); setFilterRoom(''); setFilterType(''); setFilterStatus(''); }}
-          >
-            Clear filters
+          <button className="btn-text-sm" onClick={() => { setFilterProperty(''); setFilterRoom(''); setFilterType(''); setFilterStatus(''); }}>
+            Clear
           </button>
         )}
       </div>
 
-      {/* Room history view when a specific room is selected */}
-      {filterRoom && (
-        <RoomHistory roomId={filterRoom} />
-      )}
+      {filterRoom && <RoomHistory roomId={filterRoom} />}
 
-      {/* Inspections list */}
+      {/* List */}
       {loading ? (
         <div className="page-loading">Loading...</div>
-      ) : inspections.length === 0 ? (
+      ) : grouped.length === 0 ? (
         <div className="empty-state">
           <p>No inspections match your filters</p>
           <button className="btn-primary-sm" onClick={() => setShowStart(true)}>Start an inspection</button>
         </div>
       ) : (
         <div className="insp-history-list">
-          {inspections.map((insp) => (
+          {grouped.map((item) => (
             <div
-              key={insp.id}
-              className="insp-history-row"
-              onClick={() => navigate(
-                insp.status === 'DRAFT'
-                  ? `/inspections/${insp.id}`
-                  : `/inspections/${insp.id}/review`,
-              )}
+              key={item.id}
+              className={`insp-history-row ${selectMode && item.status === 'DRAFT' ? 'selectable' : ''}`}
+              onClick={() => handleRowClick(item)}
             >
+              {selectMode && item.status === 'DRAFT' && (
+                <input
+                  type="checkbox"
+                  className="insp-checkbox"
+                  checked={selected.has(item.id)}
+                  onChange={() => toggleSelect(item.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+
               <div className="insp-history-left">
-                <span className="dash-type-badge">{TYPE_LABELS[insp.type] || insp.type}</span>
+                <span className="dash-type-badge">{TYPE_LABELS[item.type] || item.type}</span>
                 <div className="insp-history-info">
                   <span className="insp-history-prop">
-                    {insp.property?.name}{insp.room ? ` — ${insp.room.label}` : ''}
+                    {item.property?.name || item.inspections?.[0]?.property?.name}
+                    {item.isGroup
+                      ? ` (${item.roomCount} room${item.roomCount !== 1 ? 's' : ''})`
+                      : item.room ? ` \u2014 ${item.room.label}` : ''}
                   </span>
-                  <span className="insp-history-inspector">
-                    {insp.inspectorName || 'Unknown'} &middot; {timeAgo(insp.createdAt)}
-                  </span>
+                  <span className="insp-history-inspector">{timeAgo(item.createdAt)}</span>
                 </div>
               </div>
+
               <div className="insp-history-right">
-                {(insp._count?.items > 0 || insp.flagCount > 0) && (
-                  <span className="insp-history-items">{insp._count?.items || 0} items</span>
-                )}
+                <span className="insp-history-items">
+                  {item.isGroup ? `${item._count.items} items` : `${item._count?.items || 0} items`}
+                </span>
                 <span
                   className="insp-status-badge"
-                  style={{ color: STATUS_COLORS[insp.status], borderColor: STATUS_COLORS[insp.status] }}
+                  style={{ color: STATUS_COLORS[item.status], borderColor: STATUS_COLORS[item.status] }}
                 >
-                  {insp.status}
+                  {item.status}
                 </span>
+                {!selectMode && item.status === 'DRAFT' && (
+                  <button
+                    className="insp-delete-btn"
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }}
+                    title="Delete draft"
+                  >
+                    &#128465;
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -174,6 +328,28 @@ export default function Inspections() {
       )}
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        loading={deleting}
+        title="Delete Draft"
+        message={
+          deleteTarget?.isGroup
+            ? `Delete this quarterly draft (${deleteTarget.roomCount} rooms)? This cannot be undone.`
+            : 'Delete this draft inspection? This cannot be undone.'
+        }
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteConfirm}
+        onClose={() => setBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDelete}
+        loading={deleting}
+        title="Delete Selected"
+        message={`Delete ${selected.size} draft inspection${selected.size !== 1 ? 's' : ''}? This cannot be undone.`}
+      />
     </div>
   );
 }
