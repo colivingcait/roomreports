@@ -185,59 +185,58 @@ function generateRoomTurn(property, room) {
 
 function generateQuarterly(property, room) {
   const items = [];
+  const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
 
-  // Room structure
+  // Room Condition
   items.push(
-    item('Structure', 'Walls — cracks, water damage, or peeling paint', CONDITION_OPTIONS),
-    item('Structure', 'Ceiling — stains, cracks, or sagging', CONDITION_OPTIONS),
-    item('Structure', 'Floor — damage, warping, or loose tiles', CONDITION_OPTIONS),
-    item('Structure', 'Door — hinges, handle, and lock', CONDITION_OPTIONS),
-    item('Structure', 'Windows — seals, glass, screens', CONDITION_OPTIONS),
+    pf('Room Condition', 'Room is clean and tidy'),
+    pf('Room Condition', 'No unusual odors'),
+    pf('Room Condition', 'Walls, floors, and ceiling in good condition'),
+    pf('Room Condition', 'Windows and locks functional'),
+    pf('Room Condition', 'Door and lock functional'),
+    pf('Room Condition', 'No pests or pest evidence'),
+    pf('Room Condition', 'No mold or moisture issues'),
+    pf('Room Condition', 'All furniture in good condition'),
+    pf('Room Condition', 'Mattress encasement in use'),
   );
 
   // Safety
   items.push(
-    item('Safety', 'Smoke detector — present and tested'),
-    item('Safety', 'CO detector — present and tested'),
-    item('Safety', 'No fire hazards (blocked exits, overloaded outlets)'),
-    item('Safety', 'No unauthorized space heaters'),
-    item('Safety', 'Electrical outlets — no damage or sparking', CONDITION_OPTIONS),
+    pf('Safety', 'Smoke detector present and working'),
+    pf('Safety', 'No overloaded outlets or daisy-chaining'),
+    pf('Safety', 'Egress path clear'),
   );
 
-  // Furniture condition
-  for (const f of room?.furniture || []) {
-    items.push(item('Furniture', `${f} — condition check`, CONDITION_OPTIONS));
-  }
+  // Compliance
+  items.push(
+    pf('Compliance', 'No open food or improper food storage'),
+    pf('Compliance', 'No smoking evidence'),
+    pf('Compliance', 'No open flames, candles, or incense'),
+    pf('Compliance', 'No lithium battery chargers (hoverboards, scooters)'),
+    pf('Compliance', 'No unauthorized occupants or guests'),
+    pf('Compliance', 'No unauthorized pets'),
+    pf('Compliance', 'No unauthorized modifications'),
+    pf('Compliance', 'No prohibited appliances (space heaters, hot plates)'),
+    pf('Compliance', 'No prohibited substances or paraphernalia'),
+    pf('Compliance', 'No prohibited weapons'),
+  );
 
-  // Feature-specific checks
+  // Feature-specific
   if (room?.features?.includes('Ensuite Bathroom')) {
-    items.push(
-      item('Ensuite Bathroom', 'Plumbing — no leaks'),
-      item('Ensuite Bathroom', 'Caulking condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Grout condition', CONDITION_OPTIONS),
-      item('Ensuite Bathroom', 'Ventilation adequate'),
-    );
+    items.push(pf('Features', 'Ensuite bathroom clean and functional'));
   }
-
+  if (room?.features?.includes('Mini Fridge')) {
+    items.push(pf('Features', 'Mini fridge clean and working'));
+  }
+  if (room?.features?.includes('Separate Entry')) {
+    items.push(pf('Features', 'Separate entry lock functional'));
+  }
   if (room?.features?.includes('Window AC')) {
-    items.push(
-      item('HVAC', 'AC unit — filter replaced/cleaned'),
-      item('HVAC', 'AC unit — no leaks or unusual noise'),
-    );
+    items.push(pf('Features', 'Window AC unit working properly'));
   }
-
-  // Pest check
-  items.push(
-    item('Pest', 'No signs of pests (droppings, damage, nests)'),
-    item('Pest', 'No signs of bed bugs'),
-  );
-
-  // Cleanliness
-  items.push(
-    item('Cleanliness', 'Overall room cleanliness', CLEAN_OPTIONS),
-    item('Cleanliness', 'No excessive clutter or hoarding'),
-    item('Cleanliness', 'No unauthorized modifications to room'),
-  );
+  if (room?.features?.includes('Basement Room')) {
+    items.push(pf('Features', 'No basement moisture or seepage'));
+  }
 
   return items;
 }

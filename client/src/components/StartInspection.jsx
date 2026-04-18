@@ -6,7 +6,7 @@ import Modal from './Modal';
 const INSPECTION_TYPES = [
   { value: 'COMMON_AREA', label: 'Common Area', needsRoom: false },
   { value: 'ROOM_TURN', label: 'Room Turn', needsRoom: true },
-  { value: 'QUARTERLY', label: 'Quarterly', needsRoom: true },
+  { value: 'QUARTERLY', label: 'Quarterly', needsRoom: false },
   { value: 'RESIDENT_SELF_CHECK', label: 'Resident Self-Check', needsRoom: true },
   { value: 'MOVE_IN_OUT', label: 'Move-In/Out', needsRoom: true },
 ];
@@ -60,6 +60,13 @@ export default function StartInspection({ open, onClose }) {
     setLoading(true);
     setError('');
     try {
+      // Quarterly gets its own multi-room flow
+      if (type === 'QUARTERLY') {
+        onClose();
+        navigate(`/quarterly?propertyId=${propertyId}`);
+        return;
+      }
+
       const body = { type, propertyId };
       if (selectedType?.needsRoom) body.roomId = roomId;
       if (type === 'MOVE_IN_OUT' && direction) body.direction = direction;

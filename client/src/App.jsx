@@ -13,6 +13,7 @@ import PropertyOverview from './pages/PropertyOverview';
 import Inspections from './pages/Inspections';
 import InspectionFlow from './pages/InspectionFlow';
 import InspectionReview from './pages/InspectionReview';
+import QuarterlyFlow from './pages/QuarterlyFlow';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
 import ResidentHome from './pages/ResidentHome';
@@ -49,8 +50,9 @@ function App() {
               <Route path="/team" element={<Team />} />
             </Route>
 
-            {/* Full-screen inspection flow (no nav) */}
+            {/* Full-screen inspection flows (no nav) */}
             <Route path="/inspections/:id" element={<InspectionFlow />} />
+            <Route path="/quarterly" element={<QuarterlyFlow />} />
 
             {/* Resident experience — minimal layout */}
             <Route element={<ResidentLayout />}>

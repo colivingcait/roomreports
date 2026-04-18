@@ -38,6 +38,102 @@ async function verifyPropertyAccess(userId, role, propertyId, organizationId) {
   return { property };
 }
 
+// ─── POST /api/inspections/quarterly-batch — start quarterly for all rooms ──
+
+router.post('/quarterly-batch', async (req, res) => {
+  try {
+    const { propertyId } = req.body;
+    const { role, organizationId } = req.user;
+
+    if (!propertyId) {
+      return res.status(400).json({ error: 'propertyId is required' });
+    }
+
+    const allowed = TYPE_PERMISSIONS[role] || [];
+    if (!allowed.includes('QUARTERLY')) {
+      return res.status(403).json({ error: 'Not authorized for quarterly inspections' });
+    }
+
+    const access = await verifyPropertyAccess(req.user.id, role, propertyId, organizationId);
+    if (access.error) return res.status(access.status).json({ error: access.error });
+    const { property } = access;
+
+    if (!property.rooms.length) {
+      return res.status(400).json({ error: 'Property has no rooms' });
+    }
+
+    // Check for existing DRAFT quarterly inspections for these rooms
+    const existingDrafts = await prisma.inspection.findMany({
+      where: {
+        propertyId,
+        type: 'QUARTERLY',
+        status: 'DRAFT',
+        organizationId,
+        deletedAt: null,
+        roomId: { in: property.rooms.map((r) => r.id) },
+      },
+      include: {
+        items: { orderBy: { createdAt: 'asc' } },
+        room: { select: { id: true, label: true } },
+      },
+    });
+
+    const existingByRoom = {};
+    for (const d of existingDrafts) existingByRoom[d.roomId] = d;
+
+    // Create inspections for rooms that don't have drafts
+    const created = [];
+    for (const room of property.rooms) {
+      if (existingByRoom[room.id]) continue;
+
+      const checklistItems = generateChecklist('QUARTERLY', property, room);
+      const insp = await prisma.inspection.create({
+        data: {
+          type: 'QUARTERLY',
+          propertyId,
+          roomId: room.id,
+          inspectorId: req.user.id,
+          inspectorName: req.user.name,
+          inspectorRole: role,
+          organizationId,
+          items: {
+            create: checklistItems.map((item) => ({
+              zone: item.zone,
+              text: item.text,
+              options: item.options,
+              status: item.status,
+            })),
+          },
+        },
+        include: {
+          items: { orderBy: { createdAt: 'asc' } },
+          room: { select: { id: true, label: true } },
+        },
+      });
+      created.push(insp);
+    }
+
+    // Combine existing drafts and newly created
+    const allInspections = [...existingDrafts, ...created];
+
+    return res.status(201).json({
+      inspections: allInspections.map((i) => ({
+        id: i.id,
+        roomId: i.roomId,
+        roomLabel: i.room?.label,
+        status: i.status,
+        items: i.items,
+        completedAt: i.completedAt,
+      })),
+      propertyId,
+      propertyName: property.name,
+    });
+  } catch (error) {
+    console.error('Quarterly batch error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── POST /api/inspections — create new inspection ──────
 
 router.post('/', async (req, res) => {
