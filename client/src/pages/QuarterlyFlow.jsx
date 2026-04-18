@@ -151,32 +151,58 @@ function ChecklistItem({ item, inspectionId, saveItem, onItemUpdate }) {
 
 // ─── Room Checklist ─────────────────────────────────────
 
-function RoomChecklist({ inspection, onBack, onDone, propertyName }) {
-  const [items, setItems] = useState(inspection.items || []);
-  const { saveItem, saveStatus } = useAutoSave(inspection.id);
+function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, onItemsSynced }) {
+  const [items, setItems] = useState([]);
+  const [loadingRoom, setLoadingRoom] = useState(true);
+  const { saveItem, saveStatus } = useAutoSave(inspectionId);
+
+  // Fetch fresh data from server on mount
+  useEffect(() => {
+    setLoadingRoom(true);
+    fetch(`/api/inspections/${inspectionId}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.inspection?.items) setItems(d.inspection.items);
+      })
+      .finally(() => setLoadingRoom(false));
+  }, [inspectionId]);
 
   const handleItemUpdate = useCallback((updated) => {
     setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
   }, []);
 
+  // When leaving: sync current items state to parent
+  const handleBack = () => {
+    onItemsSynced(items);
+    onBack();
+  };
+
+  const handleDone = () => {
+    onItemsSynced(items);
+    onDone(items);
+  };
+
+  const visibleItems = items.filter((i) => !i.zone.startsWith('_'));
   const zones = [];
   const zoneMap = {};
-  for (const item of items) {
+  for (const item of visibleItems) {
     if (!zoneMap[item.zone]) { zoneMap[item.zone] = []; zones.push(item.zone); }
     zoneMap[item.zone].push(item);
   }
 
-  const total = items.length;
-  const done = items.filter((i) => i.status).length;
-  const flags = items.filter((i) => i.status === 'Fail').length;
+  const total = visibleItems.length;
+  const done = visibleItems.filter((i) => i.status).length;
+  const flags = visibleItems.filter((i) => i.status === 'Fail').length;
   const progress = total > 0 ? (done / total) * 100 : 0;
   const allDone = done === total;
+
+  if (loadingRoom) return <div className="page-loading">Loading room...</div>;
 
   return (
     <div className="q-room-page">
       <div className="q-room-header">
         <div className="q-room-header-top">
-          <button className="btn-text" onClick={onBack}>&larr; Back to rooms</button>
+          <button className="btn-text" onClick={handleBack}>&larr; Back to rooms</button>
           <div className="save-indicator">
             {saveStatus === 'saving' && <span className="save-saving">Saving...</span>}
             {saveStatus === 'saved' && <span className="save-saved">Saved &#10003;</span>}
@@ -184,7 +210,7 @@ function RoomChecklist({ inspection, onBack, onDone, propertyName }) {
           </div>
         </div>
         <div className="q-room-header-info">
-          <h1>{inspection.roomLabel}</h1>
+          <h1>{roomLabel}</h1>
           <span className="q-room-header-meta">{propertyName} &middot; Quarterly &middot; {done}/{total}</span>
         </div>
         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${progress}%` }} /></div>
@@ -198,7 +224,7 @@ function RoomChecklist({ inspection, onBack, onDone, propertyName }) {
               <ChecklistItem
                 key={item.id}
                 item={item}
-                inspectionId={inspection.id}
+                inspectionId={inspectionId}
                 saveItem={saveItem}
                 onItemUpdate={handleItemUpdate}
               />
@@ -208,10 +234,10 @@ function RoomChecklist({ inspection, onBack, onDone, propertyName }) {
       </div>
 
       <div className="q-room-footer">
-        <button className="btn-text" onClick={onBack}>&larr; Back to rooms</button>
+        <button className="btn-text" onClick={handleBack}>&larr; Back to rooms</button>
         <button
           className="q-done-btn"
-          onClick={() => onDone(items)}
+          onClick={handleDone}
           disabled={!allDone}
         >
           {allDone ? `Done with room${flags > 0 ? ` (${flags} flag${flags !== 1 ? 's' : ''})` : ''}` : `${total - done} items remaining`}
@@ -260,15 +286,31 @@ export default function QuarterlyFlow() {
 
   useEffect(() => { if (propertyId) fetchBatch(); }, [propertyId, fetchBatch]);
 
+  // Update local status when items are synced back from checklist
+  const handleItemsSynced = (roomId, freshItems) => {
+    // Update the in-memory data so room grid shows correct counts
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        inspections: prev.inspections.map((insp) =>
+          insp.roomId === roomId ? { ...insp, items: freshItems } : insp,
+        ),
+      };
+    });
+    // Recompute status for this room
+    const visible = freshItems.filter((i) => !i.zone?.startsWith('_'));
+    const total = visible.length;
+    const done = visible.filter((i) => i.status).length;
+    const flags = visible.filter((i) => i.status === 'Fail').length;
+    setRoomStatuses((prev) => ({
+      ...prev,
+      [roomId]: { ...prev[roomId], total, done, flags },
+    }));
+  };
+
   const handleRoomDone = (doneRoomId, items) => {
-    const total = items.length;
-    const done = items.filter((i) => i.status).length;
-    const flags = items.filter((i) => i.status === 'Fail').length;
-    const updated = {
-      ...roomStatuses,
-      [doneRoomId]: { ...roomStatuses[doneRoomId], done, flags, total },
-    };
-    setRoomStatuses(updated);
+    handleItemsSynced(doneRoomId, items);
 
     // Find next uncompleted room
     const idx = data.inspections.findIndex((i) => i.roomId === doneRoomId);
@@ -347,10 +389,12 @@ export default function QuarterlyFlow() {
     if (insp) {
       return (
         <RoomChecklist
-          inspection={insp}
+          inspectionId={insp.id}
+          roomLabel={insp.roomLabel}
           propertyName={data.propertyName}
           onBack={handleBackToRooms}
           onDone={(items) => handleRoomDone(activeRoomId, items)}
+          onItemsSynced={(freshItems) => handleItemsSynced(activeRoomId, freshItems)}
         />
       );
     }
