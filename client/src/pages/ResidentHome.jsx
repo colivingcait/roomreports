@@ -6,11 +6,11 @@ export default function ResidentHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
-  const [properties, setProperties] = useState([]);
   const [roomId, setRoomId] = useState('');
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState('');
   const [error, setError] = useState('');
   const [lastCheck, setLastCheck] = useState(null);
+  const [hasMoveIn, setHasMoveIn] = useState(null); // null = loading, bool = known
 
   useEffect(() => {
     // Load available rooms (residents usually have only one)
@@ -18,8 +18,6 @@ export default function ResidentHome() {
       .then((r) => r.json())
       .then(async (d) => {
         const props = d.properties || [];
-        setProperties(props);
-        // Load rooms for each property
         const allRooms = [];
         for (const p of props) {
           const res = await fetch(`/api/properties/${p.id}`, { credentials: 'include' });
@@ -36,19 +34,25 @@ export default function ResidentHome() {
     fetch('/api/inspections?type=RESIDENT_SELF_CHECK', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
-        if (d.inspections?.length) {
-          setLastCheck(d.inspections[0]);
-        }
+        if (d.inspections?.length) setLastCheck(d.inspections[0]);
       });
+
+    // Check if resident has already done their Move-In inspection
+    fetch('/api/inspections?type=MOVE_IN_OUT', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        setHasMoveIn((d.inspections || []).length > 0);
+      })
+      .catch(() => setHasMoveIn(true)); // fail-safe: hide move-in button
   }, []);
 
-  const handleStart = async () => {
+  const startInspection = async (type) => {
     const room = rooms.find((r) => r.id === roomId);
     if (!room) {
       setError('Please select your room');
       return;
     }
-    setStarting(true);
+    setStarting(type);
     setError('');
     try {
       const res = await fetch('/api/inspections', {
@@ -56,7 +60,7 @@ export default function ResidentHome() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          type: 'RESIDENT_SELF_CHECK',
+          type,
           propertyId: room.propertyId,
           roomId: room.id,
         }),
@@ -67,7 +71,7 @@ export default function ResidentHome() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setStarting(false);
+      setStarting('');
     }
   };
 
@@ -82,14 +86,16 @@ export default function ResidentHome() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
+  const showMoveIn = hasMoveIn === false && rooms.length > 0;
+
   return (
     <div className="resident-home">
       <div className="resident-greeting">
         <h1>Hi {user?.name?.split(' ')[0] || 'there'}!</h1>
-        <p>Time for your monthly room check</p>
+        <p>{showMoveIn ? 'Welcome! Let\u2019s get your room documented.' : 'Time for your monthly room check'}</p>
       </div>
 
-      {lastCheck && (
+      {lastCheck && !showMoveIn && (
         <p className="resident-last-check">
           Your last check was {formatDate(lastCheck.createdAt)}
         </p>
@@ -116,17 +122,31 @@ export default function ResidentHome() {
 
       {error && <div className="auth-error">{error}</div>}
 
-      {rooms.length > 0 && (
-        <button
-          className="btn-resident-big"
-          onClick={handleStart}
-          disabled={starting || !roomId}
-        >
-          {starting ? 'Getting ready...' : 'Start Monthly Room Check'}
-        </button>
+      {showMoveIn && (
+        <>
+          <button
+            className="btn-resident-big"
+            onClick={() => startInspection('MOVE_IN_OUT')}
+            disabled={!!starting || !roomId}
+          >
+            {starting === 'MOVE_IN_OUT' ? 'Getting ready...' : 'Start Move-In Inspection'}
+          </button>
+          <p className="resident-estimate">Takes about 5 minutes</p>
+        </>
       )}
 
-      <p className="resident-estimate">Takes about 2-3 minutes</p>
+      {!showMoveIn && rooms.length > 0 && (
+        <>
+          <button
+            className="btn-resident-big"
+            onClick={() => startInspection('RESIDENT_SELF_CHECK')}
+            disabled={!!starting || !roomId}
+          >
+            {starting === 'RESIDENT_SELF_CHECK' ? 'Getting ready...' : 'Start Monthly Room Check'}
+          </button>
+          <p className="resident-estimate">Takes about 2-3 minutes</p>
+        </>
+      )}
     </div>
   );
 }

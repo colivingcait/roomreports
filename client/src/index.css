@@ -4727,3 +4727,120 @@ button.review-photo-thumb {
   font-size: 0.7rem;
   color: #8A8583;
 }
+
+/* ─── Resident Wizard v2 ─────────────────────────────── */
+
+.resident-step-count {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #B5B1AF;
+  margin-bottom: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.resident-camera-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 2rem 1rem;
+  margin-top: 1rem;
+  background: #FAF8F5;
+  border: 2px dashed #6B8F71;
+  border-radius: 16px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #6B8F71;
+  min-height: 140px;
+  transition: all 0.15s;
+}
+
+.resident-camera-btn:hover {
+  background: #F0F7F1;
+  border-color: #5A7D60;
+}
+
+.resident-camera-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.resident-camera-icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.resident-photo-preview {
+  margin: 1rem 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #F5F2EF;
+  max-height: 280px;
+}
+
+.resident-photo-preview img {
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+  object-fit: contain;
+  display: block;
+}
+
+.resident-photo-hint {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #C4703F;
+  margin-top: 0.75rem;
+  font-style: italic;
+}
+
+/* Yes/No big buttons */
+
+.resident-yesno {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.resident-yesno-btn {
+  min-height: 72px;
+  padding: 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border: 2px solid #E8E4E1;
+  border-radius: 14px;
+  background: #fff;
+  color: #4A4543;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.resident-yesno-btn:hover { border-color: #8A8583; }
+
+.resident-yesno-yes.selected {
+  background: #E8F0E9;
+  border-color: #6B8F71;
+  color: #3B6D11;
+}
+
+.resident-yesno-no.selected {
+  background: #F0EDEB;
+  border-color: #8A8583;
+  color: #4A4543;
+}
+
+.resident-footer-label {
+  font-size: 0.75rem;
+  color: #B5B1AF;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

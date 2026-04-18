@@ -277,170 +277,68 @@ function generateQuarterly(property, room) {
 
 function generateResidentSelfCheck(property, room) {
   const items = [];
+  const photoItem = (text) => item('Photos', text, ['photo']);
+  const yesNoItem = (text) => item('Questions', text, ['Yes', 'No']);
 
-  // Overall room condition
+  // Photos (required — one per screen)
   items.push(
-    item('Your Room', 'How does your room look overall?', ['Clean', 'Could Use Attention', 'Needs Help']),
+    photoItem('Take a photo of Wall 1'),
+    photoItem('Take a photo of Wall 2'),
+    photoItem('Take a photo of Wall 3'),
+    photoItem('Take a photo of Wall 4'),
+    photoItem('Take a photo of your mattress'),
+    photoItem('Take a photo of your window(s)'),
+    photoItem('Take a photo of your smoke detector'),
   );
 
-  // Under sink check (always applies — shared or ensuite)
+  // Questions
   items.push(
-    item('Under Sink', 'Any issues under your sink?', ['Looks Good', 'I See a Problem']),
-  );
-
-  // Bathroom (if ensuite)
-  if (room?.features?.includes('Ensuite Bathroom')) {
-    items.push(
-      item('Bathroom', 'How\u2019s your bathroom?', ['Clean', 'Needs Cleaning', 'Something\u2019s Broken']),
-    );
-  }
-
-  // Closet
-  items.push(
-    item('Closet', 'Check your closet area', ['All Good', 'Issue to Report']),
-  );
-
-  // Floors
-  items.push(
-    item('Floors', 'Look at your floors', ['Good Shape', 'Wear or Damage']),
-  );
-
-  // Walls
-  items.push(
-    item('Walls', 'Check your walls', ['Good Shape', 'Marks or Damage']),
-  );
-
-  // Pests
-  items.push(
-    item('Pests', 'Any pests spotted?', ['None', 'Yes']),
-  );
-
-  // Catch-all
-  items.push(
-    item('Anything Else', 'Anything that needs fixing?', ['Nothing', 'Yes — Let me tell you']),
+    yesNoItem('Any pest issues?'),
+    yesNoItem('Any mold or mildew?'),
+    yesNoItem('Any water leaks?'),
+    yesNoItem('Any broken furniture?'),
+    yesNoItem('Is your door lock working properly?'),
+    yesNoItem('Any other concerns?'),
   );
 
   return items;
 }
 
-// Items (by text) that should strongly prompt photos in the resident UI
-export const RESIDENT_PHOTO_PROMPTS = new Set([
-  'How does your room look overall?',
-  'Any issues under your sink?',
-  'How\u2019s your bathroom?',
-  'Check your closet area',
-]);
-
 // ─── MOVE_IN_OUT ────────────────────────────────────────
 
 function generateMoveInOut(property, room, direction) {
   const items = [];
+  const photoItem = (text) => item('Photos', text, ['photo']);
+  const yesNoItem = (text) => item('Questions', text, ['Yes', 'No']);
 
-  // Metadata item: stores direction (Move-In/Move-Out). Filtered out in UI.
-  if (direction) {
-    items.push({
-      zone: '_Direction',
-      text: 'Inspection direction',
-      options: ['Move-In', 'Move-Out'],
-      status: direction,
-    });
-  }
-
-  const cond = (zone, text) => item(zone, text, DETAILED_CONDITION);
-
-  // Walls — each direction documented separately
+  // Photos (required — baseline condition record)
   items.push(
-    cond('Walls', 'North wall — condition'),
-    cond('Walls', 'South wall — condition'),
-    cond('Walls', 'East wall — condition'),
-    cond('Walls', 'West wall — condition'),
-    cond('Ceiling', 'Ceiling — condition'),
-    cond('Floor', 'Floor — condition'),
+    photoItem('Take a photo of Wall 1'),
+    photoItem('Take a photo of Wall 2'),
+    photoItem('Take a photo of Wall 3'),
+    photoItem('Take a photo of Wall 4'),
+    photoItem('Take a photo of the floor'),
+    photoItem('Take a photo of the ceiling'),
+    photoItem('Take a photo of your window(s)'),
+    photoItem('Take a photo of the closet/clothing rack'),
+    photoItem('Take a photo of the mattress'),
   );
 
-  // Door and windows
-  items.push(
-    cond('Door', 'Door — condition'),
-    cond('Door', 'Door handle, hinges, and lock'),
-    cond('Windows', 'Window #1 — glass condition'),
-    cond('Windows', 'Window #1 — screen condition'),
-    cond('Windows', 'Window #1 — lock and hardware'),
-  );
-
-  // Closet
-  items.push(
-    cond('Closet', 'Closet door or curtain'),
-    cond('Closet', 'Closet rod and shelves'),
-    item('Closet', 'Closet interior — cleanliness', CLEAN_OPTIONS),
-  );
-
-  // Electrical — itemized
-  items.push(
-    cond('Electrical', 'Main light fixture — condition'),
-    cond('Electrical', 'Light switch — condition'),
-    cond('Electrical', 'Outlet #1 — condition and function'),
-    cond('Electrical', 'Outlet #2 — condition and function'),
-    item('Electrical', 'Smoke detector — present and tested', YES_NO),
-    item('Electrical', 'CO detector — present and tested', YES_NO),
-  );
-
-  // Furniture inventory (dynamic) — each item individually documented
-  for (const f of room?.furniture || []) {
-    items.push(cond('Furniture', `${f} — condition`));
-  }
-
-  // Feature-specific
   if (room?.features?.includes('Ensuite Bathroom')) {
-    items.push(
-      cond('Ensuite Bathroom', 'Toilet — condition'),
-      cond('Ensuite Bathroom', 'Sink and faucet — condition'),
-      cond('Ensuite Bathroom', 'Shower/tub — condition'),
-      cond('Ensuite Bathroom', 'Mirror — condition'),
-      cond('Ensuite Bathroom', 'Tile and grout — condition'),
-      cond('Ensuite Bathroom', 'Caulking — condition'),
-      cond('Ensuite Bathroom', 'Floor — condition'),
-      cond('Ensuite Bathroom', 'Exhaust fan — function'),
-      item('Ensuite Bathroom', 'Plumbing — no leaks', YES_NO),
-    );
+    items.push(photoItem('Take a photo of the bathroom'));
   }
 
-  if (room?.features?.includes('Mini Fridge')) {
-    items.push(cond('Appliances', 'Mini fridge — condition and function'));
-  }
-
-  if (room?.features?.includes('Window AC')) {
-    items.push(cond('Appliances', 'Window AC — condition and function'));
-  }
-
-  if (room?.features?.includes('In-Unit Washer/Dryer')) {
-    items.push(
-      cond('Appliances', 'Washer — condition and function'),
-      cond('Appliances', 'Dryer — condition and function'),
-    );
-  }
-
-  if (room?.features?.includes('Balcony/Patio')) {
-    items.push(
-      cond('Balcony/Patio', 'Balcony/patio surface — condition'),
-      cond('Balcony/Patio', 'Railing — condition'),
-    );
-  }
-
-  if (room?.features?.includes('Separate Entry')) {
-    items.push(
-      cond('Entry', 'Separate entry door — condition'),
-      cond('Entry', 'Entry lock — condition'),
-    );
-  }
-
-  // Overall
+  // Questions
   items.push(
-    item('Overall', 'General cleanliness', CLEAN_OPTIONS),
-    item('Overall', 'Keys and access devices returned', YES_NO),
+    yesNoItem('Room is clean and ready?'),
+    yesNoItem('No unusual odors?'),
+    yesNoItem('All furniture present and in good condition?'),
+    yesNoItem('Door lock working properly?'),
+    yesNoItem('Lights and outlets all working?'),
+    yesNoItem('Smoke detector present?'),
+    yesNoItem('Any existing damage to note?'),
+    yesNoItem('Everything looks good overall?'),
   );
-
-  // Misc catch-all
-  items.push(item('Misc', 'Misc (catch-all for anything not covered above)', ['Pass', 'Fail']));
 
   return items;
 }

@@ -1,31 +1,42 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { queuePhoto } from '../lib/offlineStore';
 
-// Items where we strongly prompt for a photo
-const PHOTO_PROMPTS = new Set([
-  'How does your room look overall?',
-  'Any issues under your sink?',
-  'How\u2019s your bathroom?',
-  'Check your closet area',
+// Questions where "Yes" indicates a problem (expand notes + photo)
+const YES_IS_PROBLEM = new Set([
+  'Any pest issues?',
+  'Any mold or mildew?',
+  'Any water leaks?',
+  'Any broken furniture?',
+  'Any other concerns?',
+  'Any existing damage to note?',
 ]);
 
-// Answers that indicate a problem (auto-flag for maintenance)
-const PROBLEM_ANSWERS = new Set([
-  'Needs Help',
-  'Could Use Attention',
-  'I See a Problem',
-  'Needs Cleaning',
-  'Something\u2019s Broken',
-  'Issue to Report',
-  'Wear or Damage',
-  'Marks or Damage',
-  'Yes',
-  'Yes \u2014 Let me tell you',
+// Questions where "Yes" is the good answer (expand notes only if No)
+// Default for all other yes/no items
+
+// Questions that require a photo when the "problem" answer is selected
+const REQUIRE_PHOTO_ON_PROBLEM = new Set([
+  'Any pest issues?',
+  'Any mold or mildew?',
+  'Any water leaks?',
+  'Any broken furniture?',
+  'Any other concerns?',
+  'Any existing damage to note?',
+  'All furniture present and in good condition?',
 ]);
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
+
+function isPhotoScreen(item) {
+  return item.zone === 'Photos' || item.text.startsWith('Take a photo');
+}
+
+function getProblemAnswer(text) {
+  return YES_IS_PROBLEM.has(text) ? 'Yes' : 'No';
+}
 
 export default function ResidentCheck() {
   const { id } = useParams();
@@ -43,7 +54,8 @@ export default function ResidentCheck() {
     try {
       const data = await api(`/api/inspections/${id}`);
       setInspection(data.inspection);
-      setItems(data.inspection.items || []);
+      const visible = (data.inspection.items || []).filter((i) => !i.zone.startsWith('_'));
+      setItems(visible);
     } catch (err) {
       setError(err.message);
     }
@@ -52,19 +64,29 @@ export default function ResidentCheck() {
   useEffect(() => { fetchInspection(); }, [fetchInspection]);
 
   const currentItem = items[index];
-
-  // Reset note when item changes
-  useEffect(() => {
-    setNote(currentItem?.note || '');
-  }, [currentItem?.id]);
+  useEffect(() => { setNote(currentItem?.note || ''); }, [currentItem?.id]);
 
   if (!inspection) return <div className="resident-loading">Loading...</div>;
+  if (!currentItem) return null;
 
   const total = items.length;
   const isLast = index === total - 1;
-  const canGoNext = !!currentItem?.status;
-  const isProblem = PROBLEM_ANSWERS.has(currentItem?.status);
-  const needsPhoto = PHOTO_PROMPTS.has(currentItem?.text) && isProblem;
+  const isPhoto = isPhotoScreen(currentItem);
+  const problemAnswer = getProblemAnswer(currentItem.text);
+  const isProblem = currentItem.status === problemAnswer;
+  const requiresPhotoOnProblem = REQUIRE_PHOTO_ON_PROBLEM.has(currentItem.text);
+
+  // Can advance conditions
+  let canAdvance = false;
+  if (isPhoto) {
+    canAdvance = (currentItem.photos?.length || 0) > 0;
+  } else {
+    canAdvance = !!currentItem.status && (
+      !isProblem ||
+      !requiresPhotoOnProblem ||
+      (currentItem.photos?.length || 0) > 0
+    );
+  }
 
   const updateItem = async (changes) => {
     const updated = { ...currentItem, ...changes };
@@ -78,10 +100,10 @@ export default function ResidentCheck() {
   };
 
   const handleAnswer = async (option) => {
-    const problem = PROBLEM_ANSWERS.has(option);
+    const problem = option === problemAnswer;
     const changes = {
       status: option,
-      flagCategory: problem ? 'Other' : null,
+      flagCategory: problem ? 'General' : null,
       isMaintenance: problem,
     };
     await updateItem(changes);
@@ -98,26 +120,47 @@ export default function ResidentCheck() {
     if (!file) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append('photo', file);
-      const res = await fetch(`/api/inspections/${id}/items/${currentItem.id}/photos`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const updated = { ...currentItem, photos: [...(currentItem.photos || []), data.photo] };
+      if (!navigator.onLine) {
+        await queuePhoto(id, currentItem.id, file, file.name);
+        const localUrl = URL.createObjectURL(file);
+        const updated = {
+          ...currentItem,
+          status: isPhoto ? 'Done' : currentItem.status,
+          photos: [...(currentItem.photos || []), { id: `local-${Date.now()}`, url: localUrl, local: true }],
+        };
         setItems((prev) => prev.map((i) => (i.id === currentItem.id ? updated : i)));
+        if (isPhoto) {
+          await api(`/api/inspections/${id}/items/${currentItem.id}`, {
+            method: 'PUT', body: JSON.stringify({ status: 'Done' }),
+          });
+        }
+      } else {
+        const form = new FormData();
+        form.append('photo', file);
+        const res = await fetch(`/api/inspections/${id}/items/${currentItem.id}/photos`, {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const updated = {
+            ...currentItem,
+            photos: [...(currentItem.photos || []), data.photo],
+          };
+          setItems((prev) => prev.map((i) => (i.id === currentItem.id ? updated : i)));
+          // For photo-only screens, set status to Done so completion logic works
+          if (isPhoto) await updateItem({ status: 'Done' });
+        }
       }
     } catch { /* ignore */ } finally {
       setUploading(false);
-      fileRef.current.value = '';
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
   const handleNext = () => {
-    if (!canGoNext) return;
+    if (!canAdvance) return;
     if (isLast) return handleSubmit();
     setIndex(index + 1);
   };
@@ -130,16 +173,10 @@ export default function ResidentCheck() {
     setSubmitting(true);
     setError('');
     try {
-      // If any items are still blank, set their status to auto-fill
-      const blankItems = items.filter((i) => !i.status);
-      for (const item of blankItems) {
-        await api(`/api/inspections/${id}/items/${item.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ status: item.options?.[0] || 'Yes' }),
-        });
-      }
       await api(`/api/inspections/${id}/submit`, { method: 'POST' });
-      navigate(`/resident/done/${id}`);
+      navigate(`/resident/done/${id}`, {
+        state: { type: inspection.type },
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -147,101 +184,128 @@ export default function ResidentCheck() {
     }
   };
 
-  if (!currentItem) return null;
+  const typeLabel = inspection.type === 'MOVE_IN_OUT' ? 'Move-In' : 'Monthly Check';
 
   return (
     <div className="resident-check">
       {/* Progress dots */}
       <div className="resident-progress">
-        {items.map((_, i) => (
-          <span
-            key={i}
-            className={`progress-dot ${i === index ? 'current' : ''} ${i < index || items[i].status ? 'done' : ''}`}
-          />
-        ))}
+        {items.map((item, i) => {
+          const done = i < index || (i === index && item.status);
+          return (
+            <span
+              key={i}
+              className={`progress-dot ${i === index ? 'current' : ''} ${done ? 'done' : ''}`}
+            />
+          );
+        })}
       </div>
+
+      <div className="resident-step-count">{index + 1} of {total}</div>
 
       <div className="resident-step">
         <h2 className="resident-question">{currentItem.text}</h2>
 
         {error && <div className="auth-error">{error}</div>}
 
-        <div className="resident-answers">
-          {currentItem.options?.map((opt) => {
-            const isSelected = currentItem.status === opt;
-            const isProblemOpt = PROBLEM_ANSWERS.has(opt);
-            return (
-              <button
-                key={opt}
-                className={`resident-answer ${isSelected ? 'selected' : ''} ${isProblemOpt ? 'problem' : 'good'}`}
-                onClick={() => handleAnswer(opt)}
-              >
-                {opt}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Photo prompt and note for problem answers */}
-        {isProblem && (
-          <div className="resident-detail">
-            {(currentItem.photos?.length > 0) && (
-              <div className="photo-grid" style={{ marginBottom: '0.75rem' }}>
-                {currentItem.photos.map((p) => (
-                  <div key={p.id} className="photo-thumb">
-                    <img src={p.url} alt="" />
-                  </div>
-                ))}
+        {isPhoto ? (
+          <>
+            {currentItem.photos?.length > 0 && (
+              <div className="resident-photo-preview">
+                <img src={currentItem.photos[currentItem.photos.length - 1].url} alt="" />
               </div>
             )}
-
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhoto}
-              style={{ display: 'none' }}
-            />
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
             <button
               type="button"
-              className="resident-photo-btn"
+              className="resident-camera-btn"
               onClick={() => fileRef.current.click()}
               disabled={uploading}
             >
-              {uploading ? 'Uploading...' : (currentItem.photos?.length > 0 ? 'Add Another Photo' : needsPhoto ? 'Add Photo (recommended)' : 'Add Photo')}
+              <span className="resident-camera-icon">{'\uD83D\uDCF7'}</span>
+              <span>
+                {uploading
+                  ? 'Uploading...'
+                  : currentItem.photos?.length > 0
+                    ? 'Retake photo'
+                    : 'Take photo'}
+              </span>
             </button>
+            {!currentItem.photos?.length && (
+              <p className="resident-photo-hint">A photo is required to continue</p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="resident-yesno">
+              <button
+                className={`resident-yesno-btn resident-yesno-yes ${currentItem.status === 'Yes' ? 'selected' : ''}`}
+                onClick={() => handleAnswer('Yes')}
+              >
+                Yes
+              </button>
+              <button
+                className={`resident-yesno-btn resident-yesno-no ${currentItem.status === 'No' ? 'selected' : ''}`}
+                onClick={() => handleAnswer('No')}
+              >
+                No
+              </button>
+            </div>
 
-            <label className="resident-note-label">
-              Any details to share?
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                onBlur={handleNoteBlur}
-                placeholder="Tell us more..."
-                className="resident-note"
-                rows={3}
-              />
-            </label>
-          </div>
+            {isProblem && (
+              <div className="resident-detail">
+                <label className="resident-note-label">
+                  Tell us more
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    onBlur={handleNoteBlur}
+                    placeholder="What's happening?"
+                    className="resident-note"
+                    rows={3}
+                  />
+                </label>
+
+                {currentItem.photos?.length > 0 && (
+                  <div className="photo-grid" style={{ marginBottom: '0.75rem' }}>
+                    {currentItem.photos.map((p) => (
+                      <div key={p.id} className="photo-thumb">
+                        <img src={p.url} alt="" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
+                <button
+                  type="button"
+                  className="resident-photo-btn"
+                  onClick={() => fileRef.current.click()}
+                  disabled={uploading}
+                >
+                  {uploading
+                    ? 'Uploading...'
+                    : currentItem.photos?.length > 0
+                      ? 'Add another photo'
+                      : requiresPhotoOnProblem
+                        ? 'Add photo (required)'
+                        : 'Add photo'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div className="resident-footer">
-        <button
-          className="resident-back"
-          onClick={handleBack}
-          disabled={index === 0}
-        >
+        <button className="resident-back" onClick={handleBack} disabled={index === 0}>
           &larr; Back
         </button>
-
-        <span className="resident-step-count">{index + 1} of {total}</span>
-
+        <span className="resident-footer-label">{typeLabel}</span>
         <button
           className="resident-next"
           onClick={handleNext}
-          disabled={!canGoNext || submitting}
+          disabled={!canAdvance || submitting}
         >
           {isLast ? (submitting ? 'Submitting...' : 'Finish') : 'Next \u2192'}
         </button>
