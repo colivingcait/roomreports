@@ -494,6 +494,198 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// ─── GET /api/inspections/quarterly-group — group quarterly by property+date ──
+
+router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
+  try {
+    const { propertyId, date } = req.params; // date format: YYYY-MM-DD
+
+    const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd = new Date(date + 'T23:59:59.999Z');
+
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        propertyId,
+        type: 'QUARTERLY',
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+      include: {
+        items: { orderBy: { createdAt: 'asc' }, include: { photos: true } },
+        room: { select: { id: true, label: true } },
+        inspector: { select: { name: true, role: true } },
+        property: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (inspections.length === 0) {
+      return res.status(404).json({ error: 'No quarterly inspections found' });
+    }
+
+    // Sort rooms numerically
+    inspections.sort((a, b) => {
+      const la = a.room?.label || '';
+      const lb = b.room?.label || '';
+      const na = parseInt(la.match(/\d+/)?.[0], 10);
+      const nb = parseInt(lb.match(/\d+/)?.[0], 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return la.localeCompare(lb);
+    });
+
+    // Aggregate stats
+    let totalFlags = 0;
+    let totalMaintenance = 0;
+    let allItemsCount = 0;
+
+    const rooms = inspections.map((insp) => {
+      const visible = insp.items.filter((i) => !i.zone.startsWith('_'));
+      const flags = visible.filter((i) => i.flagCategory).length;
+      const maint = visible.filter((i) => i.isMaintenance).length;
+      totalFlags += flags;
+      totalMaintenance += maint;
+      allItemsCount += visible.length;
+
+      // Detect partial submission
+      const partialItem = insp.items.find((i) => i.zone === '_PartialReason');
+
+      return {
+        inspectionId: insp.id,
+        roomId: insp.room?.id,
+        roomLabel: insp.room?.label,
+        status: insp.status,
+        completedAt: insp.completedAt,
+        flagCount: flags,
+        maintenanceCount: maint,
+        totalItems: visible.length,
+        completedItems: visible.filter((i) => i.status).length,
+        partialReason: partialItem?.note || null,
+        flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance).map((item) => ({
+          id: item.id,
+          zone: item.zone,
+          text: item.text,
+          status: item.status,
+          flagCategory: item.flagCategory,
+          isMaintenance: item.isMaintenance,
+          note: item.note,
+          photos: item.photos || [],
+        })),
+      };
+    });
+
+    // Group status: REVIEWED if all reviewed, SUBMITTED if any submitted, DRAFT otherwise
+    const statuses = inspections.map((i) => i.status);
+    let groupStatus = 'DRAFT';
+    if (statuses.every((s) => s === 'REVIEWED')) groupStatus = 'REVIEWED';
+    else if (statuses.some((s) => s === 'SUBMITTED')) groupStatus = 'SUBMITTED';
+
+    return res.json({
+      propertyId,
+      property: inspections[0].property,
+      inspector: inspections[0].inspector,
+      date: inspections[0].createdAt,
+      completedAt: inspections[0].completedAt,
+      status: groupStatus,
+      totalRooms: rooms.length,
+      totalFlags,
+      totalMaintenance,
+      totalItems: allItemsCount,
+      rooms,
+    });
+  } catch (error) {
+    console.error('Quarterly group error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/bulk-approve — approve quarterly group ──
+
+router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { ids, items: itemSelections } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    // Build a map of itemId -> selection
+    const selectionMap = {};
+    for (const sel of (itemSelections || [])) {
+      selectionMap[sel.itemId] = sel;
+    }
+
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        id: { in: ids },
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        status: 'SUBMITTED',
+      },
+      include: { items: true },
+    });
+
+    if (inspections.length === 0) {
+      return res.status(404).json({ error: 'No SUBMITTED inspections found' });
+    }
+
+    // Existing maintenance to avoid duplicates
+    const existing = await prisma.maintenanceItem.findMany({
+      where: { inspectionId: { in: ids }, deletedAt: null },
+      select: { inspectionItemId: true },
+    });
+    const existingIds = new Set(existing.map((m) => m.inspectionItemId));
+
+    let totalCreated = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const insp of inspections) {
+        for (const item of insp.items) {
+          if (item.zone.startsWith('_')) continue;
+          if (existingIds.has(item.id)) continue;
+
+          const sel = selectionMap[item.id];
+          // Default: create task if isMaintenance and no explicit selection
+          const shouldCreate = sel ? sel.createTask : item.isMaintenance;
+          if (!shouldCreate) continue;
+
+          const description = sel?.description || item.text;
+          const pmNote = sel?.pmNote || null;
+          const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
+
+          await tx.maintenanceItem.create({
+            data: {
+              inspectionItemId: item.id,
+              inspectionId: insp.id,
+              propertyId: insp.propertyId,
+              roomId: insp.roomId,
+              organizationId: insp.organizationId,
+              description,
+              zone: item.zone,
+              flagCategory: item.flagCategory || 'General',
+              note: combinedNote || null,
+            },
+          });
+          totalCreated++;
+        }
+
+        // Mark inspection as REVIEWED
+        await tx.inspection.update({
+          where: { id: insp.id },
+          data: { status: 'REVIEWED' },
+        });
+      }
+    });
+
+    return res.json({
+      approved: inspections.length,
+      maintenanceItemsCreated: totalCreated,
+    });
+  } catch (error) {
+    console.error('Bulk approve error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── POST /api/inspections/bulk-delete — soft-delete multiple DRAFT or REVIEWED ──
 
 router.post('/bulk-delete', async (req, res) => {

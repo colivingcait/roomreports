@@ -193,11 +193,17 @@ export default function Inspections() {
 
   const handleRowClick = (item) => {
     if (selectMode) {
-      if (item.status === 'DRAFT') toggleSelect(item.id);
+      if (['DRAFT', 'REVIEWED'].includes(item.status)) toggleSelect(item.id);
       return;
     }
     if (item.isGroup) {
-      navigate(`/quarterly/${item.propertyId}`);
+      // Quarterly groups: DRAFT goes to flow, SUBMITTED/REVIEWED go to review
+      if (item.status === 'DRAFT') {
+        navigate(`/quarterly/${item.propertyId}`);
+      } else {
+        const dateKey = new Date(item.createdAt).toISOString().slice(0, 10);
+        navigate(`/quarterly-review/${item.propertyId}/${dateKey}`);
+      }
     } else if (item.status === 'DRAFT') {
       if (item.type === 'QUARTERLY') {
         navigate(`/quarterly/${item.property?.id}`);

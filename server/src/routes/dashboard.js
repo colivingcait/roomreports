@@ -11,6 +11,7 @@ router.get('/', async (req, res) => {
     const orgId = req.user.organizationId;
 
     // ─── Pending Review ─── Inspections with status SUBMITTED
+    // Quarterly inspections are grouped per property+date as one entry
     const pendingInspections = await prisma.inspection.findMany({
       where: {
         organizationId: orgId,
@@ -29,20 +30,53 @@ router.get('/', async (req, res) => {
       orderBy: { completedAt: 'desc' },
     });
 
-    const pendingReview = pendingInspections.map((i) => ({
-      id: i.id,
-      type: i.type,
-      propertyId: i.property?.id,
-      propertyName: i.property?.name,
-      roomId: i.room?.id || null,
-      roomLabel: i.room?.label || null,
-      inspectorName: i.inspector?.name,
-      inspectorRole: i.inspector?.role,
-      completedAt: i.completedAt,
-      createdAt: i.createdAt,
-      flagCount: i.items.length,
-      maintenanceCount: i.items.filter((it) => it.isMaintenance).length,
-    }));
+    const pendingReview = [];
+    const quarterlyGroups = {};
+
+    for (const i of pendingInspections) {
+      if (i.type === 'QUARTERLY') {
+        const dateKey = new Date(i.createdAt).toISOString().slice(0, 10);
+        const groupKey = `${i.property?.id}-${dateKey}`;
+        if (!quarterlyGroups[groupKey]) {
+          quarterlyGroups[groupKey] = {
+            id: `qgroup:${i.property?.id}:${dateKey}`,
+            isGroup: true,
+            type: 'QUARTERLY',
+            propertyId: i.property?.id,
+            propertyName: i.property?.name,
+            roomId: null,
+            roomLabel: null,
+            dateKey,
+            inspectorName: i.inspector?.name,
+            inspectorRole: i.inspector?.role,
+            completedAt: i.completedAt,
+            createdAt: i.createdAt,
+            flagCount: 0,
+            maintenanceCount: 0,
+            roomCount: 0,
+          };
+          pendingReview.push(quarterlyGroups[groupKey]);
+        }
+        quarterlyGroups[groupKey].roomCount += 1;
+        quarterlyGroups[groupKey].flagCount += i.items.length;
+        quarterlyGroups[groupKey].maintenanceCount += i.items.filter((it) => it.isMaintenance).length;
+      } else {
+        pendingReview.push({
+          id: i.id,
+          type: i.type,
+          propertyId: i.property?.id,
+          propertyName: i.property?.name,
+          roomId: i.room?.id || null,
+          roomLabel: i.room?.label || null,
+          inspectorName: i.inspector?.name,
+          inspectorRole: i.inspector?.role,
+          completedAt: i.completedAt,
+          createdAt: i.createdAt,
+          flagCount: i.items.length,
+          maintenanceCount: i.items.filter((it) => it.isMaintenance).length,
+        });
+      }
+    }
 
     // ─── Maintenance Overview ─── Stats + recent items
     const maintenanceCounts = await prisma.maintenanceItem.groupBy({

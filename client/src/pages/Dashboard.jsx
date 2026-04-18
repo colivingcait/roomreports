@@ -96,21 +96,34 @@ export default function Dashboard() {
             ) : (
               pendingReview.slice(0, 4).map((p) => {
                 const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };
+                const onClick = () => {
+                  if (p.isGroup) {
+                    navigate(`/quarterly-review/${p.propertyId}/${p.dateKey}`);
+                  } else {
+                    navigate(`/inspections/${p.id}/review`);
+                  }
+                };
+                const subtitle = p.isGroup
+                  ? `${p.roomCount} rooms${p.flagCount > 0 ? ` \u00b7 ${p.flagCount} flags` : ''}`
+                  : timeLabel(p.completedAt);
                 return (
-                  <div key={p.id} className="db-row" onClick={() => navigate(`/inspections/${p.id}/review`)}>
+                  <div key={p.id} className="db-row" onClick={onClick}>
                     <div className="db-row-left">
                       <span className="db-type-pill" style={{ background: tc.bg, color: tc.color }}>
                         {TYPE_LABELS[p.type] || p.type}
                       </span>
                       <div>
                         <div className="db-row-title">
-                          {p.propertyName}{p.roomLabel ? ` \u2192 ${p.roomLabel}` : ''}
+                          {p.propertyName}{!p.isGroup && p.roomLabel ? ` \u2192 ${p.roomLabel}` : ''}
                         </div>
-                        <div className="db-row-sub">{timeLabel(p.completedAt)}</div>
+                        <div className="db-row-sub">{subtitle}</div>
                       </div>
                     </div>
-                    {p.flagCount > 0 && (
+                    {p.flagCount > 0 && !p.isGroup && (
                       <span className="db-flag">&para; {p.flagCount}</span>
+                    )}
+                    {p.isGroup && (
+                      <span className="db-flag">{timeLabel(p.completedAt)}</span>
                     )}
                   </div>
                 );

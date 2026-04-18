@@ -14,6 +14,7 @@ import Inspections from './pages/Inspections';
 import InspectionFlow from './pages/InspectionFlow';
 import InspectionReview from './pages/InspectionReview';
 import QuarterlyFlow from './pages/QuarterlyFlow';
+import QuarterlyReview from './pages/QuarterlyReview';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
 import ResidentHome from './pages/ResidentHome';
@@ -46,6 +47,7 @@ function App() {
               <Route path="/properties/:id/overview" element={<PropertyOverview />} />
               <Route path="/inspections" element={<Inspections />} />
               <Route path="/inspections/:id/review" element={<InspectionReview />} />
+              <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/team" element={<Team />} />
             </Route>
