@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 
@@ -35,6 +35,8 @@ export default function PropertyOverview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
+  const [expandedRoomId, setExpandedRoomId] = useState(null);
+  const [showFurniture, setShowFurniture] = useState(false);
 
   useEffect(() => {
     fetch(`/api/properties/${id}/overview`, { credentials: 'include' })
@@ -91,36 +93,146 @@ export default function PropertyOverview() {
       <section className="po-section">
         <h2 className="po-section-title">Rooms</h2>
         <div className="po-room-grid">
-          {roomCards.map((room) => (
-            <div key={room.id} className="po-room-card">
-              <div className="po-room-health-bar" style={{ background: healthBarColor(room.openMaintenanceCount) }} />
-              <div className="po-room-body">
-                <h3 className="po-room-label">{room.label}</h3>
-                <div className="po-room-meta">
-                  {room.openMaintenanceCount > 0 ? (
-                    <span className="po-room-issues" style={{ color: '#C4703F' }}>
-                      {room.openMaintenanceCount} open issue{room.openMaintenanceCount !== 1 ? 's' : ''}
-                    </span>
-                  ) : (
-                    <span style={{ color: '#6B8F71' }}>No issues</span>
-                  )}
-                  <span className="dot" />
-                  <span>
-                    {room.lastInspection
-                      ? `${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
-                      : 'Never inspected'}
-                  </span>
+          {roomCards.map((room) => {
+            const isExpanded = expandedRoomId === room.id;
+            const roomMaint = maintenanceByRoom[room.id]?.items || [];
+            const roomInspections = recentInspections.filter((i) => i.roomId === room.id).slice(0, 5);
+            return (
+              <Fragment key={room.id}>
+                <div
+                  className={`po-room-card ${isExpanded ? 'expanded' : ''}`}
+                  onClick={() => {
+                    setExpandedRoomId(isExpanded ? null : room.id);
+                    setShowFurniture(false);
+                  }}
+                >
+                  <div className="po-room-health-bar" style={{ background: healthBarColor(room.openMaintenanceCount) }} />
+                  <div className="po-room-body">
+                    <div className="po-room-header">
+                      <h3 className="po-room-label">{room.label}</h3>
+                      <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
+                    </div>
+                    <div className="po-room-meta">
+                      {room.openMaintenanceCount > 0 ? (
+                        <span className="po-room-issues" style={{ color: '#C4703F' }}>
+                          {room.openMaintenanceCount} open issue{room.openMaintenanceCount !== 1 ? 's' : ''}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#6B8F71' }}>No issues</span>
+                      )}
+                      <span className="dot" />
+                      <span>
+                        {room.lastInspection
+                          ? `${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
+                          : 'Never inspected'}
+                      </span>
+                    </div>
+                    {room.features?.length > 0 && (
+                      <div className="po-room-features">
+                        {room.features.map((f) => (
+                          <span key={f} className="po-feature-tag">{f}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {room.features?.length > 0 && (
-                  <div className="po-room-features">
-                    {room.features.map((f) => (
-                      <span key={f} className="po-feature-tag">{f}</span>
-                    ))}
+
+                {isExpanded && (
+                  <div className="po-room-expanded">
+                    <div className="po-room-expanded-grid">
+                      {/* Open Maintenance */}
+                      <div className="po-room-expanded-section">
+                        <h4 className="po-expanded-title">Open Maintenance</h4>
+                        {roomMaint.length === 0 ? (
+                          <div className="po-expanded-empty">&check; No open maintenance</div>
+                        ) : (
+                          <div className="po-expanded-list">
+                            {roomMaint.map((m) => (
+                              <div
+                                key={m.id}
+                                className="po-expanded-row"
+                                onClick={() => navigate('/maintenance')}
+                              >
+                                <div className="po-expanded-row-main">
+                                  <span className="po-expanded-desc">{m.description}</span>
+                                  {m.assignedTo && (
+                                    <span className="po-expanded-assigned">{m.assignedTo}</span>
+                                  )}
+                                </div>
+                                <div className="po-expanded-row-badges">
+                                  <span className="review-cat-badge">{m.flagCategory}</span>
+                                  <span
+                                    className="insp-status-badge"
+                                    style={{
+                                      color: MAINT_STATUS_COLORS[m.status],
+                                      borderColor: MAINT_STATUS_COLORS[m.status],
+                                    }}
+                                  >
+                                    {MAINT_STATUS_LABELS[m.status]}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Recent Inspections */}
+                      <div className="po-room-expanded-section">
+                        <h4 className="po-expanded-title">Recent Inspections</h4>
+                        {roomInspections.length === 0 ? (
+                          <div className="po-expanded-empty">No inspections yet</div>
+                        ) : (
+                          <div className="po-expanded-list">
+                            {roomInspections.map((insp) => (
+                              <div
+                                key={insp.id}
+                                className="po-expanded-row"
+                                onClick={() => navigate(
+                                  insp.status === 'DRAFT'
+                                    ? `/inspections/${insp.id}`
+                                    : `/inspections/${insp.id}/review`,
+                                )}
+                              >
+                                <div className="po-expanded-row-main">
+                                  <span className="dash-type-badge">{TYPE_LABELS[insp.type] || insp.type}</span>
+                                  <span className="po-expanded-inspector">
+                                    {insp.inspectorName} &middot; {timeAgo(insp.createdAt)}
+                                  </span>
+                                </div>
+                                {insp.flagCount > 0 && (
+                                  <span className="pending-flag-count">&#9873; {insp.flagCount}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Room Details: Furniture toggle */}
+                    {room.furniture?.length > 0 && (
+                      <div className="po-room-expanded-section" style={{ marginTop: '1rem' }}>
+                        <button
+                          className="po-furniture-toggle"
+                          onClick={() => setShowFurniture(!showFurniture)}
+                        >
+                          {showFurniture ? '\u25BE' : '\u25B8'} Furniture ({room.furniture.length})
+                        </button>
+                        {showFurniture && (
+                          <div className="po-furniture-list">
+                            {room.furniture.map((f) => (
+                              <span key={f} className="po-feature-tag">{f}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            </div>
-          ))}
+              </Fragment>
+            );
+          })}
         </div>
       </section>
 

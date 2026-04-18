@@ -192,6 +192,7 @@ router.get('/:id/overview', async (req, res) => {
         status: m.status,
         flagCategory: m.flagCategory,
         priority: m.priority,
+        assignedTo: m.assignedTo,
         createdAt: m.createdAt,
       });
     }
@@ -215,6 +216,7 @@ router.get('/:id/overview', async (req, res) => {
         status: i.status,
         createdAt: i.createdAt,
         completedAt: i.completedAt,
+        roomId: i.roomId || null,
         roomLabel: i.room?.label || null,
         inspectorName: i.inspector?.name,
         flagCount: i.items.length,
