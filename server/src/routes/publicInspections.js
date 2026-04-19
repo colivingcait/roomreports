@@ -86,13 +86,19 @@ router.post('/movein/:slug', async (req, res) => {
       return res.status(429).json({ error: 'Too many submissions for this room today' });
     }
 
+    const owner = await prisma.user.findFirst({
+      where: { organizationId: property.organization.id, role: 'OWNER', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!owner) return res.status(500).json({ error: 'No owner found for this organization' });
+
     const inspection = await prisma.inspection.create({
       data: {
         type: 'MOVE_IN_OUT',
         status: 'SUBMITTED',
         propertyId: property.id,
         roomId: room.id,
-        inspectorId: null,
+        inspectorId: owner.id,
         inspectorName: residentName,
         inspectorRole: 'RESIDENT',
         organizationId: property.organization.id,
@@ -139,13 +145,19 @@ router.post('/selfcheck/:slug', async (req, res) => {
       return res.status(429).json({ error: 'Too many submissions for this room today' });
     }
 
+    const owner = await prisma.user.findFirst({
+      where: { organizationId: property.organization.id, role: 'OWNER', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!owner) return res.status(500).json({ error: 'No owner found for this organization' });
+
     const inspection = await prisma.inspection.create({
       data: {
         type: 'RESIDENT_SELF_CHECK',
         status: 'SUBMITTED',
         propertyId: property.id,
         roomId: room.id,
-        inspectorId: null,
+        inspectorId: owner.id,
         inspectorName: residentName,
         inspectorRole: 'RESIDENT',
         organizationId: property.organization.id,
