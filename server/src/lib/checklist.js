@@ -99,6 +99,25 @@ function generateCommonArea(property) {
   return items;
 }
 
+// ─── COMMON_AREA_QUICK ──────────────────────────────────
+
+function generateCommonAreaQuick(property) {
+  const items = [];
+  const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
+
+  for (const kitchen of property.kitchens || []) {
+    items.push(pf('Kitchens', kitchen.label || 'Kitchen'));
+  }
+  for (const bathroom of property.bathrooms || []) {
+    items.push(pf('Bathrooms', bathroom.label || 'Bathroom'));
+  }
+
+  // Misc catch-all so inspectors can note anything at the property level
+  items.push(pf('Misc', 'Anything else worth noting in common areas'));
+
+  return items;
+}
+
 // ─── ROOM_TURN ──────────────────────────────────────────
 
 function generateRoomTurn(property, room) {
@@ -349,6 +368,8 @@ export function generateChecklist(type, property, room, options = {}) {
   switch (type) {
     case 'COMMON_AREA':
       return generateCommonArea(property);
+    case 'COMMON_AREA_QUICK':
+      return generateCommonAreaQuick(property);
     case 'ROOM_TURN':
       return generateRoomTurn(property, room);
     case 'QUARTERLY':
@@ -364,7 +385,7 @@ export function generateChecklist(type, property, room, options = {}) {
 
 // Types that require a room
 export const ROOM_TYPES = ['ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'];
-export const PROPERTY_ONLY_TYPES = ['COMMON_AREA'];
+export const PROPERTY_ONLY_TYPES = ['COMMON_AREA', 'COMMON_AREA_QUICK'];
 
 // Template-aware variant: if the org has customized items for this inspection
 // type, use those; otherwise fall back to the built-in defaults. Property/

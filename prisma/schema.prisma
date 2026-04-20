@@ -20,6 +20,7 @@ enum Role {
 
 enum InspectionType {
   COMMON_AREA
+  COMMON_AREA_QUICK
   ROOM_TURN
   QUARTERLY
   RESIDENT_SELF_CHECK

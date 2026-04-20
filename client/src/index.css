@@ -5674,12 +5674,34 @@ button.review-photo-thumb {
 
 .q-common-toggle-chev.open { transform: rotate(90deg); }
 
+.q-common-toggle-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.q-common-body {
+  border-top: 1px solid #F0EDEB;
+  padding: 0.5rem 0.75rem 0.875rem;
+}
+
+.q-common-zone {
+  margin-top: 0.5rem;
+}
+
+.q-common-zone-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6B8F71;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.35rem 0.25rem 0.35rem;
+}
+
 .q-common-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.5rem;
-  padding: 0.25rem 0.75rem 0.875rem;
-  border-top: 1px solid #F0EDEB;
 }
 
 @media (min-width: 600px) {
@@ -5863,6 +5885,23 @@ button.review-photo-thumb {
 }
 
 .partial-room-list li strong { color: #C4703F; }
+
+.partial-intro {
+  font-size: 0.9rem;
+  color: #4A4543;
+  margin-bottom: 0.625rem;
+  line-height: 1.4;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.modal-actions .btn-primary,
+.modal-actions .btn-secondary { width: auto; }
 
 /* ─── Quarterly Review Page ──────────────────────────── */
 

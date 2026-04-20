@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area',
+  COMMON_AREA_QUICK: 'Common Area Quick Check',
   ROOM_TURN: 'Room Turn',
   QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check',
@@ -10,6 +11,7 @@ const TYPE_LABELS = {
 };
 const TYPE_COLORS = {
   COMMON_AREA: '#2B5F8A',
+  COMMON_AREA_QUICK: '#2B5F8A',
   ROOM_TURN: '#854F0B',
   QUARTERLY: '#3B6D11',
   RESIDENT_SELF_CHECK: '#8A2B6D',

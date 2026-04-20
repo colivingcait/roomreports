@@ -3,13 +3,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 
 const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
+  COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
+  ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 const TYPE_COLORS = {
   QUARTERLY: { bg: '#E8F0E9', color: '#3B6D11' },
   ROOM_TURN: { bg: '#FAEEDA', color: '#854F0B' },
   COMMON_AREA: { bg: '#E3EDF7', color: '#2B5F8A' },
+  COMMON_AREA_QUICK: { bg: '#E3EDF7', color: '#2B5F8A' },
   RESIDENT_SELF_CHECK: { bg: '#F5E8F0', color: '#8A2B6D' },
   MOVE_IN_OUT: { bg: '#F0E8E3', color: '#6D3B11' },
 };
