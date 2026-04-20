@@ -300,6 +300,24 @@ router.get('/:id/overview', async (req, res) => {
       }
     }
 
+    // Active (non-archived, unresolved) violations per room — used for
+    // escalation badges on room cards
+    const activeViolations = await prisma.leaseViolation.findMany({
+      where: {
+        propertyId: property.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        archivedAt: null,
+        resolvedAt: null,
+      },
+      select: { roomId: true },
+    });
+    const violationsByRoom = {};
+    for (const v of activeViolations) {
+      if (!v.roomId) continue;
+      violationsByRoom[v.roomId] = (violationsByRoom[v.roomId] || 0) + 1;
+    }
+
     // Build room cards data
     const roomCards = property.rooms.map((r) => ({
       id: r.id,
@@ -307,7 +325,9 @@ router.get('/:id/overview', async (req, res) => {
       features: r.features,
       furniture: r.furniture,
       openMaintenanceCount: roomMaintCounts[r.id] || 0,
+      activeViolationCount: violationsByRoom[r.id] || 0,
       lastInspection: roomLastInspection[r.id] || null,
+      lastTurnoverAt: r.lastTurnoverAt || null,
     }));
 
     // Overall health
@@ -517,6 +537,45 @@ router.put('/:id/rooms/:roomId', requireRole('OWNER', 'PM'), async (req, res) =>
     return res.json({ room: updated });
   } catch (error) {
     console.error('Update room error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/properties/:id/rooms/:roomId/turnover
+// Archives all active lease violations for this room (they stay visible in
+// history but don't count toward active tallies or health) and stamps the
+// room's lastTurnoverAt. Full historical record preserved.
+router.post('/:id/rooms/:roomId/turnover', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const property = await findOrgProperty(req.params.id, req.user.organizationId);
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    const room = await prisma.room.findFirst({
+      where: { id: req.params.roomId, propertyId: property.id, deletedAt: null },
+    });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+
+    const turnoverAt = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const archived = await tx.leaseViolation.updateMany({
+        where: {
+          roomId: room.id,
+          organizationId: req.user.organizationId,
+          archivedAt: null,
+          deletedAt: null,
+        },
+        data: { archivedAt: turnoverAt, archivedReason: 'Room turnover' },
+      });
+      const updatedRoom = await tx.room.update({
+        where: { id: room.id },
+        data: { lastTurnoverAt: turnoverAt },
+      });
+      return { violationsArchived: archived.count, room: updatedRoom };
+    });
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Room turnover error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

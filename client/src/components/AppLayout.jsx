@@ -7,8 +7,8 @@ import OfflineBanner from './OfflineBanner';
 // SVG icons as inline components
 const icons = {
   dashboard: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
-  inspect: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
   maintenance: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>,
+  properties: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 9.5L12 3l9 6.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>,
   reports: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>,
   more: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>,
   search: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
@@ -17,10 +17,10 @@ const icons = {
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: 'dashboard', roles: ['OWNER', 'PM'] },
-  { path: '/inspections', label: 'Inspect', icon: 'inspect', roles: ['OWNER', 'PM', 'CLEANER', 'RESIDENT'] },
   { path: '/maintenance', label: 'Maintenance', icon: 'maintenance', roles: ['OWNER', 'PM'] },
+  { path: '/properties', label: 'Properties', icon: 'properties', roles: ['OWNER', 'PM'] },
   { path: '/reports', label: 'Reports', icon: 'reports', roles: ['OWNER', 'PM'] },
-  { path: '/team', label: 'More', icon: 'more', roles: ['OWNER', 'PM'] },
+  { path: '/more', label: 'More', icon: 'more', roles: ['OWNER', 'PM'] },
 ];
 
 export default function AppLayout() {

@@ -41,7 +41,7 @@ async function hydrateViolations(violations, orgId) {
 
 router.get('/', async (req, res) => {
   try {
-    const { propertyId, roomId, active } = req.query;
+    const { propertyId, roomId, active, includeArchived } = req.query;
     const scope = await propertyIdScope(req.user);
     const where = {
       organizationId: req.user.organizationId,
@@ -51,6 +51,9 @@ router.get('/', async (req, res) => {
     if (propertyId) where.propertyId = propertyId;
     if (roomId) where.roomId = roomId;
     if (active === 'true') where.resolvedAt = null;
+    // Archived violations are excluded by default so they don't count
+    // toward active tallies / health grades.
+    if (includeArchived !== 'true') where.archivedAt = null;
 
     const violations = await prisma.leaseViolation.findMany({
       where,
@@ -61,6 +64,49 @@ router.get('/', async (req, res) => {
     return res.json({ violations: hydrated });
   } catch (error) {
     console.error('List violations error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/violations — manually log (outside of inspection) ──
+
+router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { propertyId, roomId, category, description, note } = req.body || {};
+
+    if (!propertyId) return res.status(400).json({ error: 'propertyId is required' });
+    if (!description?.trim()) return res.status(400).json({ error: 'description is required' });
+
+    const property = await prisma.property.findFirst({
+      where: { id: propertyId, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    let room = null;
+    if (roomId) {
+      room = await prisma.room.findFirst({
+        where: { id: roomId, propertyId, deletedAt: null },
+      });
+      if (!room) return res.status(404).json({ error: 'Room not found' });
+    }
+
+    const violation = await prisma.leaseViolation.create({
+      data: {
+        organizationId: req.user.organizationId,
+        propertyId,
+        roomId: room?.id || null,
+        inspectionId: null,
+        inspectionItemId: null,
+        description: description.trim(),
+        category: category || null,
+        note: note || null,
+        reportedById: req.user.id,
+        reportedByName: req.user.name,
+      },
+    });
+    return res.status(201).json({ violation });
+  } catch (error) {
+    console.error('Create violation error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

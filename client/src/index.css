@@ -2264,13 +2264,116 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ─── Log Violation modal pill row ──────── */
+.violation-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+/* ─── Reports page tabs ──────────────────── */
+.reports-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #E8E4E1;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+.reports-tab {
+  padding: 0.625rem 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #8A8583;
+  white-space: nowrap;
+}
+.reports-tab.active {
+  color: #6B8F71;
+  border-bottom-color: #6B8F71;
+}
+.reports-tab:hover { color: #4A4543; }
+.reports-tab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.reports-tab-count {
+  font-size: 0.85rem;
+  color: #8A8583;
+}
+
+/* ─── More page ──────────────────────────── */
+.more-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.more-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.more-row:hover { border-color: #6B8F71; background: #FAFCFA; }
+.more-row-label { font-size: 0.95rem; font-weight: 600; color: #4A4543; }
+.more-row-desc { font-size: 0.8rem; color: #8A8583; margin-top: 0.125rem; }
+.more-row-chev { color: #8A8583; font-size: 0.85rem; }
+.more-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #E8E4E1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.more-user-name { font-size: 0.9rem; font-weight: 600; color: #4A4543; }
+.more-user-email { font-size: 0.75rem; color: #8A8583; }
+
 .report-bar {
-  background: #F5F2EF;
+  background: #EDE8E3;
   border-radius: 100px;
-  height: 10px;
+  height: 12px;
+  overflow: hidden;
+  position: relative;
+}
+.report-bar-fill {
+  height: 100%;
+  border-radius: 100px;
+  min-width: 4px;
+  transition: width 0.3s ease;
+}
+
+/* ─── SVG chart wrap ───────────────────────────────── */
+.chart-wrap {
+  width: 100%;
   overflow: hidden;
 }
-.report-bar-fill { height: 100%; border-radius: 100px; }
+.chart-label {
+  font-size: 0.8rem;
+  color: #8A8583;
+  margin-bottom: 0.25rem;
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
 .report-row-value { text-align: right; color: #4A4543; font-weight: 500; }
 
 .report-trend {
@@ -4577,6 +4680,52 @@ button.review-photo-thumb {
   align-items: center;
   gap: 0.5rem;
 }
+
+.po-room-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.po-room-escalation {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: #C0392B;
+  border-radius: 999px;
+}
+
+.po-room-action-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #D4D0CE;
+  background: #fff;
+  border-radius: 50%;
+  font-size: 0.95rem;
+  color: #4A4543;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.po-room-action-btn:hover { background: #F0EDEB; border-color: #8A8583; }
+
+.btn-secondary-sm {
+  padding: 0.35rem 0.7rem;
+  background: #fff;
+  border: 1px solid #D4D0CE;
+  border-radius: 6px;
+  color: #4A4543;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-secondary-sm:hover { background: #F0EDEB; border-color: #8A8583; }
 
 .po-room-chevron {
   font-size: 0.75rem;

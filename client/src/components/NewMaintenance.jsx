@@ -20,7 +20,7 @@ const EMPTY = {
   note: '',
 };
 
-export default function NewMaintenance({ open, onClose, onCreated }) {
+export default function NewMaintenance({ open, onClose, onCreated, defaultPropertyId }) {
   const [draft, setDraft] = useState(EMPTY);
   const [properties, setProperties] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -39,16 +39,21 @@ export default function NewMaintenance({ open, onClose, onCreated }) {
       .catch(() => {});
   }, [open]);
 
-  // Reset on close
+  // Reset on open/close; prefill default property when opening
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setDraft((prev) => ({
+        ...EMPTY,
+        propertyId: defaultPropertyId || prev.propertyId || '',
+      }));
+    } else {
       setDraft(EMPTY);
       setPhotoFile(null);
       setPhotoPreview('');
       setError('');
       setRooms([]);
     }
-  }, [open]);
+  }, [open, defaultPropertyId]);
 
   // Load rooms when property changes
   useEffect(() => {

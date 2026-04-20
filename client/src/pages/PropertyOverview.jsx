@@ -1,6 +1,8 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
+import NewMaintenance from '../components/NewMaintenance';
+import LogViolation from '../components/LogViolation';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -36,8 +38,30 @@ export default function PropertyOverview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
+  const [showNewMaint, setShowNewMaint] = useState(false);
+  const [showLogViolation, setShowLogViolation] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState(null);
   const [showFurniture, setShowFurniture] = useState(false);
+  const [turnoverTarget, setTurnoverTarget] = useState(null);
+  const [turningOver, setTurningOver] = useState(false);
+
+  const handleTurnoverConfirm = async () => {
+    if (!turnoverTarget) return;
+    setTurningOver(true);
+    try {
+      const res = await fetch(
+        `/api/properties/${id}/rooms/${turnoverTarget.id}/turnover`,
+        { method: 'POST', credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('turnover failed');
+      setTurnoverTarget(null);
+      // Refetch overview
+      const r = await fetch(`/api/properties/${id}/overview`, { credentials: 'include' });
+      const d = await r.json();
+      setData(d);
+    } catch { /* ignore */ }
+    finally { setTurningOver(false); }
+  };
 
   useEffect(() => {
     fetch(`/api/properties/${id}/overview`, { credentials: 'include' })
@@ -85,6 +109,8 @@ export default function PropertyOverview() {
           </div>
           <div className="po-header-actions">
             <button className="btn-text-sm" onClick={() => navigate(`/properties/${id}`)}>Edit Property</button>
+            <button className="btn-secondary-sm" onClick={() => setShowLogViolation(true)}>+ Log Violation</button>
+            <button className="btn-secondary-sm" onClick={() => setShowNewMaint(true)}>+ Report Issue</button>
             <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
           </div>
         </div>
@@ -111,7 +137,27 @@ export default function PropertyOverview() {
                   <div className="po-room-body">
                     <div className="po-room-header">
                       <h3 className="po-room-label">{room.label}</h3>
-                      <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
+                      <div className="po-room-header-right">
+                        {room.activeViolationCount >= 3 && (
+                          <span
+                            className="po-room-escalation"
+                            title={`${room.activeViolationCount} active violations — problem resident?`}
+                          >
+                            &#9888; {room.activeViolationCount}
+                          </span>
+                        )}
+                        <button
+                          className="po-room-action-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTurnoverTarget(room);
+                          }}
+                          title="Turn room for new resident"
+                        >
+                          &#8634;
+                        </button>
+                        <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
+                      </div>
                     </div>
                     <div className="po-room-meta">
                       {room.openMaintenanceCount > 0 ? (
@@ -127,6 +173,12 @@ export default function PropertyOverview() {
                           ? `${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
                           : 'Never inspected'}
                       </span>
+                      {room.lastTurnoverAt && (
+                        <>
+                          <span className="dot" />
+                          <span>Turned {timeAgo(room.lastTurnoverAt)}</span>
+                        </>
+                      )}
                     </div>
                     {room.features?.length > 0 && (
                       <div className="po-room-features">
@@ -372,6 +424,53 @@ export default function PropertyOverview() {
       </div>
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />
+      <NewMaintenance
+        open={showNewMaint}
+        onClose={() => setShowNewMaint(false)}
+        defaultPropertyId={property.id}
+        onCreated={() => { setShowNewMaint(false); }}
+      />
+      <LogViolation
+        open={showLogViolation}
+        onClose={() => setShowLogViolation(false)}
+        propertyId={property.id}
+        rooms={roomCards}
+        onCreated={() => { setShowLogViolation(false); }}
+      />
+
+      {turnoverTarget && (
+        <div className="modal-overlay" onClick={() => !turningOver && setTurnoverTarget(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Turn {turnoverTarget.label} for a new resident?</h3>
+              <button className="modal-close" onClick={() => !turningOver && setTurnoverTarget(null)}>&times;</button>
+            </div>
+            <div className="modal-form">
+              <p>
+                This archives all active lease violations on this room. They&apos;ll still
+                appear in the room&apos;s violation history (for deposit disputes)
+                but won&apos;t count toward the active tally or the health grade.
+              </p>
+              <div className="modal-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setTurnoverTarget(null)}
+                  disabled={turningOver}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={handleTurnoverConfirm}
+                  disabled={turningOver}
+                >
+                  {turningOver ? 'Turning...' : 'Confirm turnover'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

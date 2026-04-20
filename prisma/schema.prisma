@@ -157,14 +157,15 @@ model Property {
 // ─── Room ───────────────────────────────────────────────
 
 model Room {
-  id        String   @id @default(cuid())
-  label     String
-  features  String[]
-  furniture String[]
-  propertyId String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  deletedAt  DateTime?
+  id              String   @id @default(cuid())
+  label           String
+  features        String[]
+  furniture       String[]
+  propertyId      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastTurnoverAt  DateTime?
+  deletedAt       DateTime?
 
   property         Property          @relation(fields: [propertyId], references: [id])
   inspections      Inspection[]
@@ -396,8 +397,8 @@ model LeaseViolation {
   organizationId   String
   propertyId       String
   roomId           String?
-  inspectionId     String
-  inspectionItemId String    @unique
+  inspectionId     String?
+  inspectionItemId String?   @unique
   description      String
   category         String?
   note             String?
@@ -405,6 +406,8 @@ model LeaseViolation {
   reportedByName   String?
   createdAt        DateTime  @default(now())
   resolvedAt       DateTime?
+  archivedAt       DateTime?
+  archivedReason   String?
   deletedAt        DateTime?
 
   actions LeaseViolationAction[]

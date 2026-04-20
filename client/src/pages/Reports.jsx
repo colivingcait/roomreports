@@ -26,7 +26,14 @@ function fmtHours(ms) {
 }
 
 function Bar({ value, max, color }) {
-  const pct = max > 0 ? (value / max) * 100 : 0;
+  const v = Number(value) || 0;
+  const m = Number(max) || 0;
+  // Tiny non-zero values still need a visible sliver so the row doesn't
+  // look like "no bar". Zero stays zero.
+  let pct = 0;
+  if (v > 0 && m > 0) {
+    pct = Math.max(3, (v / m) * 100);
+  }
   return (
     <div className="report-bar">
       <div className="report-bar-fill" style={{ width: `${pct}%`, background: color || '#6B8F71' }} />
@@ -34,8 +41,8 @@ function Bar({ value, max, color }) {
   );
 }
 
-function Breakdown({ title, rows, formatter }) {
-  const max = Math.max(1, ...rows.map((r) => r.total));
+function Breakdown({ title, rows, formatter, valueKey = 'total' }) {
+  const max = Math.max(1, ...rows.map((r) => Number(r[valueKey]) || 0));
   return (
     <div className="report-card">
       <h3 className="md-section-title">{title}</h3>
@@ -46,7 +53,7 @@ function Breakdown({ title, rows, formatter }) {
           {rows.slice(0, 10).map((r) => (
             <div key={r.key} className="report-row">
               <span className="report-row-label" title={r.label}>{r.label || r.key}</span>
-              <Bar value={r.total} max={max} />
+              <Bar value={r[valueKey]} max={max} />
               <span className="report-row-value">{formatter(r)}</span>
             </div>
           ))}
@@ -56,7 +63,109 @@ function Breakdown({ title, rows, formatter }) {
   );
 }
 
-export default function Reports() {
+// ─── SVG line chart for monthly trends ─────────────────
+// data = [{ key: '2026-04', total: 1234, count: 3 }, ...]
+function LineChart({ data, valueKey = 'total', height = 180, label = '', formatter = (v) => v }) {
+  if (!data || data.length === 0) {
+    return <p className="empty-text">No data in this range.</p>;
+  }
+
+  const W = 640;
+  const H = height;
+  const PAD_L = 48;
+  const PAD_R = 12;
+  const PAD_T = 12;
+  const PAD_B = 28;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+
+  const values = data.map((d) => Number(d[valueKey]) || 0);
+  const maxV = Math.max(1, ...values);
+  const n = data.length;
+  const x = (i) => PAD_L + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = (v) => PAD_T + innerH - (v / maxV) * innerH;
+
+  const points = data.map((d, i) => `${x(i)},${y(Number(d[valueKey]) || 0)}`).join(' ');
+  const gridCount = 4;
+  const gridVals = Array.from({ length: gridCount + 1 }, (_, i) => (maxV / gridCount) * i);
+
+  return (
+    <div className="chart-wrap">
+      {label && <div className="chart-label">{label}</div>}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="chart-svg"
+        preserveAspectRatio="none"
+        aria-label={label}
+      >
+        {/* Y-axis grid lines + labels */}
+        {gridVals.map((g, i) => {
+          const yy = y(g);
+          return (
+            <g key={i}>
+              <line x1={PAD_L} x2={W - PAD_R} y1={yy} y2={yy} stroke="#F0EDEB" strokeWidth="1" />
+              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize="10" fill="#8A8583">
+                {formatter(g)}
+              </text>
+            </g>
+          );
+        })}
+        {/* X-axis baseline */}
+        <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + innerH} y2={PAD_T + innerH} stroke="#D4D0CE" strokeWidth="1" />
+        {/* Fill under line */}
+        <polygon
+          points={`${PAD_L},${PAD_T + innerH} ${points} ${W - PAD_R},${PAD_T + innerH}`}
+          fill="#6B8F71"
+          fillOpacity="0.12"
+        />
+        {/* Line */}
+        <polyline
+          points={points}
+          fill="none"
+          stroke="#6B8F71"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {/* Points */}
+        {data.map((d, i) => (
+          <g key={d.key}>
+            <circle
+              cx={x(i)}
+              cy={y(Number(d[valueKey]) || 0)}
+              r="3.5"
+              fill="#fff"
+              stroke="#6B8F71"
+              strokeWidth="2"
+            />
+            <title>{`${d.key}: ${formatter(Number(d[valueKey]) || 0)}`}</title>
+          </g>
+        ))}
+        {/* X-axis labels */}
+        {data.map((d, i) => {
+          // Don't crowd mobile — show every other label if many points
+          if (n > 8 && i % 2 !== 0) return null;
+          return (
+            <text
+              key={`x-${d.key}`}
+              x={x(i)}
+              y={H - 8}
+              textAnchor="middle"
+              fontSize="10"
+              fill="#8A8583"
+            >
+              {d.key.slice(5)}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ─── Maintenance Reports tab ───────────────────────────
+
+function MaintenanceReports() {
   const [preset, setPreset] = useState('ytd');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -108,17 +217,13 @@ export default function Reports() {
   };
 
   const trend = data?.trend || [];
-  const trendMax = Math.max(1, ...trend.map((t) => t.total));
 
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Reports</h1>
-          <p className="page-subtitle">
-            {data?.totalTickets != null ? `${data.totalTickets} ticket${data.totalTickets === 1 ? '' : 's'} in selected range` : '—'}
-          </p>
-        </div>
+    <>
+      <div className="reports-tab-header">
+        <span className="reports-tab-count">
+          {data?.totalTickets != null ? `${data.totalTickets} ticket${data.totalTickets === 1 ? '' : 's'} in selected range` : '—'}
+        </span>
         <button className="btn-primary-sm" onClick={downloadCsv}>Export CSV</button>
       </div>
 
@@ -194,32 +299,286 @@ export default function Reports() {
           {/* Trend */}
           <div className="report-card">
             <h3 className="md-section-title">Monthly cost trend</h3>
-            {trend.length === 0 ? (
-              <p className="empty-text">No data in this range.</p>
-            ) : (
-              <div className="report-trend">
-                {trend.map((t) => (
-                  <div key={t.key} className="report-trend-col">
-                    <div
-                      className="report-trend-bar"
-                      style={{ height: `${(t.total / trendMax) * 100}%` }}
-                      title={`${fmtCurrency(t.total)} · ${t.count} tickets`}
-                    />
-                    <span className="report-trend-label">{t.key.slice(5)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <LineChart
+              data={trend}
+              valueKey="total"
+              formatter={(v) => fmtCurrency(v)}
+            />
+          </div>
+
+          <div className="report-card">
+            <h3 className="md-section-title">Monthly ticket volume</h3>
+            <LineChart
+              data={trend}
+              valueKey="count"
+              formatter={(v) => Math.round(v).toString()}
+            />
           </div>
 
           <Breakdown title="Cost by category" rows={data.costByCategory} formatter={(r) => fmtCurrency(r.total)} />
           <Breakdown title="Cost by property" rows={data.costByProperty} formatter={(r) => fmtCurrency(r.total)} />
           <Breakdown title="Cost by room" rows={data.costByRoom} formatter={(r) => fmtCurrency(r.total)} />
           <Breakdown title="Cost by vendor" rows={data.costByVendor} formatter={(r) => fmtCurrency(r.total)} />
-          <Breakdown title="Most common categories (count)" rows={data.commonCategories} formatter={(r) => `${r.count}`} />
-          <Breakdown title="Most common rooms (count)" rows={data.commonRooms} formatter={(r) => `${r.count}`} />
+          <Breakdown title="Most common categories (count)" rows={data.commonCategories} formatter={(r) => `${r.count}`} valueKey="count" />
+          <Breakdown title="Most common rooms (count)" rows={data.commonRooms} formatter={(r) => `${r.count}`} valueKey="count" />
         </>
       )}
+    </>
+  );
+}
+
+// ─── Inspection Reports tab ────────────────────────────
+
+function InspectionReports() {
+  const [inspections, setInspections] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [filterProperty, setFilterProperty] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    api('/api/properties').then((d) => setProperties(d.properties || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (filterProperty) q.set('propertyId', filterProperty);
+    if (filterType) q.set('type', filterType);
+    if (filterStatus) q.set('status', filterStatus);
+    setLoading(true);
+    api(`/api/inspections?${q}`)
+      .then((d) => setInspections(d.inspections || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filterProperty, filterType, filterStatus]);
+
+  const TYPE_LABELS = {
+    QUARTERLY: 'Room Inspection', COMMON_AREA: 'Common Area',
+    ROOM_TURN: 'Room Turn', MOVE_IN_OUT: 'Move-In / Out', RESIDENT_SELF_CHECK: 'Self-Check',
+    COMMON_AREA_QUICK: 'Common Area Quick',
+  };
+
+  const filtered = inspections.filter((i) => {
+    if (!search) return i.status !== 'DRAFT';
+    const s = search.toLowerCase();
+    return i.status !== 'DRAFT' && (
+      i.property?.name?.toLowerCase().includes(s) ||
+      i.inspectorName?.toLowerCase().includes(s) ||
+      i.room?.label?.toLowerCase().includes(s)
+    );
+  });
+
+  return (
+    <>
+      <div className="reports-tab-header">
+        <span className="reports-tab-count">{filtered.length} inspection{filtered.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="maint-filters" style={{ flexWrap: 'wrap' }}>
+        <input
+          type="search"
+          className="filter-select"
+          placeholder="Search property / inspector..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select className="filter-select" value={filterProperty} onChange={(e) => setFilterProperty(e.target.value)}>
+          <option value="">All Properties</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select className="filter-select" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+          <option value="">All Types</option>
+          {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select className="filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="">All Statuses</option>
+          <option value="SUBMITTED">Submitted</option>
+          <option value="REVIEWED">Reviewed</option>
+        </select>
+      </div>
+
+      {loading ? <div className="page-loading">Loading...</div> : (
+        <div className="insp-history-list">
+          {filtered.length === 0 ? (
+            <div className="empty-state"><p>No inspections match these filters.</p></div>
+          ) : (
+            filtered.map((i) => (
+              <InspectionReportRow key={i.id} item={i} />
+            ))
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function InspectionReportRow({ item }) {
+  const downloadPdf = (e) => {
+    e.stopPropagation();
+    // Fall back to per-maintenance PDFs for now — inspection PDFs are
+    // not yet implemented server-side. Open the review page instead.
+    window.open(`/inspections/${item.id}/review`, '_blank');
+  };
+  return (
+    <div
+      className="insp-history-row"
+      onClick={() => { window.location.href = `/inspections/${item.id}/review`; }}
+    >
+      <div className="insp-history-left">
+        <span className="dash-type-badge">{item.type.replace(/_/g, ' ')}</span>
+        <div className="insp-history-info">
+          <span className="insp-history-prop">
+            {item.property?.name}{item.room ? ` — ${item.room.label}` : ''}
+          </span>
+          <span className="insp-history-inspector">
+            {item.inspectorName || '—'} &middot; {new Date(item.createdAt).toLocaleDateString()}
+          </span>
+        </div>
+      </div>
+      <div className="insp-history-right">
+        <span className="insp-history-items">
+          {item._count?.items || 0} items
+        </span>
+        <span className="insp-status-badge">{item.status}</span>
+        <button className="btn-text-sm" onClick={downloadPdf}>Open &rarr;</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Lease Violation Reports tab ───────────────────────
+
+function ViolationReports() {
+  const [violations, setViolations] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [filterProperty, setFilterProperty] = useState('');
+  const [filterStatus, setFilterStatus] = useState('active');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api('/api/properties').then((d) => setProperties(d.properties || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (filterStatus === 'active') q.set('active', 'true');
+    if (filterProperty) q.set('propertyId', filterProperty);
+    setLoading(true);
+    api(`/api/violations?${q}`)
+      .then((d) => setViolations(d.violations || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filterStatus, filterProperty]);
+
+  const filtered = filterProperty
+    ? violations.filter((v) => v.propertyId === filterProperty)
+    : violations;
+
+  const downloadCsv = () => {
+    const rows = [['Property', 'Room', 'Category', 'Created', 'Resolved', 'Description']];
+    for (const v of filtered) {
+      rows.push([
+        v.property?.name || '',
+        v.room?.label || '',
+        v.category || '',
+        v.createdAt ? new Date(v.createdAt).toISOString() : '',
+        v.resolvedAt ? new Date(v.resolvedAt).toISOString() : '',
+        v.description || '',
+      ]);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `violations-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <>
+      <div className="reports-tab-header">
+        <span className="reports-tab-count">{filtered.length} violation{filtered.length === 1 ? '' : 's'}</span>
+        <button className="btn-primary-sm" onClick={downloadCsv}>Export CSV</button>
+      </div>
+      <div className="maint-filters" style={{ flexWrap: 'wrap' }}>
+        <select className="filter-select" value={filterProperty} onChange={(e) => setFilterProperty(e.target.value)}>
+          <option value="">All Properties</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select className="filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="active">Active only</option>
+          <option value="all">All (active + resolved)</option>
+        </select>
+      </div>
+
+      {loading ? <div className="page-loading">Loading...</div> : (
+        <div className="violation-list">
+          {filtered.length === 0 ? (
+            <div className="empty-state"><p>No violations match these filters.</p></div>
+          ) : (
+            filtered.map((v) => (
+              <div key={v.id} className="violation-card">
+                <div className="violation-card-head">
+                  <div>
+                    <div className="violation-card-title">{v.category || 'Violation'}</div>
+                    <div className="violation-card-meta">
+                      {v.property?.name}{v.room ? ` — ${v.room.label}` : ''} &middot;{' '}
+                      {new Date(v.createdAt).toLocaleDateString()}
+                      {v.resolvedAt && <> &middot; Resolved {new Date(v.resolvedAt).toLocaleDateString()}</>}
+                    </div>
+                  </div>
+                  <span className={`insp-status-badge ${v.resolvedAt ? 'resolved' : 'active'}`}>
+                    {v.resolvedAt ? 'Resolved' : 'Open'}
+                  </span>
+                </div>
+                {v.description && <div className="violation-card-desc">{v.description}</div>}
+                {v.note && <div className="violation-card-note">{v.note}</div>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Main Reports page (tabs) ──────────────────────────
+
+export default function Reports() {
+  const [tab, setTab] = useState('inspections');
+  return (
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1>Reports</h1>
+        </div>
+      </div>
+      <div className="reports-tabs">
+        <button
+          className={`reports-tab ${tab === 'inspections' ? 'active' : ''}`}
+          onClick={() => setTab('inspections')}
+        >
+          Inspection Reports
+        </button>
+        <button
+          className={`reports-tab ${tab === 'maintenance' ? 'active' : ''}`}
+          onClick={() => setTab('maintenance')}
+        >
+          Maintenance Reports
+        </button>
+        <button
+          className={`reports-tab ${tab === 'violations' ? 'active' : ''}`}
+          onClick={() => setTab('violations')}
+        >
+          Lease Violations
+        </button>
+      </div>
+      {tab === 'inspections' && <InspectionReports />}
+      {tab === 'maintenance' && <MaintenanceReports />}
+      {tab === 'violations' && <ViolationReports />}
     </div>
   );
 }

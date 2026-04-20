@@ -25,6 +25,7 @@ import Reports from './pages/Reports';
 import Violations from './pages/Violations';
 import PropertyHealth from './pages/PropertyHealth';
 import Templates from './pages/Templates';
+import More from './pages/More';
 import VendorProfile from './pages/VendorProfile';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
@@ -62,13 +63,15 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/properties" element={<Properties />} />
+              <Route path="/properties" element={<PropertyHealth />} />
+              <Route path="/properties/manage" element={<Properties />} />
               <Route path="/properties/:id" element={<PropertyDetail />} />
               <Route path="/properties/:id/overview" element={<PropertyOverview />} />
               <Route path="/inspections" element={<Inspections />} />
               <Route path="/inspections/:id/review" element={<InspectionReview />} />
               <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
               <Route path="/maintenance" element={<Maintenance />} />
+              <Route path="/more" element={<More />} />
               <Route path="/team" element={<Team />} />
               <Route path="/todo" element={<Tasks />} />
               <Route path="/tasks" element={<Tasks />} />
