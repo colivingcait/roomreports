@@ -45,7 +45,7 @@ async function gradePropertyIds(orgId, propertyIds) {
     resMap[r.propertyId].push(days);
   }
 
-  // Recent inspections for fail ratio
+  // Recent inspections for fail ratio — and last-inspection per property
   const recentInspections = await prisma.inspection.findMany({
     where: {
       organizationId: orgId,
@@ -57,7 +57,7 @@ async function gradePropertyIds(orgId, propertyIds) {
     include: {
       items: {
         where: { NOT: { zone: { startsWith: '_' } } },
-        select: { propertyId: true, status: true },
+        select: { status: true },
       },
     },
   });
@@ -70,6 +70,21 @@ async function gradePropertyIds(orgId, propertyIds) {
     }
     failMap[insp.propertyId] = bucket;
   }
+
+  // Active violations (non-archived, unresolved) — for escalation badges
+  const activeViolations = await prisma.leaseViolation.groupBy({
+    by: ['propertyId'],
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      deletedAt: null,
+      archivedAt: null,
+      resolvedAt: null,
+    },
+    _count: true,
+  });
+  const violationMap = {};
+  for (const row of activeViolations) violationMap[row.propertyId] = row._count;
 
   // Overdue inspection schedules
   const schedules = await prisma.inspectionSchedule.findMany({
@@ -102,6 +117,14 @@ async function gradePropertyIds(orgId, propertyIds) {
     if (nextDue < now) overdueMap[s.propertyId] = (overdueMap[s.propertyId] || 0) + 1;
   }
 
+  // Last inspection (any type) per property — for the card display
+  const lastAnyInspection = {};
+  for (const r of lastByKey) {
+    if (!lastAnyInspection[r.propertyId] || new Date(r.createdAt) > new Date(lastAnyInspection[r.propertyId].date)) {
+      lastAnyInspection[r.propertyId] = { date: r.createdAt, type: r.type };
+    }
+  }
+
   const out = {};
   for (const pid of propertyIds) {
     const resolutionDays = resMap[pid]?.length
@@ -121,6 +144,8 @@ async function gradePropertyIds(orgId, propertyIds) {
       openMaintenanceCount: openMap[pid] || 0,
       overdueInspectionCount: overdueMap[pid] || 0,
       avgResolutionDays: resolutionDays,
+      activeViolationCount: violationMap[pid] || 0,
+      lastInspection: lastAnyInspection[pid] || null,
     };
   }
   return out;
