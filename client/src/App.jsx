@@ -18,6 +18,11 @@ import QuarterlyReview from './pages/QuarterlyReview';
 import CommonAreaFlow from './pages/CommonAreaFlow';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
+import Tasks from './pages/Tasks';
+import Calendar from './pages/Calendar';
+import Reports from './pages/Reports';
+import Violations from './pages/Violations';
+import PropertyHealth from './pages/PropertyHealth';
 import VendorProfile from './pages/VendorProfile';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
@@ -63,6 +68,11 @@ function App() {
               <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/team" element={<Team />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/calendar" element={<Calendar />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/violations" element={<Violations />} />
+              <Route path="/health" element={<PropertyHealth />} />
               <Route path="/vendors/:id" element={<VendorProfile />} />
             </Route>
 

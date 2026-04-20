@@ -88,6 +88,18 @@ router.get('/', async (req, res) => {
       _count: true,
     });
 
+    // Open task count for combined total — orgwide tasks live with propertyId=null
+    const taskOpenCount = await prisma.task.count({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { not: 'DONE' },
+        ...(scope.propertyId
+          ? { OR: [{ propertyId: null }, { propertyId: scope.propertyId }] }
+          : {}),
+      },
+    });
+
     const statusCounts = { OPEN: 0, ASSIGNED: 0, IN_PROGRESS: 0, RESOLVED: 0 };
     for (const c of maintenanceCounts) {
       statusCounts[c.status] = c._count;
@@ -215,6 +227,7 @@ router.get('/', async (req, res) => {
       }
     }
 
+    const openMaintenance = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
     return res.json({
       pendingReview,
       maintenance: {
@@ -222,6 +235,8 @@ router.get('/', async (req, res) => {
         total: Object.values(statusCounts).reduce((a, b) => a + b, 0),
         recentOpen: recentMaintenance,
       },
+      tasks: { openCount: taskOpenCount },
+      combinedOpen: openMaintenance + taskOpenCount,
       propertyHealth,
       overdueRooms,
     });

@@ -12,6 +12,10 @@ import teamRoutes from './routes/team.js';
 import searchRoutes from './routes/search.js';
 import suggestionsRoutes from './routes/suggestions.js';
 import vendorRoutes from './routes/vendors.js';
+import taskRoutes from './routes/tasks.js';
+import scheduleRoutes from './routes/schedules.js';
+import violationRoutes from './routes/violations.js';
+import reportsRoutes from './routes/reports.js';
 import publicInspectionRoutes from './routes/publicInspections.js';
 
 const app = express();
@@ -51,6 +55,10 @@ app.use('/api/team', teamRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/schedules', scheduleRoutes);
+app.use('/api/violations', violationRoutes);
+app.use('/api/reports', reportsRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -484,6 +484,29 @@ export default function Team() {
         confirmLabel="Archive"
       />
 
+      {/* Shortcuts */}
+      <div style={{ marginTop: '1.5rem' }}>
+        <h3 className="team-section-title">Shortcuts</h3>
+        <div className="shortcut-grid">
+          <button className="shortcut-card" onClick={() => navigate('/health')}>
+            <span className="shortcut-title">Properties</span>
+            <span className="shortcut-sub">Health grades + portfolio view</span>
+          </button>
+          <button className="shortcut-card" onClick={() => navigate('/tasks')}>
+            <span className="shortcut-title">Tasks</span>
+            <span className="shortcut-sub">Admin task board</span>
+          </button>
+          <button className="shortcut-card" onClick={() => navigate('/calendar')}>
+            <span className="shortcut-title">Calendar</span>
+            <span className="shortcut-sub">Inspection schedules + overdue</span>
+          </button>
+          <button className="shortcut-card" onClick={() => navigate('/violations')}>
+            <span className="shortcut-title">Lease Violations</span>
+            <span className="shortcut-sub">Follow-up log + paper trail</span>
+          </button>
+        </div>
+      </div>
+
       {/* Suggest a Feature */}
       <div style={{ marginTop: '1.5rem' }}>
         <h3 className="team-section-title">Suggest a Feature</h3>

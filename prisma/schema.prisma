@@ -39,6 +39,12 @@ enum MaintenanceStatus {
   RESOLVED
 }
 
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
 // ─── Organization ───────────────────────────────────────
 
 model Organization {
@@ -398,9 +404,82 @@ model LeaseViolation {
   resolvedAt       DateTime?
   deletedAt        DateTime?
 
+  actions LeaseViolationAction[]
+
   @@index([organizationId])
   @@index([propertyId])
   @@map("lease_violations")
+}
+
+// ─── LeaseViolationAction ───────────────────────────────
+// Follow-up actions logged against a violation (paper trail)
+
+model LeaseViolationAction {
+  id                String   @id @default(cuid())
+  leaseViolationId  String
+  organizationId    String
+  method            String   // text | email | verbal | written_notice | other
+  description       String
+  actionAt          DateTime @default(now())
+  loggedById        String?
+  loggedByName      String?
+  createdAt         DateTime @default(now())
+
+  violation LeaseViolation @relation(fields: [leaseViolationId], references: [id])
+
+  @@index([leaseViolationId])
+  @@index([organizationId])
+  @@map("lease_violation_actions")
+}
+
+// ─── Task ───────────────────────────────────────────────
+// Admin task board — separate from MaintenanceItem
+
+model Task {
+  id               String     @id @default(cuid())
+  organizationId   String
+  title            String
+  description      String?
+  propertyId       String?
+  assignedTo       String?
+  assignedUserId   String?
+  assignedVendorId String?
+  dueAt            DateTime?
+  priority         String?    // Low | Medium | High
+  status           TaskStatus @default(TODO)
+  createdById      String?
+  createdByName    String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  completedAt      DateTime?
+  deletedAt        DateTime?
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([assignedUserId])
+  @@index([assignedVendorId])
+  @@index([status])
+  @@map("tasks")
+}
+
+// ─── InspectionSchedule ─────────────────────────────────
+// Recurrence rule per property + inspection type
+
+model InspectionSchedule {
+  id              String         @id @default(cuid())
+  organizationId  String
+  propertyId      String
+  inspectionType  InspectionType
+  frequencyDays   Int            // e.g. 7, 14, 30, 90
+  startsOn        DateTime       @default(now())
+  active          Boolean        @default(true)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([propertyId, inspectionType])
+  @@index([organizationId])
+  @@map("inspection_schedules")
 }
 
 // ─── Suggestion ─────────────────────────────────────────
