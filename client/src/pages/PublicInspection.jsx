@@ -238,7 +238,7 @@ export default function PublicInspection() {
   useEffect(() => {
     if (!orgMode) return;
     const q = searchQuery.trim();
-    if (q.length < 2) { setSearchResults([]); return; }
+    if (q.length < 3) { setSearchResults([]); return; }
     setSearching(true);
     const t = setTimeout(async () => {
       try {
@@ -368,7 +368,7 @@ export default function PublicInspection() {
           </label>
           <div className="pub-search-results">
             {searching && <p className="pub-hint">Searching...</p>}
-            {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+            {!searching && searchQuery.trim().length >= 3 && searchResults.length === 0 && (
               <p className="pub-hint">No matches. Try a different street name.</p>
             )}
             {searchResults.map((p) => (

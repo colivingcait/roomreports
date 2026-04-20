@@ -96,7 +96,7 @@ router.get('/org/:slug/properties', async (req, res) => {
     if (!org) return res.status(404).json({ error: 'Organization not found' });
 
     const search = (req.query.search || '').trim().toLowerCase();
-    if (!search || search.length < 2) return res.json({ properties: [] });
+    if (!search || search.length < 3) return res.json({ properties: [] });
 
     const properties = await prisma.property.findMany({
       where: {
