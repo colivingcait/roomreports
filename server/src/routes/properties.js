@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signPropertyInvite } from '../lib/propertyInvite.js';
+import { propertyScope } from '../lib/scope.js';
 
 const router = Router();
 
@@ -21,8 +22,9 @@ async function findOrgProperty(propertyId, organizationId) {
 // GET /api/properties — list all properties for the user's org
 router.get('/', async (req, res) => {
   try {
+    const scope = await propertyScope(req.user);
     const properties = await prisma.property.findMany({
-      where: { organizationId: req.user.organizationId, deletedAt: null },
+      where: { organizationId: req.user.organizationId, deletedAt: null, ...scope },
       include: {
         _count: {
           select: {
@@ -254,11 +256,13 @@ router.get('/:id/qr-token', requireRole('OWNER', 'PM'), async (req, res) => {
 // GET /api/properties/:id — get property with rooms, kitchens, bathrooms
 router.get('/:id', async (req, res) => {
   try {
+    const scope = await propertyScope(req.user);
     const property = await prisma.property.findFirst({
       where: {
         id: req.params.id,
         organizationId: req.user.organizationId,
         deletedAt: null,
+        ...scope,
       },
       include: {
         rooms: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },

@@ -1988,6 +1988,73 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ─── Assignee picker ─────────────────────────────────── */
+
+.assignee-picker { position: relative; }
+.assignee-trigger {
+  text-align: left;
+  background: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+.assignee-chevron { color: #8A8583; margin-left: 0.5rem; font-size: 0.7rem; }
+.assignee-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #D4D0CE;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  z-index: 40;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+.assignee-group + .assignee-group { border-top: 1px solid #F0EDEB; }
+.assignee-group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8A8583;
+  padding: 0.35rem 0.75rem 0.2rem;
+}
+.assignee-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #4A4543;
+}
+.assignee-option:hover { background: #F5F2EF; }
+.assignee-option-sub { color: #8A8583; font-size: 0.75rem; }
+.assignee-custom {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+}
+.assignee-custom input { flex: 1; }
+.assignee-clear {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid #F0EDEB;
+  padding: 0.4rem 0.75rem;
+  color: #C53030;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
 /* ─── Dashboard ──────────────────────────────────────── */
 
 .db-page { }

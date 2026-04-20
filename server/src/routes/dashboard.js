@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { propertyIdScope } from '../lib/scope.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -9,6 +10,7 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const orgId = req.user.organizationId;
+    const scope = await propertyIdScope(req.user);
 
     // ─── Pending Review ─── Inspections with status SUBMITTED
     // Quarterly inspections are grouped per property+date as one entry
@@ -17,6 +19,7 @@ router.get('/', async (req, res) => {
         organizationId: orgId,
         deletedAt: null,
         status: 'SUBMITTED',
+        ...scope,
       },
       include: {
         property: { select: { id: true, name: true } },
@@ -81,7 +84,7 @@ router.get('/', async (req, res) => {
     // ─── Maintenance Overview ─── Stats + recent items
     const maintenanceCounts = await prisma.maintenanceItem.groupBy({
       by: ['status'],
-      where: { organizationId: orgId, deletedAt: null },
+      where: { organizationId: orgId, deletedAt: null, ...scope },
       _count: true,
     });
 
@@ -96,6 +99,7 @@ router.get('/', async (req, res) => {
         organizationId: orgId,
         deletedAt: null,
         status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        ...scope,
       },
       include: {
         property: { select: { id: true, name: true } },
@@ -127,7 +131,11 @@ router.get('/', async (req, res) => {
 
     // ─── Property Health ─── Per-property open maintenance
     const properties = await prisma.property.findMany({
-      where: { organizationId: orgId, deletedAt: null },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        ...(scope.propertyId ? { id: scope.propertyId } : {}),
+      },
       include: {
         maintenanceItems: {
           where: {
@@ -165,7 +173,11 @@ router.get('/', async (req, res) => {
 
     // ─── Needs Attention ─── Overdue rooms (quarterly 90+ days or never)
     const allProperties = await prisma.property.findMany({
-      where: { organizationId: orgId, deletedAt: null },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        ...(scope.propertyId ? { id: scope.propertyId } : {}),
+      },
       include: {
         rooms: {
           where: { deletedAt: null },

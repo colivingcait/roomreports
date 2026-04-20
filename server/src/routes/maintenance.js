@@ -5,6 +5,7 @@ import PDFDocument from 'pdfkit';
 import prisma from '../lib/prisma.js';
 import { uploadFile } from '../lib/storage.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { propertyIdScope } from '../lib/scope.js';
 import { PRIORITIES, ATTACHMENT_LABELS } from '../../../shared/index.js';
 
 const router = Router();
@@ -74,6 +75,8 @@ const MAINTENANCE_INCLUDE = {
   inspectionItem: { select: { id: true, text: true } },
   photos: true,
   attachments: { orderBy: { createdAt: 'desc' } },
+  assignedUser: { select: { id: true, name: true, role: true, customRole: true } },
+  assignedVendor: { select: { id: true, name: true, company: true } },
 };
 
 const DETAIL_INCLUDE = {
@@ -93,12 +96,15 @@ router.get('/', async (req, res) => {
   try {
     const {
       propertyId, status, flagCategory, priority, assignedTo,
+      assignedUserId, assignedVendorId,
       startDate, endDate, includeArchived, search,
     } = req.query;
 
+    const scope = await propertyIdScope(req.user);
     const where = {
       organizationId: req.user.organizationId,
       deletedAt: null,
+      ...scope,
     };
 
     if (propertyId) where.propertyId = propertyId;
@@ -106,6 +112,8 @@ router.get('/', async (req, res) => {
     if (flagCategory) where.flagCategory = { in: matchingCategories(flagCategory) };
     if (priority) where.priority = priority;
     if (assignedTo) where.assignedTo = assignedTo;
+    if (assignedUserId) where.assignedUserId = assignedUserId;
+    if (assignedVendorId) where.assignedVendorId = assignedVendorId;
     if (search) where.description = { contains: search, mode: 'insensitive' };
 
     if (startDate || endDate) {
@@ -238,7 +246,8 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Maintenance item not found' });
 
     const {
-      status, assignedTo, note, priority,
+      status, assignedTo, assignedUserId, assignedVendorId,
+      note, priority,
       estimatedCost, actualCost, vendor,
       entryApproved, entryCode,
       description,
@@ -249,6 +258,41 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     if (assignedTo !== undefined) data.assignedTo = assignedTo;
     if (note !== undefined) data.note = note;
     if (description !== undefined) data.description = description;
+
+    // Structured assignment: verify ownership then resolve display name
+    if (assignedUserId !== undefined) {
+      if (assignedUserId) {
+        const u = await prisma.user.findFirst({
+          where: { id: assignedUserId, organizationId: req.user.organizationId },
+          select: { id: true, name: true },
+        });
+        if (!u) return res.status(400).json({ error: 'assignedUserId not found in this org' });
+        data.assignedUserId = u.id;
+        data.assignedVendorId = null;
+        data.assignedTo = u.name;
+      } else {
+        data.assignedUserId = null;
+      }
+    }
+    if (assignedVendorId !== undefined) {
+      if (assignedVendorId) {
+        const v = await prisma.vendor.findFirst({
+          where: { id: assignedVendorId, organizationId: req.user.organizationId },
+          select: { id: true, name: true, company: true },
+        });
+        if (!v) return res.status(400).json({ error: 'assignedVendorId not found in this org' });
+        data.assignedVendorId = v.id;
+        data.assignedUserId = null;
+        data.assignedTo = v.company ? `${v.name} (${v.company})` : v.name;
+      } else {
+        data.assignedVendorId = null;
+      }
+    }
+    // If assignedTo was set directly (custom text) without vendor/user ids, clear the FKs
+    if (assignedTo !== undefined && assignedUserId === undefined && assignedVendorId === undefined) {
+      data.assignedUserId = null;
+      data.assignedVendorId = null;
+    }
     if (priority !== undefined) {
       if (priority !== null && !PRIORITIES.includes(priority)) {
         return res.status(400).json({ error: `priority must be one of ${PRIORITIES.join(', ')}` });
@@ -279,8 +323,12 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     if (status !== undefined && status !== existing.status) {
       events.push(logEvent(existing.id, req.user, 'status', existing.status, status));
     }
-    if (assignedTo !== undefined && assignedTo !== existing.assignedTo) {
-      events.push(logEvent(existing.id, req.user, 'assigned', existing.assignedTo, assignedTo));
+    if (
+      (assignedTo !== undefined && assignedTo !== existing.assignedTo) ||
+      (assignedUserId !== undefined && assignedUserId !== existing.assignedUserId) ||
+      (assignedVendorId !== undefined && assignedVendorId !== existing.assignedVendorId)
+    ) {
+      events.push(logEvent(existing.id, req.user, 'assigned', existing.assignedTo, data.assignedTo ?? assignedTo));
     }
     if (priority !== undefined && priority !== existing.priority) {
       events.push(logEvent(existing.id, req.user, 'priority', existing.priority, priority));
@@ -554,7 +602,7 @@ router.get('/:id/pdf', async (req, res) => {
 // Body: { ids: [...] } OR { propertyId, assignedTo }
 router.post('/batch-pdf', async (req, res) => {
   try {
-    const { ids, propertyId, assignedTo } = req.body || {};
+    const { ids, propertyId, assignedTo, assignedUserId, assignedVendorId } = req.body || {};
 
     let items;
     if (Array.isArray(ids) && ids.length > 0) {
@@ -563,6 +611,8 @@ router.post('/batch-pdf', async (req, res) => {
       const where = { organizationId: req.user.organizationId, deletedAt: null };
       if (propertyId) where.propertyId = propertyId;
       if (assignedTo) where.assignedTo = assignedTo;
+      if (assignedUserId) where.assignedUserId = assignedUserId;
+      if (assignedVendorId) where.assignedVendorId = assignedVendorId;
       items = await prisma.maintenanceItem.findMany({
         where,
         include: {

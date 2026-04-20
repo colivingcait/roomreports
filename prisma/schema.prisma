@@ -54,6 +54,7 @@ model Organization {
   inspections Inspection[]
   maintenanceItems MaintenanceItem[]
   invitations Invitation[]
+  vendors     Vendor[]
 
   @@map("organizations")
 }
@@ -78,6 +79,7 @@ model User {
   inspections         Inspection[]
   propertyAssignments PropertyAssignment[]
   sentInvitations     Invitation[]         @relation("InvitedByUser")
+  assignedMaintenance MaintenanceItem[]    @relation("AssignedUser")
 
   @@index([organizationId])
   @@map("users")
@@ -280,7 +282,9 @@ model MaintenanceItem {
   description       String
   zone              String
   status            MaintenanceStatus @default(OPEN)
-  assignedTo        String?
+  assignedTo        String?           // free-text (custom / legacy)
+  assignedUserId    String?
+  assignedVendorId  String?
   flagCategory      String
   note              String?
   priority          String?           // Low | Medium | High
@@ -298,19 +302,45 @@ model MaintenanceItem {
   resolvedAt        DateTime?
   deletedAt         DateTime?
 
-  inspectionItem InspectionItem          @relation(fields: [inspectionItemId], references: [id])
-  inspection     Inspection              @relation(fields: [inspectionId], references: [id])
-  property       Property                @relation(fields: [propertyId], references: [id])
-  room           Room?                   @relation(fields: [roomId], references: [id])
-  organization   Organization            @relation(fields: [organizationId], references: [id])
-  photos         Photo[]
-  attachments    MaintenanceAttachment[]
-  events         MaintenanceEvent[]
+  inspectionItem  InspectionItem          @relation(fields: [inspectionItemId], references: [id])
+  inspection      Inspection              @relation(fields: [inspectionId], references: [id])
+  property        Property                @relation(fields: [propertyId], references: [id])
+  room            Room?                   @relation(fields: [roomId], references: [id])
+  organization    Organization            @relation(fields: [organizationId], references: [id])
+  assignedUser    User?                   @relation("AssignedUser", fields: [assignedUserId], references: [id])
+  assignedVendor  Vendor?                 @relation(fields: [assignedVendorId], references: [id])
+  photos          Photo[]
+  attachments     MaintenanceAttachment[]
+  events          MaintenanceEvent[]
 
   @@index([organizationId])
   @@index([propertyId])
   @@index([status])
+  @@index([assignedVendorId])
+  @@index([assignedUserId])
   @@map("maintenance_items")
+}
+
+// ─── Vendor ─────────────────────────────────────────────
+
+model Vendor {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  company        String?
+  phone          String?
+  email          String?
+  specialties    String[] // FLAG_CATEGORIES values
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  organization        Organization      @relation(fields: [organizationId], references: [id])
+  assignedMaintenance MaintenanceItem[]
+
+  @@index([organizationId])
+  @@map("vendors")
 }
 
 // ─── MaintenanceAttachment ──────────────────────────────

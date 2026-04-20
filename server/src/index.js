@@ -11,6 +11,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import teamRoutes from './routes/team.js';
 import searchRoutes from './routes/search.js';
 import suggestionsRoutes from './routes/suggestions.js';
+import vendorRoutes from './routes/vendors.js';
 import publicInspectionRoutes from './routes/publicInspections.js';
 
 const app = express();
@@ -49,6 +50,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/suggestions', suggestionsRoutes);
+app.use('/api/vendors', vendorRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

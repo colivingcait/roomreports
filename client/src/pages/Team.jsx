@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import VendorForm from '../components/VendorForm';
 import { ROLE_LABELS, roleLabel } from '../../../shared/index.js';
 
 // ─── Resident Link card with Copy Link + QR download ────
@@ -72,9 +74,16 @@ const api = (path, opts = {}) =>
 
 export default function Team() {
   const { user, organization } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [properties, setProperties] = useState([]);
+  const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Vendor modal
+  const [showVendorForm, setShowVendorForm] = useState(false);
+  const [editingVendor, setEditingVendor] = useState(null);
+  const [archiveVendorTarget, setArchiveVendorTarget] = useState(null);
 
   // Invite modal
   const [showInvite, setShowInvite] = useState(false);
@@ -113,15 +122,35 @@ export default function Team() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [teamData, propData] = await Promise.all([
+      const [teamData, propData, vendorData] = await Promise.all([
         api('/api/team'),
         api('/api/properties'),
+        api('/api/vendors'),
       ]);
       setUsers(teamData.users || []);
       setProperties(propData.properties || []);
+      setVendors(vendorData.vendors || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }, []);
+
+  const handleVendorSaved = (vendor) => {
+    setVendors((prev) => {
+      const exists = prev.find((v) => v.id === vendor.id);
+      return exists
+        ? prev.map((v) => v.id === vendor.id ? vendor : v)
+        : [...prev, vendor].sort((a, b) => a.name.localeCompare(b.name));
+    });
+  };
+
+  const handleArchiveVendor = async () => {
+    if (!archiveVendorTarget) return;
+    try {
+      await api(`/api/vendors/${archiveVendorTarget.id}`, { method: 'DELETE' });
+      setVendors((prev) => prev.filter((v) => v.id !== archiveVendorTarget.id));
+    } catch { /* ignore */ }
+    finally { setArchiveVendorTarget(null); }
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -390,6 +419,62 @@ export default function Team() {
           </div>
         </div>
       )}
+
+      {/* Vendors */}
+      {canInvite && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <div className="section-header">
+            <h3 className="team-section-title" style={{ margin: 0 }}>Vendors</h3>
+            <button className="btn-text-sm" onClick={() => { setEditingVendor(null); setShowVendorForm(true); }}>
+              + Add Vendor
+            </button>
+          </div>
+          {vendors.length === 0 ? (
+            <p className="empty-text">No vendors yet</p>
+          ) : (
+            <div className="team-list">
+              {vendors.map((v) => (
+                <div key={v.id} className="team-card" onClick={() => navigate(`/vendors/${v.id}`)} style={{ cursor: 'pointer' }}>
+                  <div className="team-card-left">
+                    <div className="team-card-name">{v.name}</div>
+                    <div className="team-card-email">
+                      {v.company}
+                      {v.phone && <> &middot; {v.phone}</>}
+                      {v.email && <> &middot; {v.email}</>}
+                    </div>
+                    {v.specialties?.length > 0 && (
+                      <div className="team-props">
+                        {v.specialties.map((s) => <span key={s} className="team-prop-tag">{s}</span>)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="team-card-right">
+                    <div className="team-actions" onClick={(e) => e.stopPropagation()}>
+                      <button className="btn-text-sm" onClick={() => { setEditingVendor(v); setShowVendorForm(true); }}>Edit</button>
+                      <button className="btn-text-sm" style={{ color: '#C53030' }} onClick={() => setArchiveVendorTarget(v)}>Archive</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <VendorForm
+        open={showVendorForm}
+        vendor={editingVendor}
+        onClose={() => { setShowVendorForm(false); setEditingVendor(null); }}
+        onSaved={handleVendorSaved}
+      />
+      <ConfirmDialog
+        open={!!archiveVendorTarget}
+        onClose={() => setArchiveVendorTarget(null)}
+        onConfirm={handleArchiveVendor}
+        title="Archive Vendor"
+        message={`Archive "${archiveVendorTarget?.name}"? Their job history stays accessible on existing tickets.`}
+        confirmLabel="Archive"
+      />
 
       {/* Suggest a Feature */}
       <div style={{ marginTop: '1.5rem' }}>
