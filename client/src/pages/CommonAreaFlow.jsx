@@ -148,7 +148,7 @@ export default function CommonAreaFlow() {
         title="Partial Submission"
       >
         <div className="modal-form">
-          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>
+          <p style={{ fontSize: '0.9rem', color: '#2C2C2C', marginBottom: '0.5rem' }}>
             {incomplete.length} item{incomplete.length !== 1 ? 's' : ''} not completed.
           </p>
           <label>

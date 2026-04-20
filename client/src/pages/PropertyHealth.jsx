@@ -20,7 +20,7 @@ function GradeBadge({ grade }) {
   return (
     <span
       className="grade-badge"
-      style={{ color: GRADE_COLORS[grade] || '#8A8583', borderColor: GRADE_COLORS[grade] || '#D4D0CE' }}
+      style={{ color: GRADE_COLORS[grade] || '#8A8580', borderColor: GRADE_COLORS[grade] || '#E8E4DF' }}
     >
       {grade || '—'}
     </span>

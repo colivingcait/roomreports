@@ -349,7 +349,7 @@ export default function PublicInspection() {
     return (
       <div className="pub-landing">
         <div className="pub-landing-card">
-          <h1 className="pub-logo">RoomReport</h1>
+          <h1 className="pub-logo"><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
           <h2 className="pub-landing-title">
             {isMoveIn ? 'Move-In Room Inspection' : 'Monthly Room Check'}
           </h2>
@@ -405,7 +405,7 @@ export default function PublicInspection() {
     return (
       <div className="pub-landing">
         <div className="pub-landing-card">
-          <h1 className="pub-logo">RoomReport</h1>
+          <h1 className="pub-logo"><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
           <h2 className="pub-landing-title">
             {isMoveIn ? 'Move-In Room Inspection' : 'Monthly Room Check'}
           </h2>

@@ -50,7 +50,7 @@ export default function Flyer() {
     <div className="flyer-page">
       <div className="flyer-sheet">
         <div className="flyer-header">
-          <div className="flyer-brand">RoomReport</div>
+          <div className="flyer-brand"><span className="brand-room">Room</span><span className="brand-report">Report</span></div>
           {orgName && <div className="flyer-org">{orgName}</div>}
         </div>
 
@@ -58,7 +58,7 @@ export default function Flyer() {
         <h2 className="flyer-title">{meta.title}</h2>
 
         <div className="flyer-qr">
-          <QRCodeSVG value={url} size={360} level="M" fgColor="#4A4543" />
+          <QRCodeSVG value={url} size={360} level="M" fgColor="#2C2C2C" />
         </div>
 
         <p className="flyer-instruction">{meta.instruction}</p>

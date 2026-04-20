@@ -39,7 +39,7 @@ export default function AppLayout() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <div className="sidebar-brand" onClick={() => navigate('/dashboard')}>
-            RoomReport
+            <span className="brand-room">Room</span><span className="brand-report">Report</span>
           </div>
 
           <div className="sidebar-search" onClick={() => setShowSearch(true)}>
@@ -77,7 +77,7 @@ export default function AppLayout() {
 
       {/* Mobile Header */}
       <header className="mobile-header">
-        <span className="mobile-brand">RoomReport</span>
+        <span className="mobile-brand"><span className="brand-room">Room</span><span className="brand-report">Report</span></span>
         <div className="mobile-header-actions">
           <button className="mobile-header-btn" onClick={() => setShowSearch(true)}>
             {icons.search}

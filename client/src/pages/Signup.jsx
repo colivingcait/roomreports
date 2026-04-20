@@ -57,7 +57,7 @@ export default function Signup() {
     if (inviteLoading) {
       return (
         <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <p style={{ color: '#8A8583' }}>Loading...</p>
+          <p style={{ color: '#8A8580' }}>Loading...</p>
         </div>
       );
     }
@@ -76,7 +76,7 @@ export default function Signup() {
       <>
         <form onSubmit={handleSubmit} className="auth-form">
           <h2>Welcome to {inviteInfo.propertyName}</h2>
-          <p style={{ fontSize: '0.85rem', color: '#8A8583', marginTop: '-0.5rem', marginBottom: '1.25rem' }}>
+          <p style={{ fontSize: '0.85rem', color: '#8A8580', marginTop: '-0.5rem', marginBottom: '1.25rem' }}>
             Create your resident account to get started.
           </p>
 

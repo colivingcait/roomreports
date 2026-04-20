@@ -238,7 +238,7 @@ export default function QuarterlyFlow() {
 
   const roomStatusBadge = (rid) => {
     const s = roomStatuses[rid];
-    if (!s || s.done === 0) return { label: 'Start', color: '#8A8583', bg: '#F0EDEB' };
+    if (!s || s.done === 0) return { label: 'Start', color: '#8A8580', bg: '#F0EDEB' };
     if (s.done < s.total) return { label: `${s.done}/${s.total}`, color: '#854F0B', bg: '#FAEEDA' };
     if (s.flags > 0) return { label: `Done \u00b7 ${s.flags} flag${s.flags !== 1 ? 's' : ''}`, color: '#C0392B', bg: '#FCEBEB' };
     return { label: 'Done \u2713', color: '#3B6D11', bg: '#E8F0E9' };
@@ -262,7 +262,7 @@ export default function QuarterlyFlow() {
           return (
             <div key={insp.roomId} className={`q-room-card ${nextRoomId === insp.roomId ? 'q-room-card-next' : ''}`}
               onClick={() => { setNextRoomId(null); navigate(`/quarterly/${propertyId}/${insp.roomId}`); }}>
-              <div className="q-room-card-bar" style={{ background: s.done === s.total && s.total > 0 ? '#6B8F71' : s.done > 0 ? '#C9A84C' : '#E8E4E1' }} />
+              <div className="q-room-card-bar" style={{ background: s.done === s.total && s.total > 0 ? '#6B8F71' : s.done > 0 ? '#C9A84C' : '#E8E4DF' }} />
               <div className="q-room-card-body">
                 <div className="q-room-card-top">
                   <h3>{insp.roomLabel}</h3>
@@ -284,7 +284,7 @@ export default function QuarterlyFlow() {
 
       <Modal open={showPartialModal} onClose={() => { setShowPartialModal(false); setPartialReason(''); }} title="Partial Submission">
         <div className="modal-form">
-          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>The following rooms are not complete:</p>
+          <p style={{ fontSize: '0.9rem', color: '#2C2C2C', marginBottom: '0.5rem' }}>The following rooms are not complete:</p>
           <ul className="partial-room-list">
             {getIncompleteRooms().map((r) => <li key={r.id}><strong>{r.label}</strong> ({r.done}/{r.total} items)</li>)}
           </ul>

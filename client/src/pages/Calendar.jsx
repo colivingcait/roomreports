@@ -163,7 +163,7 @@ export default function Calendar() {
                       key={i}
                       onClick={e.onClick}
                       className={`cal-event ${e.overdue ? 'cal-event-overdue' : ''} ${e.kind === 'completed' ? 'cal-event-done' : ''}`}
-                      style={{ '--color': TYPE_COLORS[e.type] || '#8A8583' }}
+                      style={{ '--color': TYPE_COLORS[e.type] || '#8A8580' }}
                       title={`${TYPE_LABELS[e.type]} · ${e.label}${e.room ? ' / ' + e.room : ''}${e.overdue ? ' · overdue' : ''}`}
                     >
                       <span className="cal-event-dot" />

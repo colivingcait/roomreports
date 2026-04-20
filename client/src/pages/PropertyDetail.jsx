@@ -398,7 +398,7 @@ export default function PropertyDetail() {
                   <div key={path} className="pub-link-card">
                     <h4>{title}</h4>
                     <div className="pub-link-qr">
-                      <QRCodeSVG value={url} size={100} level="M" fgColor="#4A4543" />
+                      <QRCodeSVG value={url} size={100} level="M" fgColor="#2C2C2C" />
                     </div>
                     <code className="pub-link-url">{url}</code>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
@@ -432,16 +432,16 @@ export default function PropertyDetail() {
       <Modal open={showQR} onClose={() => setShowQR(false)} title="Resident Invite">
         <div style={{ textAlign: 'center', padding: '1rem 0' }}>
           {!qrToken ? (
-            <p style={{ color: '#8A8583' }}>Generating QR code...</p>
+            <p style={{ color: '#8A8580' }}>Generating QR code...</p>
           ) : (
             <>
               <QRCodeSVG
                 value={`${window.location.origin}/signup?invite=${qrToken}`}
                 size={200}
                 level="M"
-                fgColor="#4A4543"
+                fgColor="#2C2C2C"
               />
-              <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#8A8583' }}>
+              <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#8A8580' }}>
                 Post this QR code at <strong>{property.name}</strong> so residents can scan and join.
               </p>
 
@@ -463,7 +463,7 @@ export default function PropertyDetail() {
                 );
               })()}
 
-              <p style={{ marginTop: '0.75rem', fontSize: '0.7rem', color: '#B5B1AF' }}>
+              <p style={{ marginTop: '0.75rem', fontSize: '0.7rem', color: '#B5B0AB' }}>
                 Residents who use the QR code or link will be added as a Resident and assigned to this property.
               </p>
             </>

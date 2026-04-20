@@ -7,7 +7,7 @@ export default function AuthLayout() {
   if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#FAF8F5' }}>
-        <p style={{ color: '#4A4543', fontSize: '1.1rem' }}>Loading...</p>
+        <p style={{ color: '#2C2C2C', fontSize: '1.1rem' }}>Loading...</p>
       </div>
     );
   }
@@ -21,7 +21,7 @@ export default function AuthLayout() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <h1>RoomReport</h1>
+          <h1><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
           <p>Property inspections made simple</p>
         </div>
         <Outlet />

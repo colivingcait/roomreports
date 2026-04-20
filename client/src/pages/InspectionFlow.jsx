@@ -526,7 +526,7 @@ export default function InspectionFlow() {
         title="Partial Submission"
       >
         <div className="modal-form">
-          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>
+          <p style={{ fontSize: '0.9rem', color: '#2C2C2C', marginBottom: '0.5rem' }}>
             {remaining} item{remaining !== 1 ? 's' : ''} not completed.
           </p>
           <label>

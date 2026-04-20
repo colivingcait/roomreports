@@ -38,7 +38,7 @@ function ResidentLinkCard({ title, url, flyerHref }) {
     <div className="pub-link-card">
       <h4>{title}</h4>
       <div className="pub-link-qr">
-        <QRCodeSVG id={`qr-${title.replace(/\s/g, '-')}`} value={url} size={120} level="M" fgColor="#4A4543" />
+        <QRCodeSVG id={`qr-${title.replace(/\s/g, '-')}`} value={url} size={120} level="M" fgColor="#2C2C2C" />
       </div>
       <code className="pub-link-url">{url}</code>
       <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.5rem', flexWrap: 'wrap' }}>
@@ -64,12 +64,12 @@ function ResidentLinkCard({ title, url, flyerHref }) {
 }
 
 const ROLE_COLORS = {
-  OWNER: '#4A4543',
+  OWNER: '#2C2C2C',
   PM: '#6B8F71',
   CLEANER: '#C4703F',
   HANDYPERSON: '#5B7A8A',
   RESIDENT: '#C9A84C',
-  OTHER: '#8A8583',
+  OTHER: '#8A8580',
 };
 const INVITABLE_ROLES = ['PM', 'CLEANER', 'HANDYPERSON', 'RESIDENT', 'OTHER'];
 
@@ -293,7 +293,7 @@ export default function Team() {
   const credentialsDisplay = (creds, onClose) => (
     <div>
       <p style={{ color: '#6B8F71', fontWeight: 600, marginBottom: '0.5rem' }}>Account created</p>
-      <p style={{ fontSize: '0.85rem', color: '#8A8583', marginBottom: '1rem' }}>
+      <p style={{ fontSize: '0.85rem', color: '#8A8580', marginBottom: '1rem' }}>
         Share these credentials with {creds.email}. This password won&apos;t be shown again.
       </p>
 
@@ -366,7 +366,7 @@ export default function Team() {
               )}
             </div>
             <div className="team-card-right">
-              <span className="team-role-badge" style={{ color: ROLE_COLORS[u.role] || '#8A8583', borderColor: ROLE_COLORS[u.role] || '#8A8583' }}>
+              <span className="team-role-badge" style={{ color: ROLE_COLORS[u.role] || '#8A8580', borderColor: ROLE_COLORS[u.role] || '#8A8580' }}>
                 {roleLabel(u.role, u.customRole)}
               </span>
               {isOwner && u.id !== user?.id && (
@@ -394,7 +394,7 @@ export default function Team() {
                   <div className="team-card-name">{u.name}</div>
                   <div className="team-card-email">{u.email}</div>
                 </div>
-                <span className="team-role-badge" style={{ color: '#B5B1AF', borderColor: '#D4D0CE' }}>{roleLabel(u.role, u.customRole)}</span>
+                <span className="team-role-badge" style={{ color: '#B5B0AB', borderColor: '#E8E4DF' }}>{roleLabel(u.role, u.customRole)}</span>
               </div>
             ))}
           </div>
@@ -646,7 +646,7 @@ export default function Team() {
           credentialsDisplay(resetResult, () => { setResetTarget(null); setResetResult(null); setCopied(''); })
         ) : (
           <div className="modal-form">
-            <p style={{ color: '#4A4543', fontSize: '0.9rem', marginBottom: '1rem' }}>
+            <p style={{ color: '#2C2C2C', fontSize: '0.9rem', marginBottom: '1rem' }}>
               Generate a new password for <strong>{resetTarget?.name}</strong>?
               They will be logged out of all sessions.
             </p>

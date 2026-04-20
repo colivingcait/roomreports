@@ -66,7 +66,7 @@ export default function AssigneePicker({ value, onChange, placeholder = 'Assign.
   return (
     <div className="assignee-picker" ref={ref}>
       <button type="button" className="maint-input assignee-trigger" onClick={() => setOpen((v) => !v)}>
-        {display || <span style={{ color: '#B5B1AF' }}>{placeholder}</span>}
+        {display || <span style={{ color: '#B5B0AB' }}>{placeholder}</span>}
         <span className="assignee-chevron">{open ? '▾' : '▸'}</span>
       </button>
       {open && (

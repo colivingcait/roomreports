@@ -7,7 +7,7 @@ export default function ResidentLayout() {
   return (
     <div className="resident-layout">
       <header className="resident-header">
-        <span className="resident-brand">RoomReport</span>
+        <span className="resident-brand"><span className="brand-room">Room</span><span className="brand-report">Report</span></span>
         <button className="btn-text" onClick={logout}>Sign out</button>
       </header>
       <main className="resident-main">

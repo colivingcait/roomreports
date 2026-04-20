@@ -21,7 +21,7 @@ export default function JoinSlug() {
       <div className="auth-page">
         <div className="auth-card">
           <div className="auth-logo">
-            <h1>RoomReport</h1>
+            <h1><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
           </div>
           <div className="auth-error">{error}</div>
           <p className="auth-footer" style={{ marginTop: '1rem' }}>
@@ -35,7 +35,7 @@ export default function JoinSlug() {
   return (
     <div className="auth-page">
       <div className="auth-card" style={{ textAlign: 'center' }}>
-        <p style={{ color: '#8A8583' }}>Loading...</p>
+        <p style={{ color: '#8A8580' }}>Loading...</p>
       </div>
     </div>
   );

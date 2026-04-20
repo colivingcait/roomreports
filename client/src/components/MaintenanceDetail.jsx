@@ -184,8 +184,8 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                 className="md-priority"
                 value={draft.priority}
                 style={{
-                  color: PRIORITY_COLORS[draft.priority] || '#8A8583',
-                  borderColor: PRIORITY_COLORS[draft.priority] || '#D4D0CE',
+                  color: PRIORITY_COLORS[draft.priority] || '#8A8580',
+                  borderColor: PRIORITY_COLORS[draft.priority] || '#E8E4DF',
                 }}
                 onChange={(e) => { setDraft({ ...draft, priority: e.target.value }); save({ priority: e.target.value || null }); }}
               >

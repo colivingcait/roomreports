@@ -95,7 +95,7 @@ export default function Dashboard() {
               <div className="db-empty">✓ All caught up</div>
             ) : (
               pendingReview.slice(0, 4).map((p) => {
-                const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };
+                const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#2C2C2C' };
                 const onClick = () => {
                   if (p.isGroup) {
                     navigate(`/quarterly-review/${p.propertyId}/${p.dateKey}`);

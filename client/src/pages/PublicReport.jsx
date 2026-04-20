@@ -133,7 +133,7 @@ export default function PublicReport() {
     return (
       <div className="pub-landing">
         <div className="pub-landing-card">
-          <h1 className="pub-logo">RoomReport</h1>
+          <h1 className="pub-logo"><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
           <h2 className="pub-landing-title">Report a Maintenance Issue</h2>
           <p className="pub-landing-desc">Enter your street name to find your place.</p>
           {error && <div className="auth-error">{error}</div>}
@@ -172,7 +172,7 @@ export default function PublicReport() {
   return (
     <div className="pub-landing">
       <div className="pub-landing-card">
-        <h1 className="pub-logo">RoomReport</h1>
+        <h1 className="pub-logo"><span className="brand-room">Room</span><span className="brand-report">Report</span></h1>
         <h2 className="pub-landing-title">Report a Maintenance Issue</h2>
         <p className="pub-property-name">{property.address}</p>
         {error && <div className="auth-error">{error}</div>}
