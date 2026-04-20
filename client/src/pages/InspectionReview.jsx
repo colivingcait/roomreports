@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { roleLabel, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
+import { useAuth } from '../context/AuthContext';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -33,10 +34,12 @@ function Lightbox({ url, onClose }) {
 export default function InspectionReview() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [inspection, setInspection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [error, setError] = useState('');
   const [itemState, setItemState] = useState({}); // itemId -> { createTask, description, pmNote }
   const [sendBackReason, setSendBackReason] = useState('');
@@ -111,6 +114,30 @@ export default function InspectionReview() {
     }
   };
 
+  const handleReopenForEdit = async () => {
+    setReopening(true);
+    setError('');
+    try {
+      await api(`/api/inspections/${id}/reopen`, { method: 'POST' });
+      if (inspection.type === 'QUARTERLY' && inspection.property?.id) {
+        navigate(`/quarterly/${inspection.property.id}`);
+      } else if (inspection.type === 'COMMON_AREA_QUICK') {
+        // Reopened quick-check — send them back to the quarterly flow root for that property
+        navigate(`/quarterly/${inspection.property.id}`);
+      } else if (inspection.type === 'COMMON_AREA' && inspection.id) {
+        navigate(`/common-area/${inspection.id}`);
+      } else if (inspection.type === 'ROOM_TURN' && inspection.id) {
+        navigate(`/room-turn/${inspection.id}`);
+      } else {
+        navigate(`/inspections/${id}`);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReopening(false);
+    }
+  };
+
   const handleSendBack = async () => {
     setSendingBack(true);
     setError('');
@@ -182,13 +209,30 @@ export default function InspectionReview() {
             {inspection.room ? ` / ${inspection.room.label}` : ''}
           </p>
         </div>
-        <span
-          className="insp-status-badge"
-          style={{ color: STATUS_COLORS[inspection.status], borderColor: STATUS_COLORS[inspection.status] }}
-        >
-          {inspection.status}
-        </span>
+        <div className="review-header-right">
+          {(user?.role === 'PM' || user?.role === 'OWNER') && (isSubmitted || isReviewed) && (
+            <button
+              className="btn-edit-inspection"
+              onClick={handleReopenForEdit}
+              disabled={reopening}
+            >
+              {reopening ? 'Opening...' : 'Edit Inspection'}
+            </button>
+          )}
+          <span
+            className="insp-status-badge"
+            style={{ color: STATUS_COLORS[inspection.status], borderColor: STATUS_COLORS[inspection.status] }}
+          >
+            {inspection.status}
+          </span>
+        </div>
       </div>
+      {inspection.editCount > 0 && inspection.editedAt && (
+        <div className="review-edit-note">
+          Edited on {new Date(inspection.editedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          {inspection.editCount > 1 ? ` (${inspection.editCount} edits)` : ''}
+        </div>
+      )}
 
       {/* Summary */}
       {/* Partial submission banner */}

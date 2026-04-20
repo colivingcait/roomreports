@@ -5460,6 +5460,230 @@ button.review-photo-thumb {
 .q-next-btn:hover { background: #5A7D60; }
 .q-next-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Dual-button (back + next) equal-width footer */
+.q-screen-footer-dual {
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+.q-screen-footer-dual .q-back-btn,
+.q-screen-footer-dual .q-next-btn,
+.q-screen-footer-dual .q-done-room-btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0.75rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.q-back-btn {
+  background: #F0EDEB;
+  color: #4A4543;
+  border: 1px solid #D4D0CE;
+}
+.q-back-btn:hover { background: #E8E4E1; }
+
+/* Feature group divider/label on maintenance screen */
+.q-feature-group {
+  margin-top: 0.5rem;
+}
+.q-feature-divider {
+  height: 1px;
+  background: #E8E4E1;
+  margin: 0.75rem 0 0.5rem;
+}
+.q-feature-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.25rem 0 0.5rem;
+}
+
+/* 4-step stepper — updated sizing */
+.q-stepper-clickable { cursor: pointer; }
+
+/* Compliance pills — wrap layout */
+.q-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+.q-compliance-pill {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: #4A4543;
+  background: #FAF8F5;
+  border: 1.5px solid #D4D0CE;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  line-height: 1.2;
+  -webkit-tap-highlight-color: transparent;
+}
+.q-compliance-pill:hover { border-color: #8A8583; }
+.q-compliance-pill.selected {
+  background: #C0392B;
+  border-color: #C0392B;
+  color: #fff;
+}
+
+/* Compliance detail cards — stacked below all pills */
+.q-compliance-details {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.q-compliance-detail {
+  padding: 0.75rem 0.875rem;
+  background: #FDF6F4;
+  border: 1px solid #E8C5BC;
+  border-left: 4px solid #C0392B;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.q-compliance-detail-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #8B2218;
+}
+.q-compliance-detail-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.q-compliance-detail-actions .q-flag-box {
+  flex: 0 0 110px;
+}
+
+/* Misc screen */
+.q-misc-card {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  padding: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-bottom: 0.75rem;
+}
+.q-misc-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.q-misc-category {
+  flex: 1;
+}
+.q-misc-remove {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #8A8583;
+  font-size: 1.2rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.q-misc-remove:hover { background: #F0EDEB; color: #C0392B; }
+
+.q-misc-note { min-height: 90px; }
+
+.q-misc-toggles {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.q-misc-toggle {
+  flex: 1;
+  min-width: 100px;
+  padding: 0.55rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #8A8583;
+  background: #FAF8F5;
+  border: 1.5px solid #D4D0CE;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.q-misc-toggle:hover { border-color: #8A8583; }
+.q-misc-toggle-maint.active {
+  background: #FAEEDA;
+  border-color: #BA7517;
+  color: #854F0B;
+}
+.q-misc-toggle-viol.active {
+  background: #FCEBEB;
+  border-color: #C0392B;
+  color: #8B2218;
+}
+.q-misc-toggle-neither.active {
+  background: #F0EDEB;
+  border-color: #8A8583;
+  color: #4A4543;
+}
+
+.q-misc-add {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  border: 1.5px dashed #D4D0CE;
+  border-radius: 10px;
+  color: #6B8F71;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.q-misc-add:hover { border-color: #6B8F71; background: #F0F6F1; }
+.q-misc-add:disabled { opacity: 0.5; cursor: wait; }
+
+/* Common area quick check card — now supports drawer */
+.q-common-card { display: block; padding: 0; }
+.q-common-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+}
+
+/* Edit inspection button on review page */
+.review-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-edit-inspection {
+  padding: 0.5rem 0.875rem;
+  background: transparent;
+  border: 1.5px solid #6B8F71;
+  border-radius: 8px;
+  color: #3B6D11;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-edit-inspection:hover { background: #E8F0E9; }
+.btn-edit-inspection:disabled { opacity: 0.5; cursor: wait; }
+
+.review-edit-note {
+  font-size: 0.75rem;
+  color: #8A8583;
+  font-style: italic;
+  margin-top: -0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .q-screen-footer-split {
   justify-content: space-between;
   gap: 0.5rem;

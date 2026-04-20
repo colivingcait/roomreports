@@ -76,24 +76,6 @@ export function FlagDrawer({ item, inspectionId, onUpdate }) {
             {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </label>
-        <label className="q-flag-label">
-          Entry code <span className="form-optional">(optional)</span>
-          <input
-            type="text"
-            className="maint-input"
-            value={item.entryCode || ''}
-            onChange={(e) => onUpdate({ ...item, entryCode: e.target.value || null })}
-            placeholder="e.g. 4520#"
-          />
-        </label>
-        <label className="q-flag-toggle">
-          <input
-            type="checkbox"
-            checked={!!item.entryApproved}
-            onChange={(e) => onUpdate({ ...item, entryApproved: e.target.checked })}
-          />
-          Resident has approved entry
-        </label>
       </div>
       <div className="q-flag-right">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
@@ -168,8 +150,6 @@ export function ChecklistItem({ item, inspectionId, saveItem, onItemUpdate }) {
               isMaintenance: updated.isMaintenance,
               isLeaseViolation: updated.isLeaseViolation,
               priority: updated.priority,
-              entryCode: updated.entryCode,
-              entryApproved: updated.entryApproved,
             });
           }}
         />
