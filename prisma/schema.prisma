@@ -236,6 +236,8 @@ model Inspection {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   completedAt    DateTime?
+  editedAt       DateTime?
+  editCount      Int              @default(0)
   deletedAt      DateTime?
 
   property         Property          @relation(fields: [propertyId], references: [id])

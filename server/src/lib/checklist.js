@@ -228,69 +228,88 @@ function generateRoomTurn(property, room) {
 
 // ─── QUARTERLY ──────────────────────────────────────────
 
+export const QUARTERLY_COMPLIANCE_PILLS = [
+  'Messy',
+  'Bad odor',
+  'Smoking',
+  'Unauthorized guests',
+  'Pets',
+  'Open food',
+  'Pests/bugs',
+  'Open flames/candles',
+  'Overloaded outlets',
+  'Kitchen appliances in room',
+  'Lithium batteries',
+  'Modifications (paint, holes, etc.)',
+  'Drug paraphernalia',
+  'Weapons',
+  'Unclear egress path',
+];
+
 function generateQuarterly(property, room) {
   const items = [];
   const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
 
-  // Room Condition
+  // ─── Core maintenance items (no section headings in the UI) ─
   items.push(
-    pf('Room Condition', 'Room is clean and tidy'),
-    pf('Room Condition', 'No unusual odors'),
-    pf('Room Condition', 'Walls, floors, and ceiling in good condition'),
-    pf('Room Condition', 'Windows and locks functional'),
-    pf('Room Condition', 'Door and lock functional'),
-    pf('Room Condition', 'No pests or pest evidence'),
-    pf('Room Condition', 'No mold or moisture issues'),
-    pf('Room Condition', 'All furniture in good condition'),
-    pf('Room Condition', 'Mattress encasement in use'),
+    pf('Maintenance', 'Door & lock functional'),
+    pf('Maintenance', 'Walls, floors, ceiling in good condition'),
+    pf('Maintenance', 'Window functional'),
+    pf('Maintenance', 'Furniture in good condition'),
+    pf('Maintenance', 'Mattress encasement in use'),
+    pf('Maintenance', 'Smoke detector working'),
+    pf('Maintenance', 'No mold/moisture present'),
   );
 
-  // Safety
-  items.push(
-    pf('Safety', 'Smoke detector present and working'),
-    pf('Safety', 'No overloaded outlets or daisy-chaining'),
-    pf('Safety', 'Egress path clear'),
-  );
-
-  // Compliance
-  items.push(
-    pf('Compliance', 'No open food or improper food storage'),
-    pf('Compliance', 'No smoking evidence'),
-    pf('Compliance', 'No open flames, candles, or incense'),
-    pf('Compliance', 'No lithium battery chargers (hoverboards, scooters)'),
-    pf('Compliance', 'No unauthorized occupants or guests'),
-    pf('Compliance', 'No unauthorized pets'),
-    pf('Compliance', 'No unauthorized modifications'),
-    pf('Compliance', 'No prohibited appliances (space heaters, hot plates)'),
-    pf('Compliance', 'No prohibited substances or paraphernalia'),
-    pf('Compliance', 'No prohibited weapons'),
-  );
-
-  // Feature-specific
+  // ─── Feature-specific (shown with a divider + feature label) ─
   if (room?.features?.includes('Ensuite Bathroom')) {
-    items.push(pf('Features', 'Ensuite bathroom clean and functional'));
+    items.push(
+      pf('Ensuite Bathroom', 'Toilet functional'),
+      pf('Ensuite Bathroom', 'Sink functional'),
+      pf('Ensuite Bathroom', 'Shower/tub functional'),
+      pf('Ensuite Bathroom', 'Shower curtain/door in good condition'),
+      pf('Ensuite Bathroom', 'Exhaust fan working'),
+      pf('Ensuite Bathroom', 'No leaks under sink'),
+      pf('Ensuite Bathroom', 'No mold/mildew present'),
+      pf('Ensuite Bathroom', 'Floors in good condition'),
+    );
   }
   if (room?.features?.includes('Mini Fridge')) {
-    items.push(pf('Features', 'Mini fridge clean and working'));
-  }
-  if (room?.features?.includes('Microwave')) {
-    items.push(pf('Features', 'Microwave clean and working'));
-  }
-  if (room?.features?.includes('Separate Entry')) {
-    items.push(pf('Features', 'Separate entry lock functional'));
+    items.push(pf('Mini Fridge', 'Mini fridge clean and working'));
   }
   if (room?.features?.includes('Window AC')) {
-    items.push(pf('Features', 'Window AC unit working properly'));
+    items.push(pf('Window AC', 'Window AC unit working'));
+  }
+  if (room?.features?.includes('Microwave')) {
+    items.push(pf('Microwave', 'Microwave clean and working'));
   }
   if (room?.features?.includes('Basement Room')) {
-    items.push(pf('Features', 'No basement moisture or seepage'));
+    items.push(
+      pf('Basement Room', 'No moisture/water intrusion'),
+      pf('Basement Room', 'Dehumidifier working (if applicable)'),
+    );
+  }
+  if (room?.features?.includes('Separate Entry')) {
+    items.push(
+      pf('Separate Entry', 'Separate entry door & lock functional'),
+      pf('Separate Entry', 'Exterior light working'),
+    );
   }
 
-  // Misc catch-all
-  items.push(pf('Misc', 'Misc (catch-all for anything not covered above)'));
+  // ─── Compliance — 15 pill options ─
+  for (const p of QUARTERLY_COMPLIANCE_PILLS) {
+    items.push(pf('Compliance', p));
+  }
+
+  // ─── Misc — user adds items dynamically via "+ Add another" ─
+  // (no pre-created items)
+
+  // ─── Synthetic marker — set to "Yes" when user hits "Done with Room" ─
+  items.push({ zone: '_Completed', text: 'Room completed', options: ['Yes'], status: '' });
 
   return items;
 }
+
 
 // ─── RESIDENT_SELF_CHECK ────────────────────────────────
 

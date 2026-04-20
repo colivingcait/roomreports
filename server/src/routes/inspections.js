@@ -64,7 +64,7 @@ router.post('/quarterly-batch', async (req, res) => {
     }
 
     // Check for existing DRAFT quarterly inspections for these rooms
-    const existingDrafts = await prisma.inspection.findMany({
+    let existingDrafts = await prisma.inspection.findMany({
       where: {
         propertyId,
         type: 'QUARTERLY',
@@ -81,6 +81,17 @@ router.post('/quarterly-batch', async (req, res) => {
         room: { select: { id: true, label: true } },
       },
     });
+
+    // Auto-regenerate drafts that were created before the new 4-screen flow.
+    // The new flow uses a `_Completed` marker item; old drafts won't have it.
+    const staleIds = existingDrafts
+      .filter((d) => !d.items.some((i) => i.zone === '_Completed'))
+      .map((d) => d.id);
+    if (staleIds.length > 0) {
+      await prisma.inspectionItem.deleteMany({ where: { inspectionId: { in: staleIds } } });
+      await prisma.inspection.deleteMany({ where: { id: { in: staleIds } } });
+      existingDrafts = existingDrafts.filter((d) => !staleIds.includes(d.id));
+    }
 
     const existingByRoom = {};
     for (const d of existingDrafts) existingByRoom[d.roomId] = d;
@@ -415,6 +426,92 @@ router.put('/:id/items/:itemId', async (req, res) => {
     return res.json({ item: updated });
   } catch (error) {
     console.error('Update inspection item error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/:id/items — add new item (e.g. dynamic Misc) ─
+
+router.post('/:id/items', async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
+    if (inspection.status !== 'DRAFT') {
+      return res.status(400).json({ error: 'Can only add items to DRAFT inspections' });
+    }
+
+    const { zone = 'Misc', text = '', options = ['Pass', 'Fail'] } = req.body || {};
+    const created = await prisma.inspectionItem.create({
+      data: {
+        inspectionId: inspection.id,
+        zone,
+        text,
+        options,
+        status: '',
+      },
+    });
+    return res.status(201).json({ item: created });
+  } catch (error) {
+    console.error('Add inspection item error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── DELETE /api/inspections/:id/items/:itemId — remove (e.g. misc undo) ─
+
+router.delete('/:id/items/:itemId', async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
+    if (inspection.status !== 'DRAFT') {
+      return res.status(400).json({ error: 'Can only delete items on DRAFT inspections' });
+    }
+    const item = await prisma.inspectionItem.findFirst({
+      where: { id: req.params.itemId, inspectionId: inspection.id },
+    });
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    await prisma.inspectionItem.delete({ where: { id: item.id } });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Delete inspection item error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/inspections/:id/reopen — PM/Owner reopens submitted ──
+
+router.post('/:id/reopen', async (req, res) => {
+  try {
+    const { role, organizationId } = req.user;
+    if (!['PM', 'OWNER'].includes(role)) {
+      return res.status(403).json({ error: 'Only PM or Owner can reopen inspections' });
+    }
+
+    const inspection = await prisma.inspection.findFirst({
+      where: { id: req.params.id, organizationId, deletedAt: null },
+    });
+    if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
+    if (inspection.status === 'DRAFT') {
+      return res.status(400).json({ error: 'Inspection is already a draft' });
+    }
+
+    const updated = await prisma.inspection.update({
+      where: { id: inspection.id },
+      data: {
+        status: 'DRAFT',
+        completedAt: null,
+        editedAt: new Date(),
+        editCount: { increment: 1 },
+      },
+    });
+    return res.json({ inspection: updated });
+  } catch (error) {
+    console.error('Reopen inspection error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
