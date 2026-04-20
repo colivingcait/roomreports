@@ -365,3 +365,26 @@ export function generateChecklist(type, property, room, options = {}) {
 // Types that require a room
 export const ROOM_TYPES = ['ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'];
 export const PROPERTY_ONLY_TYPES = ['COMMON_AREA'];
+
+// Template-aware variant: if the org has customized items for this inspection
+// type, use those; otherwise fall back to the built-in defaults. Property/
+// room-specific items (kitchens, bathrooms, furniture, etc.) are still
+// appended from the defaults so the template covers the per-org customizable
+// "common" items without duplicating per-room dynamic ones.
+export async function buildChecklist(prisma, organizationId, type, property, room, options = {}) {
+  const template = await prisma.inspectionTemplate.findUnique({
+    where: { organizationId_inspectionType: { organizationId, inspectionType: type } },
+    include: { items: { orderBy: { position: 'asc' } } },
+  });
+
+  if (!template || template.items.length === 0) {
+    return generateChecklist(type, property, room, options);
+  }
+
+  return template.items.map((t) => ({
+    zone: t.zone,
+    text: t.text,
+    options: Array.isArray(t.options) && t.options.length > 0 ? t.options : ['Pass', 'Fail', 'N/A'],
+    status: '',
+  }));
+}

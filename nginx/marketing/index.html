@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RoomReport · Property inspections for coliving operators</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Know exactly what's happening in every room. Move-in docs, monthly self-checks, and maintenance tracking that actually gets used — built for coliving hosts." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #4A4543;
+      --muted: #8A8583;
+      --dim: #B5B1AF;
+      --bg: #F5F2EF;
+      --card: #FDFCFB;
+      --border: #E8E4E1;
+      --brand: #C4703F;
+      --brand-dark: #A95A2B;
+      --sage: #6B8F71;
+      --gold: #C9A84C;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      color: var(--ink);
+      background: #fff;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--brand-dark); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* Header */
+    header.site {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: saturate(1.2) blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+    .site-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 1.5rem; max-width: 1080px; margin: 0 auto;
+    }
+    .brand { font-weight: 700; letter-spacing: -0.01em; font-size: 1.05rem; }
+    .nav-links { display: flex; gap: 1.25rem; align-items: center; }
+    .nav-links a { color: var(--ink); font-size: 0.9rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0.6rem 1.1rem; border-radius: 100px; font-weight: 500;
+      font-size: 0.92rem;
+      border: 1px solid transparent; cursor: pointer; text-decoration: none;
+      min-height: 44px;
+    }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-dark); text-decoration: none; }
+    .btn-ghost { color: var(--ink); border-color: var(--border); }
+    .btn-ghost:hover { background: var(--bg); text-decoration: none; }
+
+    /* Hero */
+    .hero {
+      padding: 5rem 0 4rem;
+      background:
+        radial-gradient(ellipse at 80% 10%, #FAEEDA 0%, rgba(250,238,218,0) 60%),
+        radial-gradient(ellipse at 10% 90%, #E8F0E9 0%, rgba(232,240,233,0) 55%),
+        #fff;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 4.5vw, 3.2rem);
+      line-height: 1.1;
+      margin: 0 0 1rem;
+      letter-spacing: -0.02em;
+    }
+    .hero p.lead {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 56ch;
+      margin: 0 0 1.75rem;
+    }
+    .hero-cta { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* Section */
+    section { padding: 4rem 0; }
+    section.alt { background: var(--bg); }
+    .eyebrow {
+      text-transform: uppercase; letter-spacing: 0.08em;
+      font-size: 0.78rem; color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+    h2.section-title {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.15; margin: 0 0 0.75rem;
+      letter-spacing: -0.01em;
+    }
+    p.section-sub {
+      color: var(--muted);
+      max-width: 58ch;
+      margin: 0 0 2rem;
+    }
+
+    /* Who it's for — 3 cards */
+    .who-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+    .who-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+    }
+    .who-card .badge {
+      display: inline-block;
+      font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 0.2rem 0.6rem; border-radius: 100px;
+      margin-bottom: 0.75rem; font-weight: 600;
+    }
+    .badge-host { background: #FAEEDA; color: #854F0B; }
+    .badge-res { background: #F5E8F0; color: #8A2B6D; }
+    .badge-team { background: #E8F0E9; color: #3B6D11; }
+    .who-card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+    .who-card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+    .who-card ul { margin: 0.75rem 0 0; padding: 0 0 0 1.1rem; color: var(--muted); font-size: 0.9rem; }
+    .who-card li { margin: 0.25rem 0; }
+
+    /* Inspection types grid */
+    .types-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 0.9rem;
+    }
+    .type-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem;
+    }
+    .type-pill {
+      display: inline-block;
+      font-size: 0.7rem; letter-spacing: 0.04em;
+      padding: 0.15rem 0.5rem; border-radius: 100px;
+      margin-bottom: 0.5rem; font-weight: 600;
+    }
+    .pill-move  { background: #F0E8E3; color: #6D3B11; }
+    .pill-self  { background: #F5E8F0; color: #8A2B6D; }
+    .pill-q     { background: #E8F0E9; color: #3B6D11; }
+    .pill-turn  { background: #FAEEDA; color: #854F0B; }
+    .pill-comm  { background: #E3EDF7; color: #2B5F8A; }
+    .type-card h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+    .type-card p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+    /* Maintenance split */
+    .maint-split {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 2rem;
+      align-items: center;
+    }
+    @media (max-width: 760px) { .maint-split { grid-template-columns: 1fr; } }
+    .maint-split h2 { margin-top: 0; }
+    .maint-features { list-style: none; padding: 0; margin: 1rem 0 0; }
+    .maint-features li {
+      padding: 0.4rem 0 0.4rem 1.6rem;
+      position: relative;
+      color: var(--ink);
+    }
+    .maint-features li::before {
+      content: '';
+      width: 8px; height: 8px;
+      background: var(--brand);
+      border-radius: 50%;
+      position: absolute; left: 0; top: 0.7rem;
+    }
+    .mock {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+    }
+    .mock-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-bottom: 0.6rem; border-bottom: 1px solid var(--border);
+      font-weight: 600; font-size: 0.85rem;
+    }
+    .mock-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.55rem 0; font-size: 0.85rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .mock-row:last-child { border-bottom: none; }
+    .mock-tag {
+      font-size: 0.68rem; padding: 0.1rem 0.45rem; border-radius: 100px;
+      font-weight: 600; border: 1px solid;
+    }
+    .tag-high { color: #C0392B; border-color: #C0392B; }
+    .tag-med  { color: #C4703F; border-color: #C4703F; }
+    .tag-low  { color: #6B8F71; border-color: #6B8F71; }
+
+    /* FAQ */
+    .faq-list details {
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0;
+    }
+    .faq-list summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--ink);
+      list-style: none;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.5rem 0;
+    }
+    .faq-list summary::-webkit-details-marker { display: none; }
+    .faq-list summary::after { content: '+'; color: var(--muted); }
+    .faq-list details[open] summary::after { content: '–'; }
+    .faq-list details > p {
+      margin: 0.5rem 0 0;
+      color: var(--muted);
+    }
+    .faq-tag {
+      display: inline-block;
+      font-size: 0.7rem; letter-spacing: 0.05em;
+      padding: 0.1rem 0.5rem; border-radius: 100px;
+      margin-right: 0.5rem; font-weight: 600;
+    }
+
+    /* Pricing */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+    .price-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem;
+      display: flex; flex-direction: column;
+    }
+    .price-card.featured {
+      border-color: var(--brand);
+      box-shadow: 0 12px 32px rgba(196,112,63,0.12);
+    }
+    .price-tier {
+      font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); font-weight: 600; margin-bottom: 0.5rem;
+    }
+    .price-amount {
+      font-size: 2rem; font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .price-amount small { font-size: 0.85rem; font-weight: 400; color: var(--muted); }
+    .price-list { list-style: none; padding: 0; margin: 1rem 0; flex: 1; }
+    .price-list li {
+      padding: 0.3rem 0 0.3rem 1.5rem;
+      position: relative;
+      color: var(--ink);
+      font-size: 0.92rem;
+    }
+    .price-list li::before {
+      content: '✓';
+      position: absolute; left: 0; top: 0.25rem;
+      color: var(--sage); font-weight: 700;
+    }
+
+    /* Footer */
+    footer {
+      padding: 3rem 0 2rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    footer .container {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="site">
+    <div class="site-inner">
+      <span class="brand">RoomReport</span>
+      <nav class="nav-links">
+        <a href="#who">Who it's for</a>
+        <a href="#types">Inspection types</a>
+        <a href="#pricing">Pricing</a>
+        <a class="btn btn-ghost" href="https://app.roomreport.co/login">Sign in</a>
+        <a class="btn btn-primary" href="https://app.roomreport.co/signup">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>Know exactly what&rsquo;s happening in every room.</h1>
+      <p class="lead">
+        Move-in documentation, monthly self-checks, and maintenance tracking that actually gets used.
+        Built for coliving operators who refuse to lose another security deposit dispute.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://app.roomreport.co/signup">Start free</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="who" class="alt">
+    <div class="container">
+      <div class="eyebrow">Who it&rsquo;s for</div>
+      <h2 class="section-title">One app. Three roles. Zero overlap.</h2>
+      <p class="section-sub">
+        Hosts run the property, residents live in it, teammates take care of it. Each sees only what they need.
+      </p>
+      <div class="who-grid">
+        <div class="who-card">
+          <span class="badge badge-host">Hosts</span>
+          <h3>Own the portfolio</h3>
+          <p>Set inspection schedules, review reports, and track maintenance spend without chasing anyone.</p>
+          <ul>
+            <li>Custom inspection templates per type</li>
+            <li>Kanban + calendar + reports</li>
+            <li>Health grades across every property</li>
+          </ul>
+        </div>
+        <div class="who-card">
+          <span class="badge badge-res">Residents</span>
+          <h3>Document &amp; report</h3>
+          <p>No login. Scan a QR, type the street name, submit a move-in or report a maintenance issue in minutes.</p>
+          <ul>
+            <li>Move-in inspection with photos</li>
+            <li>Monthly self-check</li>
+            <li>Report a maintenance issue</li>
+          </ul>
+        </div>
+        <div class="who-card">
+          <span class="badge badge-team">Teammates</span>
+          <h3>Do the work</h3>
+          <p>Cleaners, handypeople, and vendors see only their assigned properties and tickets. No noise.</p>
+          <ul>
+            <li>Property-scoped access</li>
+            <li>Quick turn &amp; common-area checklists</li>
+            <li>Batch PDF work orders for vendors</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="types">
+    <div class="container">
+      <div class="eyebrow">Inspections</div>
+      <h2 class="section-title">Five inspection types, ready to go.</h2>
+      <p class="section-sub">
+        Every type comes with a default checklist. Customize everything from the Templates editor &mdash;
+        add, edit, reorder, remove. Changes apply to future inspections only.
+      </p>
+      <div class="types-grid">
+        <div class="type-card">
+          <span class="type-pill pill-move">Move-In</span>
+          <h3>Move-In / Move-Out</h3>
+          <p>Wall-by-wall photos, move-in checklist, paired with move-out for deposit disputes.</p>
+        </div>
+        <div class="type-card">
+          <span class="type-pill pill-self">Self-Check</span>
+          <h3>Monthly Self-Check</h3>
+          <p>Residents flag issues via QR code &mdash; pests, mold, leaks, lock problems, anything.</p>
+        </div>
+        <div class="type-card">
+          <span class="type-pill pill-q">Room Inspection</span>
+          <h3>Room Inspection</h3>
+          <p>Recurring, scheduled inspections per property. Grouped by room. Swipe-through flow.</p>
+        </div>
+        <div class="type-card">
+          <span class="type-pill pill-turn">Room Turn</span>
+          <h3>Room Turn</h3>
+          <p>Between-resident checklist. Catch cleaning gaps before the next move-in.</p>
+        </div>
+        <div class="type-card">
+          <span class="type-pill pill-comm">Common Area</span>
+          <h3>Common Area</h3>
+          <p>Shared kitchens, baths, and entry spaces. Set weekly, biweekly, or monthly recurrence.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="maintenance" class="alt">
+    <div class="container maint-split">
+      <div>
+        <div class="eyebrow">Maintenance</div>
+        <h2 class="section-title">Every issue, tracked to resolution.</h2>
+        <p class="section-sub">
+          Flagged inspection items flow straight to a kanban board. Drag a ticket between columns,
+          open the detail for photos, notes, costs, and entry codes. Generate a work-order PDF for
+          any vendor in one click.
+        </p>
+        <ul class="maint-features">
+          <li>Auto-suggested priority by category (Safety, Plumbing, Electrical &rarr; High)</li>
+          <li>Cost tracking: estimated, actual, vendor</li>
+          <li>File attachments: quotes, receipts, invoices</li>
+          <li>Assign to a teammate, a vendor, or anyone custom</li>
+          <li>Resident &amp; PM notifications on every update</li>
+          <li>Export CSV for your reporting</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-head">
+          <span>Maintenance &mdash; Candace House</span>
+          <span style="color: var(--muted); font-weight: 400; font-size: 0.75rem;">4 open</span>
+        </div>
+        <div class="mock-row">
+          <span>Kitchen sink drain clogged</span>
+          <span class="mock-tag tag-high">High</span>
+        </div>
+        <div class="mock-row">
+          <span>Smoke detector low battery</span>
+          <span class="mock-tag tag-high">High</span>
+        </div>
+        <div class="mock-row">
+          <span>Closet door off track</span>
+          <span class="mock-tag tag-med">Medium</span>
+        </div>
+        <div class="mock-row">
+          <span>Paint touch-up in bedroom 3</span>
+          <span class="mock-tag tag-low">Low</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <div class="eyebrow">FAQ</div>
+      <h2 class="section-title">Questions we hear a lot.</h2>
+      <div class="faq-list" style="max-width: 760px;">
+        <details>
+          <summary><span><span class="faq-tag badge-host">Host</span>How do residents submit without creating an account?</span></summary>
+          <p>Every org gets three universal links: Move-In, Self-Check, Report Maintenance. You share the link or print a QR (we include a flyer generator). Residents type their street name, pick their place, and submit &mdash; no signup, no password.</p>
+        </details>
+        <details>
+          <summary><span><span class="faq-tag badge-host">Host</span>Can I change the default inspection checklists?</span></summary>
+          <p>Yes. Every inspection type has a template you own. Add, edit, remove, and drag to reorder items from the Templates section. Your changes apply to future inspections only &mdash; completed ones stay exactly as submitted.</p>
+        </details>
+        <details>
+          <summary><span><span class="faq-tag badge-res">Resident</span>Do I need the app?</span></summary>
+          <p>No. Scan the QR on your wall, enter your street name, and submit. It works in any phone browser.</p>
+        </details>
+        <details>
+          <summary><span><span class="faq-tag badge-team">Teammate</span>What do cleaners and handypeople see?</span></summary>
+          <p>Only the properties they're assigned to, and only the tickets / inspections relevant to them. Hosts manage assignments from the Team section.</p>
+        </details>
+        <details>
+          <summary><span><span class="faq-tag badge-host">Host</span>Is there a paper trail for lease violations?</span></summary>
+          <p>Yes. Flagged items can be marked as maintenance, lease violation, or both. Violations get their own log where you can record follow-up actions &mdash; text, email, verbal, written notice &mdash; with timestamps.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing" class="alt">
+    <div class="container">
+      <div class="eyebrow">Pricing</div>
+      <h2 class="section-title">Simple per-property pricing.</h2>
+      <p class="section-sub">Start free for one property. Upgrade when you grow.</p>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <div class="price-tier">Solo</div>
+          <div class="price-amount">$0<small> / month</small></div>
+          <ul class="price-list">
+            <li>1 property</li>
+            <li>Unlimited rooms</li>
+            <li>All inspection types</li>
+            <li>Resident links</li>
+            <li>Maintenance kanban</li>
+          </ul>
+          <a class="btn btn-ghost" href="https://app.roomreport.co/signup">Get started free</a>
+        </div>
+        <div class="price-card featured">
+          <div class="price-tier">Host</div>
+          <div class="price-amount">$29<small> / property / month</small></div>
+          <ul class="price-list">
+            <li>Everything in Solo</li>
+            <li>Vendor management + profiles</li>
+            <li>Team roles + property scoping</li>
+            <li>Custom templates</li>
+            <li>Reports + CSV export</li>
+            <li>Recurring inspection schedules</li>
+          </ul>
+          <a class="btn btn-primary" href="https://app.roomreport.co/signup">Start 14-day trial</a>
+        </div>
+        <div class="price-card">
+          <div class="price-tier">Operator</div>
+          <div class="price-amount">Custom</div>
+          <ul class="price-list">
+            <li>Volume pricing for 20+ properties</li>
+            <li>Onboarding &amp; template setup</li>
+            <li>Priority support</li>
+            <li>SSO (coming soon)</li>
+          </ul>
+          <a class="btn btn-ghost" href="mailto:hello@roomreport.co">Contact sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <span>&copy; RoomReport</span>
+      <span>
+        <a href="https://app.roomreport.co/login">Sign in</a> &middot;
+        <a href="mailto:hello@roomreport.co">hello@roomreport.co</a>
+      </span>
+    </div>
+  </footer>
+</body>
+</html>

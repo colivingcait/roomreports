@@ -504,6 +504,10 @@ export default function Team() {
             <span className="shortcut-title">Lease Violations</span>
             <span className="shortcut-sub">Follow-up log + paper trail</span>
           </button>
+          <button className="shortcut-card" onClick={() => navigate('/templates')}>
+            <span className="shortcut-title">Templates</span>
+            <span className="shortcut-sub">Customize inspection checklists</span>
+          </button>
         </div>
       </div>
 

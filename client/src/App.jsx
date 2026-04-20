@@ -24,6 +24,7 @@ import Calendar from './pages/Calendar';
 import Reports from './pages/Reports';
 import Violations from './pages/Violations';
 import PropertyHealth from './pages/PropertyHealth';
+import Templates from './pages/Templates';
 import VendorProfile from './pages/VendorProfile';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
@@ -76,6 +77,7 @@ function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/violations" element={<Violations />} />
               <Route path="/health" element={<PropertyHealth />} />
+              <Route path="/templates" element={<Templates />} />
               <Route path="/vendors/:id" element={<VendorProfile />} />
             </Route>
 
