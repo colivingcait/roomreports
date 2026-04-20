@@ -131,6 +131,8 @@ router.post('/quarterly-batch', async (req, res) => {
       })),
       propertyId,
       propertyName: property.name,
+      kitchens: (property.kitchens || []).map((k) => ({ id: k.id, label: k.label || 'Kitchen' })),
+      bathrooms: (property.bathrooms || []).map((b) => ({ id: b.id, label: b.label || 'Bathroom' })),
     });
   } catch (error) {
     console.error('Quarterly batch error:', error);
