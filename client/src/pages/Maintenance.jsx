@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -19,6 +19,7 @@ import {
 } from '../../../shared/index.js';
 import MaintenanceDetail from '../components/MaintenanceDetail';
 import NewMaintenance from '../components/NewMaintenance';
+import MaintenanceToDoTabs from '../components/MaintenanceToDoTabs';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
@@ -141,7 +142,6 @@ function KanbanColumn({ status, items, children }) {
 // ─── Main page ──────────────────────────────────────────
 
 export default function Maintenance() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
@@ -292,10 +292,7 @@ export default function Maintenance() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <div className="view-toggle" style={{ marginBottom: '0.5rem' }}>
-            <button className="view-btn active">Maintenance</button>
-            <button className="view-btn" onClick={() => navigate('/tasks')}>Tasks</button>
-          </div>
+          <MaintenanceToDoTabs />
           <h1>Maintenance</h1>
           <p className="page-subtitle">{totalOpen} open item{totalOpen !== 1 ? 's' : ''}</p>
         </div>
