@@ -18,6 +18,7 @@ import QuarterlyReview from './pages/QuarterlyReview';
 import CommonAreaFlow from './pages/CommonAreaFlow';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
+import VendorProfile from './pages/VendorProfile';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
 import ResidentDone from './pages/ResidentDone';
@@ -60,6 +61,7 @@ function App() {
               <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/team" element={<Team />} />
+              <Route path="/vendors/:id" element={<VendorProfile />} />
             </Route>
 
             {/* Full-screen inspection flows (no nav) */}

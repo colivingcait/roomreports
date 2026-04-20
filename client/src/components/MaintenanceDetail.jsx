@@ -7,6 +7,7 @@ import {
   ATTACHMENT_LABELS,
   roleLabel,
 } from '../../../shared/index.js';
+import AssigneePicker from './AssigneePicker';
 
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
@@ -238,13 +239,17 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
               <div className="md-grid">
                 <label className="detail-label">
                   Assigned to
-                  <input
-                    type="text"
-                    className="maint-input"
-                    value={draft.assignedTo}
-                    placeholder="Name or team"
-                    onChange={(e) => setDraft({ ...draft, assignedTo: e.target.value })}
-                    onBlur={() => draft.assignedTo !== (data.item.assignedTo || '') && save({ assignedTo: draft.assignedTo || null })}
+                  <AssigneePicker
+                    value={{
+                      assignedTo: data.item.assignedTo,
+                      userName: data.item.assignedUser?.name,
+                      vendorName: data.item.assignedVendor
+                        ? (data.item.assignedVendor.company
+                            ? `${data.item.assignedVendor.name} (${data.item.assignedVendor.company})`
+                            : data.item.assignedVendor.name)
+                        : null,
+                    }}
+                    onChange={(patch) => save(patch)}
                   />
                 </label>
                 <label className="detail-label">
