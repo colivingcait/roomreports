@@ -6,7 +6,7 @@ import OfflineBanner from '../components/OfflineBanner';
 import MoveInOutComparison from '../components/MoveInOutComparison';
 import Modal from '../components/Modal';
 
-import { FLAG_CATEGORIES } from '../../../shared/index.js';
+import { FLAG_CATEGORIES, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
 const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
 const GOOD_STATUSES = ['Pass', 'Good', 'Clean', 'Yes'];
 const BAD_STATUSES = ['Fail', 'Poor', 'Dirty', 'No', 'Missing'];
@@ -175,12 +175,31 @@ function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUp
             <select
               className="form-select detail-select"
               value={item.flagCategory || ''}
-              onChange={(e) => update({ flagCategory: e.target.value || null })}
+              onChange={(e) => {
+                const category = e.target.value || null;
+                const nextPriority = item.priority || (category ? suggestPriority(category) : null);
+                update({ flagCategory: category, priority: nextPriority });
+              }}
             >
               <option value="">None</option>
               {FLAG_CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
+            </select>
+          </label>
+
+          <label className="detail-label">
+            Priority
+            <select
+              className="form-select detail-select"
+              value={item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium')}
+              style={{
+                color: PRIORITY_COLORS[item.priority || 'Medium'],
+                borderColor: PRIORITY_COLORS[item.priority || 'Medium'],
+              }}
+              onChange={(e) => update({ priority: e.target.value })}
+            >
+              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </label>
 
@@ -195,6 +214,26 @@ function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUp
             />
           </label>
 
+          <label className="detail-label">
+            Entry code <span className="form-optional">(optional)</span>
+            <input
+              type="text"
+              className="maint-input"
+              value={item.entryCode || ''}
+              onChange={(e) => update({ entryCode: e.target.value || null })}
+              placeholder="e.g. 4520#"
+            />
+          </label>
+
+          <label className="q-flag-toggle">
+            <input
+              type="checkbox"
+              checked={!!item.entryApproved}
+              onChange={(e) => update({ entryApproved: e.target.checked })}
+            />
+            Resident has approved entry
+          </label>
+
           <PhotoCapture
             inspectionId={inspectionId}
             itemId={item.id}
@@ -207,12 +246,20 @@ function InspectionItem({ item, inspectionId, inspectionType, saveItem, onItemUp
             }}
           />
 
-          <button
-            className={`btn-maintenance ${item.isMaintenance ? 'active' : ''}`}
-            onClick={toggleMaintenance}
-          >
-            {item.isMaintenance ? '✓ Maintenance Ticket' : 'Mark as Maintenance'}
-          </button>
+          <div className="insp-flag-toggles">
+            <button
+              className={`btn-maintenance ${item.isMaintenance ? 'active' : ''}`}
+              onClick={toggleMaintenance}
+            >
+              {item.isMaintenance ? '✓ Maintenance Ticket' : 'Mark as Maintenance'}
+            </button>
+            <button
+              className={`btn-maintenance ${item.isLeaseViolation ? 'active' : ''}`}
+              onClick={() => update({ isLeaseViolation: !item.isLeaseViolation })}
+            >
+              {item.isLeaseViolation ? '✓ Lease violation' : 'Mark as lease violation'}
+            </button>
+          </div>
         </div>
       )}
     </div>

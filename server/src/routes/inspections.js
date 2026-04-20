@@ -2,6 +2,7 @@ import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateChecklist, ROOM_TYPES } from '../lib/checklist.js';
+import { suggestPriority, PRIORITIES } from '../../../shared/index.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -352,7 +353,13 @@ router.put('/:id/items/:itemId', async (req, res) => {
       return res.status(404).json({ error: 'Inspection item not found' });
     }
 
-    const { status, flagCategory, note, isMaintenance } = req.body;
+    const {
+      status, flagCategory, note, isMaintenance,
+      isLeaseViolation, priority, entryCode, entryApproved,
+    } = req.body;
+    if (priority !== undefined && priority !== null && !PRIORITIES.includes(priority)) {
+      return res.status(400).json({ error: `priority must be one of ${PRIORITIES.join(', ')}` });
+    }
     const updated = await prisma.inspectionItem.update({
       where: { id: item.id },
       data: {
@@ -360,6 +367,10 @@ router.put('/:id/items/:itemId', async (req, res) => {
         ...(flagCategory !== undefined && { flagCategory }),
         ...(note !== undefined && { note }),
         ...(isMaintenance !== undefined && { isMaintenance }),
+        ...(isLeaseViolation !== undefined && { isLeaseViolation }),
+        ...(priority !== undefined && { priority }),
+        ...(entryCode !== undefined && { entryCode }),
+        ...(entryApproved !== undefined && { entryApproved: !!entryApproved }),
       },
     });
 
@@ -568,13 +579,17 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
         totalItems: visible.length,
         completedItems: visible.filter((i) => i.status).length,
         partialReason: partialItem?.note || null,
-        flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance).map((item) => ({
+        flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation).map((item) => ({
           id: item.id,
           zone: item.zone,
           text: item.text,
           status: item.status,
           flagCategory: item.flagCategory,
           isMaintenance: item.isMaintenance,
+          isLeaseViolation: item.isLeaseViolation,
+          priority: item.priority,
+          entryCode: item.entryCode,
+          entryApproved: item.entryApproved,
           note: item.note,
           photos: item.photos || [],
         })),
@@ -615,11 +630,8 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
-    // Build a map of itemId -> selection
     const selectionMap = {};
-    for (const sel of (itemSelections || [])) {
-      selectionMap[sel.itemId] = sel;
-    }
+    for (const sel of (itemSelections || [])) selectionMap[sel.itemId] = sel;
 
     const inspections = await prisma.inspection.findMany({
       where: {
@@ -630,52 +642,32 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
       },
       include: { items: true },
     });
-
     if (inspections.length === 0) {
       return res.status(404).json({ error: 'No SUBMITTED inspections found' });
     }
 
-    // Existing maintenance to avoid duplicates
-    const existing = await prisma.maintenanceItem.findMany({
-      where: { inspectionId: { in: ids }, deletedAt: null },
-      select: { inspectionItemId: true },
-    });
-    const existingIds = new Set(existing.map((m) => m.inspectionItemId));
-
-    let totalCreated = 0;
+    let totalMaintenance = 0;
+    let totalViolations = 0;
 
     await prisma.$transaction(async (tx) => {
       for (const insp of inspections) {
+        const pairs = [];
         for (const item of insp.items) {
           if (item.zone.startsWith('_')) continue;
-          if (existingIds.has(item.id)) continue;
-
           const sel = selectionMap[item.id];
-          // Default: create task if isMaintenance and no explicit selection
-          const shouldCreate = sel ? sel.createTask : item.isMaintenance;
-          if (!shouldCreate) continue;
-
-          const description = sel?.description || item.text;
-          const pmNote = sel?.pmNote || null;
-          const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
-
-          await tx.maintenanceItem.create({
-            data: {
-              inspectionItemId: item.id,
-              inspectionId: insp.id,
-              propertyId: insp.propertyId,
-              roomId: insp.roomId,
-              organizationId: insp.organizationId,
-              description,
-              zone: item.zone,
-              flagCategory: item.flagCategory || 'General',
-              note: combinedNote || null,
-            },
+          const createTask = sel ? sel.createTask : item.isMaintenance;
+          const createViolation = sel ? sel.createViolation : item.isLeaseViolation;
+          if (!createTask && !createViolation) continue;
+          pairs.push({
+            item: { ...item, isMaintenance: !!createTask, isLeaseViolation: !!createViolation },
+            description: sel?.description || item.text,
+            pmNote: sel?.pmNote || null,
+            pmPriority: PRIORITIES.includes(sel?.priority) ? sel.priority : null,
           });
-          totalCreated++;
         }
-
-        // Mark inspection as REVIEWED
+        const counts = await createTicketsFromApproval(tx, insp, pairs, req.user);
+        totalMaintenance += counts.maintenanceCreated;
+        totalViolations += counts.violationsCreated;
         await tx.inspection.update({
           where: { id: insp.id },
           data: { status: 'REVIEWED' },
@@ -685,7 +677,8 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
 
     return res.json({
       approved: inspections.length,
-      maintenanceItemsCreated: totalCreated,
+      maintenanceItemsCreated: totalMaintenance,
+      violationsCreated: totalViolations,
     });
   } catch (error) {
     console.error('Bulk approve error:', error);
@@ -794,6 +787,89 @@ router.get('/pending', async (req, res) => {
 // ─── POST /api/inspections/:id/approve — PM approves + creates maintenance ──
 // Body: { items: [{ itemId, createTask, description?, pmNote? }] }
 
+// Shared logic: create maintenance items + lease violations from a list of
+// (item, selection) pairs within an open transaction.
+async function createTicketsFromApproval(tx, inspection, pairs, user) {
+  // Skip items that already have maintenance tickets from this inspection
+  const existing = await tx.maintenanceItem.findMany({
+    where: { inspectionId: inspection.id, deletedAt: null },
+    select: { inspectionItemId: true },
+  });
+  const existingIds = new Set(existing.map((m) => m.inspectionItemId));
+
+  let maintenanceCreated = 0;
+  let violationsCreated = 0;
+
+  for (const { item, description, pmNote, pmPriority } of pairs) {
+    const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
+    const category = item.flagCategory || 'General';
+    const priority = pmPriority
+      || (PRIORITIES.includes(item.priority) ? item.priority : null)
+      || suggestPriority(category);
+
+    // Maintenance side
+    if (item.isMaintenance && !existingIds.has(item.id)) {
+      const mi = await tx.maintenanceItem.create({
+        data: {
+          inspectionItemId: item.id,
+          inspectionId: inspection.id,
+          propertyId: inspection.propertyId,
+          roomId: inspection.roomId,
+          organizationId: inspection.organizationId,
+          description,
+          zone: item.zone,
+          flagCategory: category,
+          note: combinedNote || null,
+          priority,
+          entryCode: item.entryCode || null,
+          entryApproved: !!item.entryApproved,
+          entryApprovedAt: item.entryApproved ? new Date() : null,
+          reportedById: inspection.inspectorId,
+          reportedByName: inspection.inspectorName,
+          reportedByRole: inspection.inspectorRole,
+        },
+      });
+      await tx.maintenanceEvent.create({
+        data: {
+          maintenanceItemId: mi.id,
+          type: 'created',
+          toValue: 'OPEN',
+          byUserId: user?.id || null,
+          byUserName: user?.name || null,
+          note: `Approved from inspection by ${inspection.inspectorName}`,
+        },
+      });
+      maintenanceCreated += 1;
+    }
+
+    // Lease violation side (separate record, tied to the same InspectionItem)
+    if (item.isLeaseViolation) {
+      const existingViolation = await tx.leaseViolation.findUnique({
+        where: { inspectionItemId: item.id },
+      }).catch(() => null);
+      if (!existingViolation) {
+        await tx.leaseViolation.create({
+          data: {
+            organizationId: inspection.organizationId,
+            propertyId: inspection.propertyId,
+            roomId: inspection.roomId,
+            inspectionId: inspection.id,
+            inspectionItemId: item.id,
+            description,
+            category,
+            note: combinedNote || null,
+            reportedById: inspection.inspectorId,
+            reportedByName: inspection.inspectorName,
+          },
+        });
+        violationsCreated += 1;
+      }
+    }
+  }
+
+  return { maintenanceCreated, violationsCreated };
+}
+
 router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
     const { items: itemSelections } = req.body;
@@ -819,69 +895,52 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
     const itemMap = {};
     for (const it of inspection.items) itemMap[it.id] = it;
 
-    // Determine which items to create maintenance for
-    const toCreate = [];
+    // Determine which items to create tickets for
+    const pairs = [];
     if (Array.isArray(itemSelections) && itemSelections.length > 0) {
       for (const sel of itemSelections) {
-        if (!sel.createTask) continue;
+        if (!sel.createTask && !sel.createViolation) continue;
         const item = itemMap[sel.itemId];
         if (!item) continue;
-        toCreate.push({ item, description: sel.description || item.text, pmNote: sel.pmNote || null });
+        // Apply overrides from the PM review UI before creating tickets
+        pairs.push({
+          item: {
+            ...item,
+            isMaintenance: sel.createTask !== undefined ? !!sel.createTask : item.isMaintenance,
+            isLeaseViolation: sel.createViolation !== undefined
+              ? !!sel.createViolation
+              : item.isLeaseViolation,
+          },
+          description: sel.description || item.text,
+          pmNote: sel.pmNote || null,
+          pmPriority: PRIORITIES.includes(sel.priority) ? sel.priority : null,
+        });
       }
     } else {
-      // Fallback: default to all isMaintenance items if no selection provided
+      // Fallback: default to all flagged maintenance/violation items
       for (const item of inspection.items) {
-        if (item.isMaintenance) {
-          toCreate.push({ item, description: item.text, pmNote: null });
+        if (item.isMaintenance || item.isLeaseViolation) {
+          pairs.push({ item, description: item.text, pmNote: null });
         }
       }
     }
-
-    // Check for existing maintenance to avoid duplicates
-    const existing = await prisma.maintenanceItem.findMany({
-      where: { inspectionId: inspection.id, deletedAt: null },
-      select: { inspectionItemId: true },
-    });
-    const existingIds = new Set(existing.map((m) => m.inspectionItemId));
 
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.inspection.update({
         where: { id: inspection.id },
         data: { status: 'REVIEWED' },
       });
-
-      const created = [];
-      for (const { item, description, pmNote } of toCreate) {
-        if (existingIds.has(item.id)) continue;
-        // Combine inspector note and PM note
-        const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
-        const mi = await tx.maintenanceItem.create({
-          data: {
-            inspectionItemId: item.id,
-            inspectionId: inspection.id,
-            propertyId: inspection.propertyId,
-            roomId: inspection.roomId,
-            organizationId: inspection.organizationId,
-            description,
-            zone: item.zone,
-            flagCategory: item.flagCategory || 'General',
-            note: combinedNote || null,
-          },
-        });
-        created.push(mi);
-      }
-
-      // Clear any stored send-back reason
+      const counts = await createTicketsFromApproval(tx, inspection, pairs, req.user);
       await tx.inspectionItem.deleteMany({
         where: { inspectionId: inspection.id, zone: '_SendBackReason' },
       });
-
-      return { inspection: updated, maintenanceItems: created };
+      return { inspection: updated, ...counts };
     });
 
     return res.json({
       inspection: result.inspection,
-      maintenanceItemsCreated: result.maintenanceItems.length,
+      maintenanceItemsCreated: result.maintenanceCreated,
+      violationsCreated: result.violationsCreated,
     });
   } catch (error) {
     console.error('Approve inspection error:', error);

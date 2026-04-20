@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { roleLabel } from '../../../shared/index.js';
+import { roleLabel, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
@@ -50,11 +50,13 @@ export default function InspectionReview() {
       // Initialize item state: default createTask=true for isMaintenance items
       const state = {};
       for (const item of data.inspection.items || []) {
-        if (item.flagCategory || item.isMaintenance) {
+        if (item.flagCategory || item.isMaintenance || item.isLeaseViolation) {
           state[item.id] = {
             createTask: !!item.isMaintenance,
+            createViolation: !!item.isLeaseViolation,
             description: item.text,
             pmNote: '',
+            priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
           };
         }
       }
@@ -82,8 +84,10 @@ export default function InspectionReview() {
       const items = Object.entries(itemState).map(([itemId, state]) => ({
         itemId,
         createTask: state.createTask,
+        createViolation: state.createViolation,
         description: state.description,
         pmNote: state.pmNote,
+        priority: state.priority || null,
       }));
 
       const data = await api(`/api/inspections/${id}/approve`, {
@@ -261,7 +265,14 @@ export default function InspectionReview() {
               <div key={zone} className="review-zone">
                 <h4 className="review-zone-name">{zone}</h4>
                 {zoneMap[zone].map((item) => {
-                  const state = itemState[item.id] || { createTask: false, description: item.text, pmNote: '' };
+                  const state = itemState[item.id] || {
+                    createTask: false,
+                    createViolation: false,
+                    description: item.text,
+                    pmNote: '',
+                    priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
+                  };
+                  const effectivePriority = state.priority || 'Medium';
                   return (
                     <div key={item.id} className="review-item">
                       <div className="review-item-head">
@@ -274,6 +285,20 @@ export default function InspectionReview() {
                           )}
                           {item.flagCategory && (
                             <span className="review-cat-badge">{item.flagCategory}</span>
+                          )}
+                          <span
+                            className="maint-priority-tag"
+                            style={{
+                              color: PRIORITY_COLORS[effectivePriority],
+                              borderColor: PRIORITY_COLORS[effectivePriority],
+                            }}
+                          >
+                            {effectivePriority}
+                          </span>
+                          {item.isLeaseViolation && (
+                            <span className="review-cat-badge" style={{ background: '#F5E8F0', color: '#8A2B6D', borderColor: '#8A2B6D' }}>
+                              Lease violation
+                            </span>
                           )}
                         </div>
                       </div>
@@ -301,14 +326,24 @@ export default function InspectionReview() {
 
                       {isSubmitted && (
                         <div className="review-task-box">
-                          <label className="review-task-toggle">
-                            <input
-                              type="checkbox"
-                              checked={state.createTask}
-                              onChange={(e) => updateItemState(item.id, { createTask: e.target.checked })}
-                            />
-                            <span>Create maintenance task</span>
-                          </label>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                            <label className="review-task-toggle">
+                              <input
+                                type="checkbox"
+                                checked={state.createTask}
+                                onChange={(e) => updateItemState(item.id, { createTask: e.target.checked })}
+                              />
+                              <span>Create maintenance task</span>
+                            </label>
+                            <label className="review-task-toggle">
+                              <input
+                                type="checkbox"
+                                checked={state.createViolation}
+                                onChange={(e) => updateItemState(item.id, { createViolation: e.target.checked })}
+                              />
+                              <span>Record lease violation</span>
+                            </label>
+                          </div>
 
                           {state.createTask && (
                             <div className="review-task-fields">
@@ -320,6 +355,20 @@ export default function InspectionReview() {
                                   value={state.description}
                                   onChange={(e) => updateItemState(item.id, { description: e.target.value })}
                                 />
+                              </label>
+                              <label className="review-field-label">
+                                Priority
+                                <select
+                                  className="form-select"
+                                  value={state.priority}
+                                  onChange={(e) => updateItemState(item.id, { priority: e.target.value })}
+                                  style={{
+                                    color: PRIORITY_COLORS[state.priority],
+                                    borderColor: PRIORITY_COLORS[state.priority],
+                                  }}
+                                >
+                                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                </select>
                               </label>
                               <label className="review-field-label">
                                 PM notes <span className="form-optional">(optional)</span>
@@ -339,6 +388,11 @@ export default function InspectionReview() {
                       {isReviewed && item.isMaintenance && (
                         <div className="review-task-done">
                           <span>&#10003; Maintenance task created</span>
+                        </div>
+                      )}
+                      {isReviewed && item.isLeaseViolation && (
+                        <div className="review-task-done" style={{ color: '#8A2B6D' }}>
+                          <span>&#10003; Lease violation recorded</span>
                         </div>
                       )}
                     </div>

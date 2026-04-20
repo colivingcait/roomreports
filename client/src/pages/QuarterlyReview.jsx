@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { roleLabel } from '../../../shared/index.js';
+import { roleLabel, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -38,8 +38,10 @@ export default function QuarterlyReview() {
         for (const item of room.flaggedItems) {
           sel[item.id] = {
             createTask: !!item.isMaintenance,
+            createViolation: !!item.isLeaseViolation,
             description: item.text,
             pmNote: '',
+            priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
           };
         }
       }
@@ -71,8 +73,10 @@ export default function QuarterlyReview() {
       const items = Object.entries(itemSelections).map(([itemId, sel]) => ({
         itemId,
         createTask: sel.createTask,
+        createViolation: sel.createViolation,
         description: sel.description,
         pmNote: sel.pmNote,
+        priority: sel.priority || null,
       }));
 
       const result = await api('/api/inspections/bulk-approve', {
@@ -202,7 +206,12 @@ export default function QuarterlyReview() {
                     <p className="po-expanded-empty">&#10003; No issues found in this room</p>
                   ) : (
                     room.flaggedItems.map((item) => {
-                      const sel = itemSelections[item.id] || { createTask: false, description: item.text, pmNote: '' };
+                      const sel = itemSelections[item.id] || {
+                        createTask: false, createViolation: false,
+                        description: item.text, pmNote: '',
+                        priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
+                      };
+                      const effectivePriority = sel.priority || 'Medium';
                       return (
                         <div key={item.id} className="qr-item">
                           <div className="qr-item-head">
@@ -215,6 +224,20 @@ export default function QuarterlyReview() {
                               )}
                               {item.flagCategory && (
                                 <span className="review-cat-badge">{item.flagCategory}</span>
+                              )}
+                              <span
+                                className="maint-priority-tag"
+                                style={{
+                                  color: PRIORITY_COLORS[effectivePriority],
+                                  borderColor: PRIORITY_COLORS[effectivePriority],
+                                }}
+                              >
+                                {effectivePriority}
+                              </span>
+                              {item.isLeaseViolation && (
+                                <span className="review-cat-badge" style={{ background: '#F5E8F0', color: '#8A2B6D', borderColor: '#8A2B6D' }}>
+                                  Lease violation
+                                </span>
                               )}
                             </div>
                           </div>
@@ -237,14 +260,24 @@ export default function QuarterlyReview() {
 
                           {isReviewable && (
                             <div className="review-task-box">
-                              <label className="review-task-toggle">
-                                <input
-                                  type="checkbox"
-                                  checked={sel.createTask}
-                                  onChange={(e) => updateSelection(item.id, { createTask: e.target.checked })}
-                                />
-                                <span>Create maintenance task</span>
-                              </label>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                                <label className="review-task-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={sel.createTask}
+                                    onChange={(e) => updateSelection(item.id, { createTask: e.target.checked })}
+                                  />
+                                  <span>Create maintenance task</span>
+                                </label>
+                                <label className="review-task-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={sel.createViolation}
+                                    onChange={(e) => updateSelection(item.id, { createViolation: e.target.checked })}
+                                  />
+                                  <span>Record lease violation</span>
+                                </label>
+                              </div>
                               {sel.createTask && (
                                 <div className="review-task-fields">
                                   <label className="review-field-label">
@@ -255,6 +288,20 @@ export default function QuarterlyReview() {
                                       value={sel.description}
                                       onChange={(e) => updateSelection(item.id, { description: e.target.value })}
                                     />
+                                  </label>
+                                  <label className="review-field-label">
+                                    Priority
+                                    <select
+                                      className="form-select"
+                                      value={sel.priority}
+                                      onChange={(e) => updateSelection(item.id, { priority: e.target.value })}
+                                      style={{
+                                        color: PRIORITY_COLORS[sel.priority],
+                                        borderColor: PRIORITY_COLORS[sel.priority],
+                                      }}
+                                    >
+                                      {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                    </select>
                                   </label>
                                   <label className="review-field-label">
                                     PM notes <span className="form-optional">(optional)</span>
@@ -274,6 +321,11 @@ export default function QuarterlyReview() {
                           {isReviewed && item.isMaintenance && (
                             <div className="review-task-done">
                               <span>&#10003; Maintenance task created</span>
+                            </div>
+                          )}
+                          {isReviewed && item.isLeaseViolation && (
+                            <div className="review-task-done" style={{ color: '#8A2B6D' }}>
+                              <span>&#10003; Lease violation recorded</span>
                             </div>
                           )}
                         </div>
