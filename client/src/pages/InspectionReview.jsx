@@ -58,7 +58,7 @@ export default function InspectionReview() {
           state[item.id] = {
             createTask: !!item.isMaintenance,
             createViolation: !!item.isLeaseViolation,
-            description: item.text,
+            description: (item.note && item.note.trim()) || item.text,
             pmNote: '',
             priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
           };
@@ -313,7 +313,7 @@ export default function InspectionReview() {
                   const state = itemState[item.id] || {
                     createTask: false,
                     createViolation: false,
-                    description: item.text,
+                    description: (item.note && item.note.trim()) || item.text,
                     pmNote: '',
                     priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
                   };

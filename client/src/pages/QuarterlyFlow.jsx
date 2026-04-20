@@ -153,12 +153,12 @@ function FlagDrawerMini({ item, inspectionId, onUpdate }) {
           </select>
         </label>
         <label className="q-flag-label">
-          Notes
+          Task Name
           <textarea
             className="q-flag-note"
             value={item.note || ''}
             onChange={(e) => onUpdate({ ...item, note: e.target.value || null })}
-            placeholder="Describe the issue..."
+            placeholder="e.g. Lock needs new batteries"
             rows={2}
           />
         </label>
@@ -479,7 +479,7 @@ function MiscItemCard({ item, inspectionId, saveItem, onItemUpdate, onRemove, re
       </div>
 
       <label className="q-flag-label">
-        Notes
+        Task Name
         <textarea
           className="q-flag-note q-misc-note"
           value={item.note || ''}
@@ -488,7 +488,7 @@ function MiscItemCard({ item, inspectionId, saveItem, onItemUpdate, onRemove, re
             // Also save text so the item has a useful description
             if (e.target.value && !item.text) update({ text: e.target.value.slice(0, 140) });
           }}
-          placeholder="Describe it..."
+          placeholder="e.g. Living room lamp bulb out"
           rows={3}
         />
       </label>

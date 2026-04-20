@@ -39,7 +39,7 @@ export default function QuarterlyReview() {
           sel[item.id] = {
             createTask: !!item.isMaintenance,
             createViolation: !!item.isLeaseViolation,
-            description: item.text,
+            description: (item.note && item.note.trim()) || item.text,
             pmNote: '',
             priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
           };
@@ -208,7 +208,7 @@ export default function QuarterlyReview() {
                     room.flaggedItems.map((item) => {
                       const sel = itemSelections[item.id] || {
                         createTask: false, createViolation: false,
-                        description: item.text, pmNote: '',
+                        description: (item.note && item.note.trim()) || item.text, pmNote: '',
                         priority: item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium'),
                       };
                       const effectivePriority = sel.priority || 'Medium';

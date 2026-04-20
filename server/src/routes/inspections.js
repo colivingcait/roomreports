@@ -865,7 +865,9 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
           if (!createTask && !createViolation) continue;
           pairs.push({
             item: { ...item, isMaintenance: !!createTask, isLeaseViolation: !!createViolation },
-            description: sel?.description || item.text,
+            description: (sel?.description && sel.description.trim())
+              || (item.note && item.note.trim())
+              || item.text,
             pmNote: sel?.pmNote || null,
             pmPriority: PRIORITIES.includes(sel?.priority) ? sel.priority : null,
           });
@@ -1116,7 +1118,9 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
               ? !!sel.createViolation
               : item.isLeaseViolation,
           },
-          description: sel.description || item.text,
+          description: (sel.description && sel.description.trim())
+            || (item.note && item.note.trim())
+            || item.text,
           pmNote: sel.pmNote || null,
           pmPriority: PRIORITIES.includes(sel.priority) ? sel.priority : null,
         });
@@ -1125,7 +1129,11 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
       // Fallback: default to all flagged maintenance/violation items
       for (const item of inspection.items) {
         if (item.isMaintenance || item.isLeaseViolation) {
-          pairs.push({ item, description: item.text, pmNote: null });
+          pairs.push({
+            item,
+            description: (item.note && item.note.trim()) || item.text,
+            pmNote: null,
+          });
         }
       }
     }
