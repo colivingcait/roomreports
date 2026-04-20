@@ -492,9 +492,9 @@ export default function Team() {
             <span className="shortcut-title">Properties</span>
             <span className="shortcut-sub">Health grades + portfolio view</span>
           </button>
-          <button className="shortcut-card" onClick={() => navigate('/tasks')}>
-            <span className="shortcut-title">Tasks</span>
-            <span className="shortcut-sub">Admin task board</span>
+          <button className="shortcut-card" onClick={() => navigate('/todo')}>
+            <span className="shortcut-title">To-Do</span>
+            <span className="shortcut-sub">Admin to-do board</span>
           </button>
           <button className="shortcut-card" onClick={() => navigate('/calendar')}>
             <span className="shortcut-title">Calendar</span>

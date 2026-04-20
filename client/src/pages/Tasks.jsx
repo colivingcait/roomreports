@@ -6,10 +6,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/Modal';
 import AssigneePicker from '../components/AssigneePicker';
+import MaintenanceToDoTabs from '../components/MaintenanceToDoTabs';
 import { PRIORITIES, PRIORITY_COLORS } from '../../../shared/index.js';
 
 const STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
-const STATUS_LABELS = { TODO: 'To Do', IN_PROGRESS: 'In Progress', DONE: 'Done' };
+const STATUS_LABELS = { TODO: 'Open', IN_PROGRESS: 'In Progress', DONE: 'Done' };
 const STATUS_COLORS = { TODO: '#C0392B', IN_PROGRESS: '#BA7517', DONE: '#3B6D11' };
 
 const api = (path, opts = {}) =>
@@ -192,16 +193,17 @@ export default function Tasks() {
   const activeTask = activeId ? tasks.find((t) => t.id === activeId) : null;
   const totalOpen = (statusCounts.TODO || 0) + (statusCounts.IN_PROGRESS || 0);
 
-  if (loading) return <div className="page-loading">Loading tasks...</div>;
+  if (loading) return <div className="page-loading">Loading to-do...</div>;
 
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1>Tasks</h1>
-          <p className="page-subtitle">{totalOpen} open task{totalOpen !== 1 ? 's' : ''}</p>
+          <MaintenanceToDoTabs />
+          <h1>To-Do</h1>
+          <p className="page-subtitle">{totalOpen} open to-do{totalOpen !== 1 ? 's' : ''}</p>
         </div>
-        <button className="btn-primary-sm" onClick={openCreate}>+ New Task</button>
+        <button className="btn-primary-sm" onClick={openCreate}>+ New To-Do</button>
       </div>
 
       <div className="maint-filters">
@@ -238,7 +240,7 @@ export default function Tasks() {
         </DragOverlay>
       </DndContext>
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Task' : 'New Task'}>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit To-Do' : 'New To-Do'}>
         <form onSubmit={handleSubmit} className="modal-form">
           <label>
             Title
@@ -299,7 +301,7 @@ export default function Tasks() {
               </button>
             ) : <span />}
             <button type="submit" className="btn-primary" disabled={saving || !draft.title.trim()}>
-              {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Task'}
+              {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create To-Do'}
             </button>
           </div>
         </form>
