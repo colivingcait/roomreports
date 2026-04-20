@@ -4,6 +4,7 @@ import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
 import OfflineBanner from '../components/OfflineBanner';
 import MoveInOutComparison from '../components/MoveInOutComparison';
+import Modal from '../components/Modal';
 
 import { FLAG_CATEGORIES } from '../../../shared/index.js';
 const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
@@ -265,6 +266,8 @@ export default function InspectionFlow() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showCompare, setShowCompare] = useState(false);
+  const [showPartialModal, setShowPartialModal] = useState(false);
+  const [partialReason, setPartialReason] = useState('');
 
   const fetchInspection = useCallback(async () => {
     try {
@@ -301,26 +304,32 @@ export default function InspectionFlow() {
     setItems((prev) => prev.map((i) => (i.id === updatedItem.id ? updatedItem : i)));
   }, []);
 
-  const handleSubmit = async (force = false) => {
+  const doSubmit = async (partial) => {
     setSubmitting(true);
     setError('');
     try {
+      const body = partial ? { partial: true, partialReason } : {};
       const res = await fetch(`/api/inspections/${id}/submit`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) {
-        if (!force) throw new Error(data.error);
-        // If forcing, still show error
-        throw new Error(data.error);
-      }
+      if (!res.ok) throw new Error(data.error);
       navigate('/inspections', { state: { notification: data.notification } });
     } catch (err) {
       setError(err.message);
+      setShowPartialModal(false);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const onSubmitClick = () => {
+    const incomplete = items.filter((i) => !i.zone.startsWith('_') && !i.status);
+    if (incomplete.length > 0) setShowPartialModal(true);
+    else doSubmit(false);
   };
 
   if (loading) return <div className="page-loading">Loading inspection...</div>;
@@ -455,14 +464,53 @@ export default function InspectionFlow() {
           <div className="insp-footer-actions">
             <button
               className="btn-finish"
-              onClick={() => handleSubmit()}
-              disabled={submitting || remaining > 0}
+              onClick={onSubmitClick}
+              disabled={submitting}
             >
-              {submitting ? 'Submitting...' : 'Finish Inspection'}
+              {submitting ? 'Submitting...' : 'Submit Inspection'}
             </button>
           </div>
         </div>
       )}
+
+      <Modal
+        open={showPartialModal}
+        onClose={() => { setShowPartialModal(false); setPartialReason(''); }}
+        title="Partial Submission"
+      >
+        <div className="modal-form">
+          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>
+            {remaining} item{remaining !== 1 ? 's' : ''} not completed.
+          </p>
+          <label>
+            Reason for partial submission
+            <textarea
+              className="detail-textarea"
+              value={partialReason}
+              onChange={(e) => setPartialReason(e.target.value)}
+              placeholder="e.g. Could not access the closet — resident not home"
+              rows={3}
+            />
+          </label>
+          {error && <div className="auth-error">{error}</div>}
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              className="btn-secondary"
+              onClick={() => { setShowPartialModal(false); setPartialReason(''); }}
+            >
+              Go back
+            </button>
+            <button
+              className="btn-primary"
+              style={{ width: 'auto' }}
+              onClick={() => doSubmit(true)}
+              disabled={submitting || !partialReason.trim()}
+            >
+              {submitting ? 'Submitting...' : 'Submit anyway'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

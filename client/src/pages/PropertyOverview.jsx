@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 
 const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
+  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 

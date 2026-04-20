@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { roleLabel } from '../../../shared/index.js';
 
 const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
+  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 
@@ -202,7 +203,7 @@ export default function InspectionReview() {
         <div className="review-summary-row">
           <span className="review-label">Inspector</span>
           <span className="review-value">
-            {inspection.inspector?.name} ({inspection.inspector?.role})
+            {inspection.inspector?.name} ({roleLabel(inspection.inspector?.role, inspection.inspector?.customRole)})
           </span>
         </div>
         <div className="review-summary-row">

@@ -37,6 +37,7 @@ router.get('/', async (req, res) => {
         email: true,
         name: true,
         role: true,
+        customRole: true,
         createdAt: true,
         deletedAt: true,
         propertyAssignments: {
@@ -59,7 +60,7 @@ router.get('/', async (req, res) => {
 
 router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
-    const { email, name, role, propertyId } = req.body;
+    const { email, name, role, customRole, propertyId, propertyIds } = req.body;
 
     if (!email || !role) {
       return res.status(400).json({ error: 'email and role are required' });
@@ -68,6 +69,15 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
     if (role === 'OWNER') {
       return res.status(400).json({ error: 'Cannot invite as OWNER' });
     }
+
+    if (role === 'OTHER' && !customRole?.trim()) {
+      return res.status(400).json({ error: 'customRole is required when role is OTHER' });
+    }
+
+    // Accept either propertyId (legacy, single) or propertyIds (array)
+    const assignedPropertyIds = Array.isArray(propertyIds)
+      ? propertyIds
+      : propertyId ? [propertyId] : [];
 
     // Check if user already exists with this email (in any org)
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -87,7 +97,7 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
     const userId = generateIdFromEntropySize(10);
     const displayName = name || email.split('@')[0];
 
-    // Create user + optional property assignment in a transaction
+    // Create user + property assignments in a transaction
     const user = await prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
@@ -96,13 +106,14 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
           name: displayName,
           hashedPassword,
           role,
+          customRole: role === 'OTHER' ? customRole.trim() : null,
           organizationId: req.user.organizationId,
         },
       });
 
-      if (propertyId) {
-        await tx.propertyAssignment.create({
-          data: { userId: created.id, propertyId },
+      if (assignedPropertyIds.length > 0) {
+        await tx.propertyAssignment.createMany({
+          data: assignedPropertyIds.map((pid) => ({ userId: created.id, propertyId: pid })),
         });
       }
 
@@ -115,6 +126,7 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        customRole: user.customRole,
       },
       password, // plaintext — displayed once, never stored
     });
@@ -143,12 +155,18 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
       return res.status(400).json({ error: 'Cannot modify your own account here' });
     }
 
-    const { role, propertyIds } = req.body;
+    const { role, customRole, propertyIds } = req.body;
 
     if (role !== undefined) {
+      if (role === 'OTHER' && !customRole?.trim()) {
+        return res.status(400).json({ error: 'customRole is required when role is OTHER' });
+      }
       await prisma.user.update({
         where: { id: user.id },
-        data: { role },
+        data: {
+          role,
+          customRole: role === 'OTHER' ? customRole.trim() : null,
+        },
       });
     }
 
@@ -168,6 +186,7 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
         email: true,
         name: true,
         role: true,
+        customRole: true,
         deletedAt: true,
         propertyAssignments: {
           include: { property: { select: { id: true, name: true } } },

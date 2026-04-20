@@ -276,7 +276,7 @@ router.get('/:id', async (req, res) => {
         },
         property: { select: { id: true, name: true, address: true } },
         room: { select: { id: true, label: true } },
-        inspector: { select: { id: true, name: true, role: true } },
+        inspector: { select: { id: true, name: true, role: true, customRole: true } },
       },
     });
 
@@ -520,7 +520,7 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       include: {
         items: { orderBy: { createdAt: 'asc' }, include: { photos: true } },
         room: { select: { id: true, label: true } },
-        inspector: { select: { name: true, role: true } },
+        inspector: { select: { name: true, role: true, customRole: true } },
         property: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'asc' },
@@ -549,9 +549,10 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       const visible = insp.items.filter((i) => !i.zone.startsWith('_'));
       const flags = visible.filter((i) => i.flagCategory).length;
       const maint = visible.filter((i) => i.isMaintenance).length;
+      const answered = visible.filter((i) => i.status).length;
       totalFlags += flags;
       totalMaintenance += maint;
-      allItemsCount += visible.length;
+      allItemsCount += answered;
 
       // Detect partial submission
       const partialItem = insp.items.find((i) => i.zone === '_PartialReason');
@@ -759,7 +760,7 @@ router.get('/pending', async (req, res) => {
       include: {
         property: { select: { id: true, name: true } },
         room: { select: { id: true, label: true } },
-        inspector: { select: { id: true, name: true, role: true } },
+        inspector: { select: { id: true, name: true, role: true, customRole: true } },
         items: {
           where: { flagCategory: { not: null } },
           select: { id: true, isMaintenance: true },
@@ -972,7 +973,7 @@ router.get('/compare/:roomId', async (req, res) => {
           orderBy: { createdAt: 'asc' },
           include: { photos: true },
         },
-        inspector: { select: { name: true, role: true } },
+        inspector: { select: { name: true, role: true, customRole: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -1074,7 +1075,7 @@ router.get('/history/:roomId', async (req, res) => {
       },
       include: {
         items: { orderBy: { createdAt: 'asc' } },
-        inspector: { select: { name: true, role: true } },
+        inspector: { select: { name: true, role: true, customRole: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 4,

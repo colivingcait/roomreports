@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
+  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 

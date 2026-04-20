@@ -43,6 +43,20 @@ export const FLAG_CATEGORIES = [
   'General',
 ];
 
+export const ROLE_LABELS = {
+  OWNER: 'Owner',
+  PM: 'Property Manager',
+  CLEANER: 'Cleaner',
+  HANDYPERSON: 'Handyperson',
+  RESIDENT: 'Resident',
+  OTHER: 'Other',
+};
+
+export function roleLabel(role, customRole) {
+  if (role === 'OTHER' && customRole) return customRole;
+  return ROLE_LABELS[role] || role;
+}
+
 // Map legacy categories to current ones so old data still fits filters
 export const LEGACY_CATEGORY_MAP = {
   'Maintenance': 'General',

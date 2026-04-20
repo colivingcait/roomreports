@@ -6,7 +6,7 @@ import Modal from './Modal';
 const INSPECTION_TYPES = [
   { value: 'COMMON_AREA', label: 'Common Area', needsRoom: false },
   { value: 'ROOM_TURN', label: 'Room Turn', needsRoom: true },
-  { value: 'QUARTERLY', label: 'Quarterly', needsRoom: false },
+  { value: 'QUARTERLY', label: 'Room Inspection', needsRoom: false },
   { value: 'RESIDENT_SELF_CHECK', label: 'Resident Self-Check', needsRoom: true },
   { value: 'MOVE_IN_OUT', label: 'Move-In', needsRoom: true },
 ];
