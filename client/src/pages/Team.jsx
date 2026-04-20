@@ -9,7 +9,7 @@ import { ROLE_LABELS, roleLabel } from '../../../shared/index.js';
 
 // ─── Resident Link card with Copy Link + QR download ────
 
-function ResidentLinkCard({ title, url }) {
+function ResidentLinkCard({ title, url, flyerHref }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -41,7 +41,7 @@ function ResidentLinkCard({ title, url }) {
         <QRCodeSVG id={`qr-${title.replace(/\s/g, '-')}`} value={url} size={120} level="M" fgColor="#4A4543" />
       </div>
       <code className="pub-link-url">{url}</code>
-      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center', marginTop: '0.5rem', flexWrap: 'wrap' }}>
         <button
           type="button"
           className="btn-primary-xs"
@@ -53,6 +53,11 @@ function ResidentLinkCard({ title, url }) {
         <button type="button" className="btn-secondary" onClick={handleDownload}>
           Download QR
         </button>
+        {flyerHref && (
+          <button type="button" className="btn-secondary" onClick={() => window.open(flyerHref, '_blank')}>
+            Print flyer
+          </button>
+        )}
       </div>
     </div>
   );
@@ -407,14 +412,17 @@ export default function Team() {
             <ResidentLinkCard
               title="Move-In Inspection"
               url={`https://roomreport.co/movein/${organization.slug}`}
+              flyerHref={`/flyer/${organization.slug}/movein`}
             />
             <ResidentLinkCard
               title="Monthly Self-Check"
               url={`https://roomreport.co/selfcheck/${organization.slug}`}
+              flyerHref={`/flyer/${organization.slug}/selfcheck`}
             />
             <ResidentLinkCard
               title="Report Maintenance"
               url={`https://roomreport.co/report/${organization.slug}`}
+              flyerHref={`/flyer/${organization.slug}/report`}
             />
           </div>
         </div>

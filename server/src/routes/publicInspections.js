@@ -317,6 +317,8 @@ router.post('/report/:slug', async (req, res) => {
           zone: 'Reported Issue',
           flagCategory: flagCategory || 'General',
           note: note || null,
+          reportedByName: reporterName || 'Resident',
+          reportedByRole: 'RESIDENT',
         },
       });
       return { maintenance };
@@ -326,7 +328,11 @@ router.post('/report/:slug', async (req, res) => {
       `[NOTIFICATION] Maintenance report for ${property.name} by ${reporterName || 'Resident'}: ${description.trim()}`
     );
 
-    return res.status(201).json({ maintenanceItemId: result.maintenance.id });
+    return res.status(201).json({
+      maintenanceItemId: result.maintenance.id,
+      organizationId: property.organization.id,
+      propertyId: property.id,
+    });
   } catch (error) {
     console.error('Public report error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -338,7 +344,18 @@ router.post('/report/:slug', async (req, res) => {
 router.post('/photo', upload.single('photo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No image file provided' });
-    const { inspectionId, itemId, organizationId, propertyId } = req.body;
+    const { inspectionId, itemId, organizationId, propertyId, maintenanceItemId } = req.body;
+
+    // Validate that the target exists in a known org before uploading
+    let relatedOrgId = organizationId;
+    if (maintenanceItemId) {
+      const m = await prisma.maintenanceItem.findUnique({
+        where: { id: maintenanceItemId },
+        select: { organizationId: true },
+      });
+      if (!m) return res.status(400).json({ error: 'maintenanceItemId not found' });
+      relatedOrgId = m.organizationId;
+    }
 
     const resized = await sharp(req.file.buffer)
       .resize(1920, null, { withoutEnlargement: true })
@@ -346,10 +363,18 @@ router.post('/photo', upload.single('photo'), async (req, res) => {
       .toBuffer();
 
     const timestamp = Date.now();
-    const key = `${organizationId || 'public'}/${propertyId || 'unknown'}/${inspectionId || 'temp'}/${itemId || 'item'}/${timestamp}.jpg`;
+    const key = maintenanceItemId
+      ? `${relatedOrgId}/${propertyId || 'unknown'}/maintenance/${maintenanceItemId}/${timestamp}.jpg`
+      : `${relatedOrgId || 'public'}/${propertyId || 'unknown'}/${inspectionId || 'temp'}/${itemId || 'item'}/${timestamp}.jpg`;
 
     const { url } = await uploadFile(key, resized, 'image/jpeg');
 
+    if (maintenanceItemId) {
+      const photo = await prisma.photo.create({
+        data: { url, key, maintenanceItemId },
+      });
+      return res.status(201).json({ photo });
+    }
     if (inspectionId && itemId) {
       const photo = await prisma.photo.create({
         data: { url, key, inspectionItemId: itemId },

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { FLAG_CATEGORIES } from '../../../shared/index.js';
 
@@ -21,6 +21,8 @@ export default function PublicReport() {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [photos, setPhotos] = useState([]); // { file, previewUrl }
+  const fileRef = useRef();
 
   useEffect(() => {
     fetch(`/api/public/org/${slug}`)
@@ -59,6 +61,19 @@ export default function PublicReport() {
     }
   };
 
+  const addPhotos = (files) => {
+    const next = [];
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      next.push({ file, previewUrl: URL.createObjectURL(file) });
+    }
+    setPhotos((prev) => [...prev, ...next]);
+  };
+
+  const removePhoto = (idx) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -78,6 +93,19 @@ export default function PublicReport() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      // Upload photos linked to the maintenance item — best-effort.
+      // Failures here don't invalidate the report.
+      for (const p of photos) {
+        try {
+          const form = new FormData();
+          form.append('photo', p.file);
+          form.append('maintenanceItemId', data.maintenanceItemId);
+          form.append('propertyId', property.propertyId);
+          await fetch('/api/public/photo', { method: 'POST', body: form });
+        } catch { /* keep going */ }
+      }
+
       setDone(true);
     } catch (err) {
       setError(err.message);
@@ -195,6 +223,36 @@ export default function PublicReport() {
               placeholder="Any details that would help the maintenance team..."
               rows={2}
             />
+          </label>
+          <label className="pub-field">
+            Photos <span className="form-optional">(optional)</span>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }}
+              style={{ display: 'none' }}
+            />
+            <button type="button" className="pub-add-photo-btn" onClick={() => fileRef.current?.click()}>
+              {photos.length > 0 ? `+ Add another photo (${photos.length} attached)` : '+ Add photo'}
+            </button>
+            {photos.length > 0 && (
+              <div className="photo-grid" style={{ marginTop: '0.5rem' }}>
+                {photos.map((p, i) => (
+                  <div key={i} className="photo-thumb">
+                    <img src={p.previewUrl} alt="" />
+                    <button
+                      type="button"
+                      className="photo-remove"
+                      onClick={() => removePhoto(i)}
+                      aria-label="Remove photo"
+                    >&times;</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </label>
           <button
             type="submit"

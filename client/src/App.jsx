@@ -25,6 +25,7 @@ import ResidentDone from './pages/ResidentDone';
 import JoinSlug from './pages/JoinSlug';
 import PublicInspection from './pages/PublicInspection';
 import PublicReport from './pages/PublicReport';
+import Flyer from './pages/Flyer';
 
 function DefaultRedirect() {
   const { user } = useAuth();
@@ -42,6 +43,7 @@ function App() {
           <Route path="/movein/:slug" element={<PublicInspection />} />
           <Route path="/selfcheck/:slug" element={<PublicInspection />} />
           <Route path="/report/:slug" element={<PublicReport />} />
+          <Route path="/flyer/:slug/:kind" element={<Flyer />} />
 
           {/* Auth pages — redirect to home if already logged in */}
           <Route element={<AuthLayout />}>

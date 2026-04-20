@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { DEFAULT_FEATURES, DEFAULT_FURNITURE } from '../../../shared/index.js';
+import { useAuth } from '../context/AuthContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 
@@ -270,6 +271,7 @@ function CopyLinkButton({ value, className = 'btn-primary-xs' }) {
 export default function PropertyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { organization } = useAuth();
   const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -375,6 +377,47 @@ export default function PropertyDetail() {
           <RoomCard key={room.id} room={room} propertyId={id} onRefresh={fetchProperty} />
         ))}
       </div>
+
+      {/* Resident Links — shown for convenience on each property; they are org-wide URLs. */}
+      {organization?.slug && (() => {
+        const links = [
+          { title: 'Move-In', path: `movein/${organization.slug}` },
+          { title: 'Self-Check', path: `selfcheck/${organization.slug}` },
+          { title: 'Report Maintenance', path: `report/${organization.slug}` },
+        ];
+        return (
+          <div className="detail-section" style={{ marginTop: '1rem' }}>
+            <div className="section-header"><h3>Resident Links</h3></div>
+            <p className="empty-text" style={{ marginBottom: '0.75rem' }}>
+              Share these links or print the QR codes. These links work for every property in the org — residents enter their street name to find their place.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              {links.map(({ title, path }) => {
+                const url = `https://roomreport.co/${path}`;
+                return (
+                  <div key={path} className="pub-link-card">
+                    <h4>{title}</h4>
+                    <div className="pub-link-qr">
+                      <QRCodeSVG value={url} size={100} level="M" fgColor="#4A4543" />
+                    </div>
+                    <code className="pub-link-url">{url}</code>
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+                      <CopyLinkButton value={url} />
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => window.open(`/flyer/${organization.slug}/${path.split('/')[0]}`, '_blank')}
+                      >
+                        Print flyer
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       <ConfirmDialog
         open={deleteProperty}

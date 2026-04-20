@@ -2055,6 +2055,94 @@ body {
   font-size: 0.8rem;
 }
 
+/* ─── Printable flyer ─────────────────────────────────── */
+
+.flyer-page {
+  background: #F5F2EF;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+.flyer-sheet {
+  width: 100%;
+  max-width: 800px;
+  aspect-ratio: 8.5 / 11;
+  background: #fff;
+  padding: 3rem;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.flyer-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  color: #8A8583;
+  font-size: 0.9rem;
+}
+.flyer-brand { font-weight: 700; color: #4A4543; letter-spacing: 0.02em; }
+.flyer-headline {
+  margin: 2.5rem 0 0.25rem;
+  font-size: 2.75rem;
+  color: #4A4543;
+}
+.flyer-title {
+  margin: 0 0 2rem;
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #8A8583;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.flyer-qr {
+  background: #fff;
+  padding: 1rem;
+  border: 1px solid #E8E4E1;
+  border-radius: 8px;
+}
+.flyer-instruction {
+  margin-top: 1.5rem;
+  font-size: 1.15rem;
+  color: #4A4543;
+  max-width: 28ch;
+}
+.flyer-url {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #8A8583;
+}
+.flyer-url code {
+  display: block;
+  font-size: 1rem;
+  color: #4A4543;
+  margin-top: 0.25rem;
+}
+.flyer-footer {
+  margin-top: auto;
+  font-size: 0.8rem;
+  color: #8A8583;
+  padding-top: 2rem;
+}
+.flyer-reprint { margin-top: 0.5rem; }
+
+@media print {
+  .no-print { display: none !important; }
+  body, .flyer-page { background: #fff !important; padding: 0 !important; }
+  .flyer-sheet {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    page-break-after: always;
+    max-width: none;
+  }
+}
+
 /* ─── Dashboard ──────────────────────────────────────── */
 
 .db-page { }
