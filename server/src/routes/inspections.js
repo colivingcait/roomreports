@@ -10,9 +10,9 @@ router.use(requireAuth);
 // ─── Permission helpers ─────────────────────────────────
 
 const TYPE_PERMISSIONS = {
-  OWNER: ['COMMON_AREA', 'ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'],
-  PM: ['COMMON_AREA', 'ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'],
-  CLEANER: ['COMMON_AREA', 'ROOM_TURN'],
+  OWNER: ['COMMON_AREA', 'COMMON_AREA_QUICK', 'ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'],
+  PM: ['COMMON_AREA', 'COMMON_AREA_QUICK', 'ROOM_TURN', 'QUARTERLY', 'RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'],
+  CLEANER: ['COMMON_AREA', 'COMMON_AREA_QUICK', 'ROOM_TURN'],
   RESIDENT: ['RESIDENT_SELF_CHECK', 'MOVE_IN_OUT'],
 };
 
@@ -120,6 +120,37 @@ router.post('/quarterly-batch', async (req, res) => {
     // Combine existing drafts and newly created
     const allInspections = [...existingDrafts, ...created];
 
+    // Find-or-create the companion COMMON_AREA_QUICK inspection for this property
+    let quickCheck = await prisma.inspection.findFirst({
+      where: {
+        propertyId,
+        type: 'COMMON_AREA_QUICK',
+        status: 'DRAFT',
+        organizationId,
+        deletedAt: null,
+      },
+      include: { items: { orderBy: { createdAt: 'asc' }, include: { photos: true } } },
+    });
+    if (!quickCheck) {
+      const quickItems = await buildChecklist(prisma, organizationId, 'COMMON_AREA_QUICK', property, null);
+      quickCheck = await prisma.inspection.create({
+        data: {
+          type: 'COMMON_AREA_QUICK',
+          propertyId,
+          inspectorId: req.user.id,
+          inspectorName: req.user.name,
+          inspectorRole: role,
+          organizationId,
+          items: {
+            create: quickItems.map((it) => ({
+              zone: it.zone, text: it.text, options: it.options, status: it.status,
+            })),
+          },
+        },
+        include: { items: { orderBy: { createdAt: 'asc' }, include: { photos: true } } },
+      });
+    }
+
     return res.status(201).json({
       inspections: allInspections.map((i) => ({
         id: i.id,
@@ -129,6 +160,11 @@ router.post('/quarterly-batch', async (req, res) => {
         items: i.items,
         completedAt: i.completedAt,
       })),
+      commonAreaQuick: {
+        id: quickCheck.id,
+        status: quickCheck.status,
+        items: quickCheck.items,
+      },
       propertyId,
       propertyName: property.name,
       kitchens: (property.kitchens || []).map((k) => ({ id: k.id, label: k.label || 'Kitchen' })),

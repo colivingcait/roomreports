@@ -7,7 +7,7 @@ import MoveInOutComparison from '../components/MoveInOutComparison';
 import Modal from '../components/Modal';
 
 import { FLAG_CATEGORIES, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
-const PASS_FAIL_TYPES = ['COMMON_AREA', 'ROOM_TURN'];
+const PASS_FAIL_TYPES = ['COMMON_AREA', 'COMMON_AREA_QUICK', 'ROOM_TURN'];
 const GOOD_STATUSES = ['Pass', 'Good', 'Clean', 'Yes'];
 const BAD_STATUSES = ['Fail', 'Poor', 'Dirty', 'No', 'Missing'];
 

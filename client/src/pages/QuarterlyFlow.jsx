@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { ChecklistItem } from '../components/InspectionItems';
 import { queuePhoto } from '../lib/offlineStore';
+import Modal from '../components/Modal';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -454,39 +455,70 @@ function RoomCard({ inspection, onClick }) {
 
 // ─── Common Area Quick Check ───────────────────────────
 
-function CommonAreaQuickCheck({ areas, statuses, onChange }) {
+function CommonAreaQuickCheck({ quickCheck, onItemsUpdate }) {
   const [expanded, setExpanded] = useState(false);
+  const { saveItem, saveStatus } = useAutoSave(quickCheck?.id);
 
-  if (!areas.length) return null;
+  if (!quickCheck) return null;
+
+  const items = visibleItems(quickCheck.items || []);
+  if (!items.length) return null;
+
+  const done = items.filter((i) => i.status).length;
+  const total = items.length;
+
+  const zones = [];
+  const zoneMap = {};
+  for (const it of items) {
+    if (!zoneMap[it.zone]) { zoneMap[it.zone] = []; zones.push(it.zone); }
+    zoneMap[it.zone].push(it);
+  }
+
+  const toggle = (item, newStatus) => {
+    const updated = { ...item, status: newStatus || '' };
+    onItemsUpdate(quickCheck.items.map((i) => (i.id === item.id ? updated : i)));
+    saveItem(item.id, { status: updated.status });
+  };
 
   return (
     <div className="q-common-section">
       <button className="q-common-toggle" onClick={() => setExpanded(!expanded)}>
         <span className="q-common-toggle-label">
-          Common Area Quick Check <span className="q-common-toggle-sub">(optional)</span>
+          Common Area Quick Check <span className="q-common-toggle-sub">(optional &middot; {done}/{total})</span>
         </span>
-        <span className={`q-common-toggle-chev ${expanded ? 'open' : ''}`}>&#9656;</span>
+        <span className="q-common-toggle-right">
+          {saveStatus === 'saving' && <span className="save-saving">Saving...</span>}
+          {saveStatus === 'saved' && <span className="save-saved">Saved &#10003;</span>}
+          <span className={`q-common-toggle-chev ${expanded ? 'open' : ''}`}>&#9656;</span>
+        </span>
       </button>
       {expanded && (
-        <div className="q-common-grid">
-          {areas.map((a) => {
-            const status = statuses[a.id];
-            return (
-              <div key={a.id} className={`q-common-card q-common-card-${status || 'none'}`}>
-                <div className="q-common-card-label">{a.label}</div>
-                <div className="q-common-card-buttons">
-                  <button
-                    className={`q-btn q-btn-pass ${status === 'Pass' ? 'active' : ''}`}
-                    onClick={() => onChange(a.id, status === 'Pass' ? null : 'Pass')}
-                  >&#10003;</button>
-                  <button
-                    className={`q-btn q-btn-fail ${status === 'Fail' ? 'active' : ''}`}
-                    onClick={() => onChange(a.id, status === 'Fail' ? null : 'Fail')}
-                  >&#10005;</button>
-                </div>
+        <div className="q-common-body">
+          {zones.map((zone) => (
+            <div key={zone} className="q-common-zone">
+              <h4 className="q-common-zone-title">{zone}</h4>
+              <div className="q-common-grid">
+                {zoneMap[zone].map((item) => {
+                  const status = item.status;
+                  return (
+                    <div key={item.id} className={`q-common-card q-common-card-${status || 'none'}`}>
+                      <div className="q-common-card-label">{item.text}</div>
+                      <div className="q-common-card-buttons">
+                        <button
+                          className={`q-btn q-btn-pass ${status === 'Pass' ? 'active' : ''}`}
+                          onClick={() => toggle(item, status === 'Pass' ? '' : 'Pass')}
+                        >&#10003;</button>
+                        <button
+                          className={`q-btn q-btn-fail ${status === 'Fail' ? 'active' : ''}`}
+                          onClick={() => toggle(item, status === 'Fail' ? '' : 'Fail')}
+                        >&#10005;</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -502,7 +534,8 @@ export default function QuarterlyFlow() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [commonStatuses, setCommonStatuses] = useState({});
+  const [showPartialModal, setShowPartialModal] = useState(false);
+  const [partialReason, setPartialReason] = useState('');
 
   const fetchBatch = useCallback(async () => {
     try {
@@ -530,17 +563,61 @@ export default function QuarterlyFlow() {
     });
   };
 
-  const doSubmit = async () => {
+  const handleQuickItemsUpdate = (freshItems) => {
+    setData((prev) => prev && ({ ...prev, commonAreaQuick: { ...prev.commonAreaQuick, items: freshItems } }));
+  };
+
+  const getIncompleteRooms = () => {
+    if (!data) return [];
+    return data.inspections
+      .filter((insp) => insp.status === 'DRAFT')
+      .map((insp) => {
+        const vis = visibleItems(insp.items);
+        const done = vis.filter((i) => i.status).length;
+        return { id: insp.roomId, label: insp.roomLabel, done, total: vis.length, inspectionId: insp.id };
+      })
+      .filter((r) => r.done < r.total);
+  };
+
+  const quickCheckSummary = () => {
+    if (!data?.commonAreaQuick) return null;
+    const vis = visibleItems(data.commonAreaQuick.items);
+    const done = vis.filter((i) => i.status).length;
+    return { id: data.commonAreaQuick.id, done, total: vis.length, started: done > 0 };
+  };
+
+  const onSubmitClick = () => {
+    const incomplete = getIncompleteRooms();
+    const quick = quickCheckSummary();
+    const quickPartial = quick && quick.started && quick.done < quick.total;
+    if (incomplete.length > 0 || quickPartial) setShowPartialModal(true);
+    else doSubmit(false);
+  };
+
+  const doSubmit = async (partial) => {
     setSubmitting(true);
     setError('');
     try {
       for (const insp of data.inspections) {
         if (insp.status !== 'DRAFT') continue;
-        await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify({}) });
+        const vis = visibleItems(insp.items);
+        const isIncomplete = vis.filter((i) => i.status).length < vis.length;
+        const body = partial && isIncomplete ? { partial: true, partialReason } : {};
+        await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
       }
+
+      // Submit the quick check only if the user actually used it
+      const quick = quickCheckSummary();
+      if (quick && quick.started) {
+        const isIncomplete = quick.done < quick.total;
+        const body = partial && isIncomplete ? { partial: true, partialReason } : {};
+        await api(`/api/inspections/${quick.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
+      }
+
       navigate('/dashboard', { state: { notification: `Room inspection submitted for ${data.propertyName}` } });
     } catch (err) {
       setError(err.message);
+      setShowPartialModal(false);
     } finally {
       setSubmitting(false);
     }
@@ -568,7 +645,9 @@ export default function QuarterlyFlow() {
 
   const totalRooms = data.inspections.length;
   const completedRooms = data.inspections.filter((i) => roomState(i.items) === 'complete').length;
-  const commonAreas = [...(data.kitchens || []), ...(data.bathrooms || [])];
+  const incompleteRooms = getIncompleteRooms();
+  const quick = quickCheckSummary();
+  const quickPartial = quick && quick.started && quick.done < quick.total;
 
   return (
     <div className="q-flow-page">
@@ -592,16 +671,68 @@ export default function QuarterlyFlow() {
       </div>
 
       <CommonAreaQuickCheck
-        areas={commonAreas}
-        statuses={commonStatuses}
-        onChange={(id, status) => setCommonStatuses((prev) => ({ ...prev, [id]: status }))}
+        quickCheck={data.commonAreaQuick}
+        onItemsUpdate={handleQuickItemsUpdate}
       />
 
       <div className="q-flow-footer">
-        <button className="q-submit-btn" onClick={doSubmit} disabled={submitting}>
+        <button className="q-submit-btn" onClick={onSubmitClick} disabled={submitting}>
           {submitting ? 'Submitting...' : 'Submit Inspection'}
         </button>
       </div>
+
+      <Modal
+        open={showPartialModal}
+        onClose={() => { setShowPartialModal(false); setPartialReason(''); setError(''); }}
+        title="Some rooms weren't fully checked"
+      >
+        <div className="modal-form">
+          <p className="partial-intro">
+            The following {incompleteRooms.length === 1 ? 'room is' : `${incompleteRooms.length} rooms are`} incomplete.
+            Tell us why so the property manager can follow up.
+          </p>
+          <ul className="partial-room-list">
+            {incompleteRooms.map((r) => (
+              <li key={r.id}>
+                <strong>{r.label}</strong> &mdash; {r.done}/{r.total} items checked
+              </li>
+            ))}
+            {quickPartial && (
+              <li>
+                <strong>Common Area Quick Check</strong> &mdash; {quick.done}/{quick.total} items checked
+              </li>
+            )}
+          </ul>
+          <label>
+            Reason for partial submission
+            <textarea
+              className="detail-textarea"
+              value={partialReason}
+              onChange={(e) => setPartialReason(e.target.value)}
+              placeholder="e.g. Room 3 locked — resident not home. Couldn't access kitchen 2."
+              rows={3}
+              autoFocus
+            />
+          </label>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="modal-actions">
+            <button
+              className="btn-secondary"
+              onClick={() => { setShowPartialModal(false); setPartialReason(''); setError(''); }}
+              disabled={submitting}
+            >
+              Keep going
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() => doSubmit(true)}
+              disabled={submitting || !partialReason.trim()}
+            >
+              {submitting ? 'Submitting...' : 'Submit anyway'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
