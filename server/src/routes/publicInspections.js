@@ -31,8 +31,8 @@ async function findPropertyBySlug(slug) {
   return properties.find((p) => {
     if (slugify(p.name) === slug) return true;
     const addrNum = (p.address || '').match(/\d+/)?.[0] || '';
-    if (addrNum && slugify(addrNum + p.name) === slug) return true;
-    return slugify(p.address + p.name) === slug;
+    if (addrNum && slugify(`${addrNum}-${p.name}`) === slug) return true;
+    return slugify(`${p.address}-${p.name}`) === slug;
   });
 }
 
