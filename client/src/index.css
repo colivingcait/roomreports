@@ -2588,6 +2588,11 @@ body { overflow-x: hidden; }
   flex-direction: column;
 }
 
+.db-card-wide {
+  margin-top: 1rem;
+  min-height: unset;
+}
+
 .db-card-head {
   display: flex;
   justify-content: space-between;

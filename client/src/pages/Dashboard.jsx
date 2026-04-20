@@ -56,7 +56,13 @@ export default function Dashboard() {
   if (loading) return <div className="page-loading">Loading dashboard...</div>;
   if (!data) return null;
 
-  const { pendingReview = [], maintenance = {}, propertyHealth = [], overdueRooms = [] } = data;
+  const {
+    pendingReview = [],
+    recentInspectionActivity = [],
+    maintenance = {},
+    propertyHealth = [],
+    overdueRooms = [],
+  } = data;
   const sc = maintenance.statusCounts || {};
 
   const startQuarterly = (propertyId, roomId) => {
@@ -226,6 +232,52 @@ export default function Dashboard() {
           </div>
         </div>
 
+      </div>
+
+      {/* ── Recent Inspection Activity (Submitted + Reviewed) ── */}
+      <div className="db-card db-card-wide">
+        <div className="db-card-head">
+          <div className="db-card-title db-sage">RECENT INSPECTION ACTIVITY</div>
+          <button className="db-link" onClick={() => navigate('/inspections')}>View all &rarr;</button>
+        </div>
+        <div className="db-card-body">
+          {recentInspectionActivity.length === 0 ? (
+            <div className="db-empty">No inspections submitted yet</div>
+          ) : (
+            recentInspectionActivity.map((a) => {
+              const tc = TYPE_COLORS[a.type] || { bg: '#F5F2EF', color: '#4A4543' };
+              const onClick = () => {
+                if (a.isGroup) {
+                  navigate(`/quarterly-review/${a.propertyId}/${a.dateKey}`);
+                } else {
+                  navigate(`/inspections/${a.id}/review`);
+                }
+              };
+              const subtitle = a.isGroup
+                ? `${a.roomCount} room${a.roomCount !== 1 ? 's' : ''} \u00b7 ${timeLabel(a.completedAt)}`
+                : `${a.roomLabel ? a.roomLabel + ' \u00b7 ' : ''}${timeLabel(a.completedAt)}`;
+              return (
+                <div key={a.id} className="db-row" onClick={onClick}>
+                  <div className="db-row-left">
+                    <span className="db-type-pill" style={{ background: tc.bg, color: tc.color }}>
+                      {TYPE_LABELS[a.type] || a.type}
+                    </span>
+                    <div>
+                      <div className="db-row-title">{a.propertyName}</div>
+                      <div className="db-row-sub">{subtitle}</div>
+                    </div>
+                  </div>
+                  <span
+                    className="insp-status-badge"
+                    style={{ color: a.status === 'REVIEWED' ? '#8A8583' : '#6B8F71', borderColor: a.status === 'REVIEWED' ? '#8A8583' : '#6B8F71' }}
+                  >
+                    {a.status}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />

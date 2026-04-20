@@ -66,7 +66,7 @@ function groupInspections(inspections) {
 export default function Inspections() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [inspections, setInspections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
@@ -79,6 +79,14 @@ export default function Inspections() {
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
   const [rooms, setRooms] = useState([]);
+
+  // Keep filterStatus in sync with URL changes (e.g. navigating in from the
+  // dashboard's "pending review — view all" link and then clicking the logo
+  // to return to /inspections should clear the filter).
+  useEffect(() => {
+    const next = searchParams.get('status') || '';
+    setFilterStatus((prev) => (prev === next ? prev : next));
+  }, [searchParams]);
 
   // Selection mode
   const [selectMode, setSelectMode] = useState(false);
@@ -271,7 +279,19 @@ export default function Inspections() {
           {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
 
-        <select className="filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+        <select
+          className="filter-select"
+          value={filterStatus}
+          onChange={(e) => {
+            const next = e.target.value;
+            setFilterStatus(next);
+            // Keep the URL in sync so refresh/back behaves the same as the dropdown
+            const nextParams = new URLSearchParams(searchParams);
+            if (next) nextParams.set('status', next);
+            else nextParams.delete('status');
+            setSearchParams(nextParams, { replace: true });
+          }}
+        >
           <option value="">All Statuses</option>
           <option value="DRAFT">Draft</option>
           <option value="SUBMITTED">Submitted</option>
@@ -290,7 +310,18 @@ export default function Inspections() {
         )}
 
         {(filterProperty || filterType || filterStatus || filterRoom) && (
-          <button className="btn-text-sm" onClick={() => { setFilterProperty(''); setFilterRoom(''); setFilterType(''); setFilterStatus(''); }}>
+          <button
+            className="btn-text-sm"
+            onClick={() => {
+              setFilterProperty('');
+              setFilterRoom('');
+              setFilterType('');
+              setFilterStatus('');
+              const nextParams = new URLSearchParams(searchParams);
+              nextParams.delete('status');
+              setSearchParams(nextParams, { replace: true });
+            }}
+          >
             Clear
           </button>
         )}

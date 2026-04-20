@@ -227,9 +227,65 @@ router.get('/', async (req, res) => {
       }
     }
 
+    // ─── Recent Inspection Activity ─── Latest 8 SUBMITTED + REVIEWED
+    // (Grouped the same way as the /inspections list so QUARTERLY shows as one entry per batch)
+    const recentInspectionsRaw = await prisma.inspection.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { in: ['SUBMITTED', 'REVIEWED'] },
+        ...scope,
+      },
+      include: {
+        property: { select: { id: true, name: true } },
+        room: { select: { id: true, label: true } },
+      },
+      orderBy: [{ completedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 40,
+    });
+
+    const activityByKey = {};
+    const recentActivity = [];
+    for (const i of recentInspectionsRaw) {
+      if (i.type === 'QUARTERLY') {
+        const dateKey = new Date(i.createdAt).toISOString().slice(0, 10);
+        const key = `qgroup:${i.property?.id}:${dateKey}:${i.status}`;
+        if (!activityByKey[key]) {
+          activityByKey[key] = {
+            id: key,
+            isGroup: true,
+            type: 'QUARTERLY',
+            status: i.status,
+            propertyId: i.property?.id,
+            propertyName: i.property?.name,
+            dateKey,
+            completedAt: i.completedAt,
+            createdAt: i.createdAt,
+            roomCount: 0,
+          };
+          recentActivity.push(activityByKey[key]);
+        }
+        activityByKey[key].roomCount += 1;
+      } else {
+        recentActivity.push({
+          id: i.id,
+          isGroup: false,
+          type: i.type,
+          status: i.status,
+          propertyId: i.property?.id,
+          propertyName: i.property?.name,
+          roomLabel: i.room?.label || null,
+          completedAt: i.completedAt,
+          createdAt: i.createdAt,
+        });
+      }
+    }
+    const recentInspectionActivity = recentActivity.slice(0, 8);
+
     const openMaintenanceTotal = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
     return res.json({
       pendingReview,
+      recentInspectionActivity,
       maintenance: {
         statusCounts,
         total: Object.values(statusCounts).reduce((a, b) => a + b, 0),
