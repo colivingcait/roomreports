@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RoomReport — Room-by-room inspections for property managers</title>
+  <meta name="description" content="Run room inspections from your phone. Flag issues, snap photos, assign maintenance, and let residents document their own spaces. Built for co-living operators and small portfolio managers." />
+  <meta name="keywords" content="room inspection software, property management inspections, co-living, maintenance tracking, move-in documentation, resident self-check, rental property inspection app" />
+  <meta name="author" content="RoomReport" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="RoomReport — Know exactly what's happening in every room" />
+  <meta property="og:description" content="Room-by-room inspections, resident self-checks, and maintenance tracking in one simple app." />
+  <meta property="og:url" content="https://roomreport.co/" />
+  <meta property="og:site_name" content="RoomReport" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="RoomReport — Know exactly what's happening in every room" />
+  <meta name="twitter:description" content="Room-by-room inspections, resident self-checks, and maintenance tracking in one simple app." />
+
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="canonical" href="https://roomreport.co/" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="nav" id="nav">
+    <div class="nav__inner">
+      <a href="#" class="nav__brand" aria-label="RoomReport home">
+        <span class="nav__logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="28" height="28">
+            <rect width="32" height="32" rx="7" fill="#6B8F71"/>
+            <path d="M7 11 L16 5 L25 11 L25 26 L7 26 Z" fill="#FAF8F5"/>
+            <rect x="11" y="16" width="10" height="10" fill="#C4703F"/>
+          </svg>
+        </span>
+        <span>RoomReport</span>
+      </a>
+
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#inspections">Inspections</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+
+      <div class="nav__cta">
+        <a href="https://app.roomreport.co/signup" class="btn btn--primary">Start free</a>
+      </div>
+
+      <button class="nav__toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+
+    <div class="nav__mobile" id="navMobile" hidden>
+      <a href="#features">Features</a>
+      <a href="#inspections">Inspections</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://app.roomreport.co/signup" class="btn btn--primary btn--block">Start free</a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container hero__grid">
+        <div class="hero__copy reveal">
+          <span class="eyebrow">For co-living operators &amp; small portfolios</span>
+          <h1 class="hero__title">Know exactly what's happening in every room.</h1>
+          <p class="hero__sub">Run room inspections from your phone. Flag issues, snap photos, assign maintenance — and let residents document their own spaces too.</p>
+          <div class="hero__ctas">
+            <a href="https://app.roomreport.co/signup" class="btn btn--primary btn--lg">Start free</a>
+            <a href="#features" class="btn btn--ghost btn--lg">See how it works</a>
+          </div>
+          <ul class="hero__meta">
+            <li><span aria-hidden="true">✓</span> No credit card</li>
+            <li><span aria-hidden="true">✓</span> Works offline</li>
+            <li><span aria-hidden="true">✓</span> Set up in 10 min</li>
+          </ul>
+        </div>
+
+        <!-- Phone mockup -->
+        <div class="hero__phone reveal" aria-hidden="true">
+          <div class="phone">
+            <div class="phone__notch"></div>
+            <div class="phone__screen">
+              <div class="phone__bar">
+                <span class="phone__time">9:41</span>
+                <span class="phone__icons">
+                  <span class="phone__signal"></span>
+                  <span class="phone__battery"></span>
+                </span>
+              </div>
+
+              <div class="phone__header">
+                <div class="phone__crumb">Maple House · Room 3</div>
+                <div class="phone__title">Room Inspection</div>
+                <div class="phone__progress"><span></span></div>
+                <div class="phone__progress-text">5 of 8 items</div>
+              </div>
+
+              <ul class="phone__list">
+                <li class="phone__item phone__item--done">
+                  <span class="check check--pass"></span>
+                  <div>
+                    <strong>Bed &amp; linens</strong>
+                    <em>Clean, no stains</em>
+                  </div>
+                </li>
+                <li class="phone__item phone__item--done">
+                  <span class="check check--pass"></span>
+                  <div>
+                    <strong>Windows</strong>
+                    <em>Open &amp; close smoothly</em>
+                  </div>
+                </li>
+                <li class="phone__item phone__item--flag">
+                  <span class="check check--flag">!</span>
+                  <div>
+                    <strong>Blinds</strong>
+                    <em>Cord broken · photo attached</em>
+                    <span class="phone__chip">Maintenance</span>
+                  </div>
+                </li>
+                <li class="phone__item phone__item--done">
+                  <span class="check check--pass"></span>
+                  <div>
+                    <strong>Outlets</strong>
+                    <em>All working</em>
+                  </div>
+                </li>
+                <li class="phone__item phone__item--active">
+                  <span class="check"></span>
+                  <div>
+                    <strong>Floor &amp; baseboards</strong>
+                    <em>Tap to pass or flag</em>
+                  </div>
+                </li>
+              </ul>
+
+              <div class="phone__cta">
+                <button class="phone__btn">Continue to bathroom →</button>
+              </div>
+            </div>
+          </div>
+          <div class="phone__shadow"></div>
+          <span class="phone__sticker phone__sticker--1">📸 photo attached</span>
+          <span class="phone__sticker phone__sticker--2">✅ 5 passed</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGO STRIP -->
+    <section class="strip">
+      <div class="container strip__inner reveal">
+        <span>Built for modern residential operators</span>
+        <div class="strip__stats">
+          <div><strong>15 min</strong><em>average inspection</em></div>
+          <div><strong>&lt; 3 min</strong><em>resident self-check</em></div>
+          <div><strong>100%</strong><em>offline capable</em></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features" id="features">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="eyebrow">Features</span>
+          <h2>Everything you need to run a tight house.</h2>
+          <p>Six tools that replace clipboards, group chats, and spreadsheets.</p>
+        </header>
+
+        <div class="features__grid">
+          <article class="feature reveal">
+            <div class="feature__num">01</div>
+            <h3>Inspect every room in minutes</h3>
+            <p>Walk the house room by room from your phone. Pass or flag, snap photos, generate a maintenance list.</p>
+            <div class="feature__vis feature__vis--rooms">
+              <span class="room-pill">Bedroom 1 <b>✓</b></span>
+              <span class="room-pill">Bedroom 2 <b>✓</b></span>
+              <span class="room-pill room-pill--flag">Kitchen <b>!</b></span>
+              <span class="room-pill">Bathroom <b>✓</b></span>
+              <span class="room-pill room-pill--active">Living room…</span>
+            </div>
+          </article>
+
+          <article class="feature reveal">
+            <div class="feature__num">02</div>
+            <h3>Let your residents document their own space</h3>
+            <p>Residents scan a QR code for move-in photos and monthly self-checks. No app, no login.</p>
+            <div class="feature__vis feature__vis--qr">
+              <div class="qr">
+                <div class="qr__grid"></div>
+              </div>
+              <div class="qr__label">
+                <strong>Scan to start</strong>
+                <em>Takes 3 minutes</em>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reveal">
+            <div class="feature__num">03</div>
+            <h3>Your cleaners run the checklist, you review the report</h3>
+            <p>Room turns and common area inspections done by your team. You approve and decide what becomes a task.</p>
+            <div class="feature__vis feature__vis--review">
+              <div class="review-row">
+                <span class="dot dot--green"></span>
+                <span>Maya completed Common Area</span>
+                <em>2h ago</em>
+              </div>
+              <div class="review-row">
+                <span class="dot dot--orange"></span>
+                <span>Jon finished Room Turn · 3 flags</span>
+                <em>Today</em>
+              </div>
+              <div class="review-row review-row--pending">
+                <span class="dot dot--grey"></span>
+                <span>Awaiting your review</span>
+                <em>—</em>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reveal">
+            <div class="feature__num">04</div>
+            <h3>Track every maintenance item to resolution</h3>
+            <p>Kanban board. Assign to team or vendors, track costs, attach invoices, generate work orders.</p>
+            <div class="feature__vis feature__vis--kanban">
+              <div class="kanban-col">
+                <span class="kanban-col__title">New</span>
+                <div class="kanban-card">Leaky faucet</div>
+              </div>
+              <div class="kanban-col">
+                <span class="kanban-col__title">In progress</span>
+                <div class="kanban-card kanban-card--amber">Broken blind</div>
+              </div>
+              <div class="kanban-col">
+                <span class="kanban-col__title">Done</span>
+                <div class="kanban-card kanban-card--green">Drain cleared</div>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reveal">
+            <div class="feature__num">05</div>
+            <h3>Protect yourself in deposit disputes</h3>
+            <p>Timestamped move-in photos paired with room turn documentation. Side-by-side proof.</p>
+            <div class="feature__vis feature__vis--compare">
+              <div class="compare-card">
+                <span class="compare-card__label">Move-in · Jan 3</span>
+                <div class="compare-card__ph"></div>
+              </div>
+              <div class="compare-card compare-card--after">
+                <span class="compare-card__label">Move-out · Oct 12</span>
+                <div class="compare-card__ph compare-card__ph--damaged"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature reveal">
+            <div class="feature__num">06</div>
+            <h3>See your portfolio health at a glance</h3>
+            <p>Property health grades, maintenance costs by room, inspection history, overdue alerts.</p>
+            <div class="feature__vis feature__vis--dash">
+              <div class="grade-card">
+                <span>Maple House</span>
+                <strong class="grade grade--a">A</strong>
+              </div>
+              <div class="grade-card">
+                <span>Oak Street</span>
+                <strong class="grade grade--b">B+</strong>
+              </div>
+              <div class="grade-card grade-card--alert">
+                <span>Pine Duplex · 2 overdue</span>
+                <strong class="grade grade--c">C</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- INSPECTIONS -->
+    <section class="inspections" id="inspections">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="eyebrow">Inspection types</span>
+          <h2>Five inspections, one workflow.</h2>
+          <p>Purpose-built checklists for every moment in the resident lifecycle.</p>
+        </header>
+
+        <div class="inspections__grid">
+          <article class="insp-card reveal">
+            <div class="insp-card__icon insp-card__icon--sage">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 10 L12 4 L20 10 V20 H4 Z"/><path d="M10 20 V14 H14 V20"/>
+              </svg>
+            </div>
+            <h3>Room Inspection</h3>
+            <p>Walk any bedroom or suite room-by-room. Pass, flag, and photograph issues on the spot.</p>
+          </article>
+
+          <article class="insp-card reveal">
+            <div class="insp-card__icon insp-card__icon--terra">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12 H21"/><path d="M5 7 H19 V17 H5 Z"/><path d="M9 7 V17"/><path d="M15 7 V17"/>
+              </svg>
+            </div>
+            <h3>Common Area</h3>
+            <p>Kitchens, living rooms, laundry, hallways. Built for shared spaces that need daily eyes.</p>
+          </article>
+
+          <article class="insp-card reveal">
+            <div class="insp-card__icon insp-card__icon--sage">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12 a9 9 0 1 1 -3 -6.7"/><polyline points="21 4 21 12 13 12"/>
+              </svg>
+            </div>
+            <h3>Room Turn</h3>
+            <p>Deep-clean checklist for between residents. Assign to cleaners, review what's ready to list.</p>
+          </article>
+
+          <article class="insp-card reveal">
+            <div class="insp-card__icon insp-card__icon--terra">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12 l3 3 l5 -6"/>
+              </svg>
+            </div>
+            <h3>Move-In</h3>
+            <p>Resident-led photo documentation of the room on day one. Timestamped and stored forever.</p>
+          </article>
+
+          <article class="insp-card reveal">
+            <div class="insp-card__icon insp-card__icon--sage">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/><path d="M4 21 c0 -4 4 -7 8 -7 s8 3 8 7"/>
+              </svg>
+            </div>
+            <h3>Resident Self-Check</h3>
+            <p>A light monthly check-in from the resident's phone. Keeps issues from piling up unnoticed.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAINTENANCE -->
+    <section class="maint">
+      <div class="container maint__grid">
+        <div class="maint__copy reveal">
+          <span class="eyebrow">Maintenance</span>
+          <h2>Every issue, tracked to resolution.</h2>
+          <p>When an inspector flags something, it lands on your maintenance board. Decide if it's a task, assign it to your team or a vendor, track cost, attach the invoice, and close it out. Nothing falls through the cracks — and you have a clean paper trail when the resident asks what happened.</p>
+          <ul class="maint__bullets">
+            <li>Flag from any inspection</li>
+            <li>Assign internally or to vendors</li>
+            <li>Attach photos, quotes, and invoices</li>
+            <li>Generate work orders in one click</li>
+          </ul>
+        </div>
+
+        <div class="maint__board reveal">
+          <div class="board">
+            <div class="board__col">
+              <header>New <span>3</span></header>
+              <div class="board__card"><strong>Leaky faucet</strong><em>Maple · Kitchen</em></div>
+              <div class="board__card"><strong>HVAC filter</strong><em>Oak · Hall</em></div>
+              <div class="board__card"><strong>Loose outlet</strong><em>Pine · Room 2</em></div>
+            </div>
+            <div class="board__col">
+              <header>In progress <span>2</span></header>
+              <div class="board__card board__card--amber"><strong>Broken blind</strong><em>Assigned · Jon</em></div>
+              <div class="board__card board__card--amber"><strong>Paint touch-up</strong><em>Vendor · Mira's Painting</em></div>
+            </div>
+            <div class="board__col">
+              <header>Done <span>12</span></header>
+              <div class="board__card board__card--green"><strong>Drain cleared</strong><em>$120 · invoice</em></div>
+              <div class="board__card board__card--green"><strong>Shower head</strong><em>$40 · DIY</em></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq" id="faq">
+      <div class="container faq__container">
+        <header class="section-head reveal">
+          <span class="eyebrow">FAQ</span>
+          <h2>Answers before you ask.</h2>
+        </header>
+
+        <div class="faq__list reveal">
+          <details class="faq-item">
+            <summary>How long does an inspection take?</summary>
+            <p>About 15 minutes for an 8-room house. Common area inspections typically run 10–15 minutes depending on how thorough you want to be.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Do my residents need to download an app?</summary>
+            <p>No. Residents scan a QR code that opens in the browser. No login required, and most self-checks are done in under 3 minutes.</p>
+          </details>
+          <details class="faq-item">
+            <summary>How does maintenance tracking work?</summary>
+            <p>Flag an item during inspection → it appears in your review queue → you decide whether it becomes a task → assign it to team or a vendor → track through to close on a kanban board.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Can my cleaning team use this?</summary>
+            <p>Yes. Invite team members, assign them to specific properties, and they see a simple Start button for whatever's on the schedule that day.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Does it work without wifi?</summary>
+            <p>Yes. Full offline mode — complete the inspection, photos and all, and it syncs automatically when you're back online.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Is there a paper trail for lease violations?</summary>
+            <p>Yes. Every flag, photo, and note is timestamped. The violation log captures the original issue and every follow-up, so you have dated evidence if disputes arise.</p>
+          </details>
+          <details class="faq-item">
+            <summary>How much does it cost?</summary>
+            <p>Three plans: $19/mo Starter (up to 2 properties), $39/mo Growth (up to 5), and $79/mo Unlimited. See the pricing section below for what's in each tier.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="pricing" id="pricing">
+      <div class="container">
+        <header class="section-head reveal">
+          <span class="eyebrow">Pricing</span>
+          <h2>Simple plans that scale with your portfolio.</h2>
+          <p>Start free. Upgrade when you're ready.</p>
+        </header>
+
+        <div class="pricing__grid">
+          <article class="plan reveal">
+            <header class="plan__head">
+              <h3>Starter</h3>
+              <p class="plan__blurb">For the first one or two properties.</p>
+              <div class="plan__price"><strong>$19</strong><em>/ month</em></div>
+              <span class="plan__cap">Up to 2 properties</span>
+            </header>
+            <ul class="plan__list">
+              <li>All inspection types</li>
+              <li>Maintenance tracking</li>
+              <li>Resident self-check links</li>
+              <li>Move-in documentation</li>
+              <li>Offline mode</li>
+            </ul>
+            <a href="https://app.roomreport.co/signup" class="btn btn--ghost btn--block">Start free</a>
+          </article>
+
+          <article class="plan plan--featured reveal">
+            <span class="plan__badge">Most popular</span>
+            <header class="plan__head">
+              <h3>Growth</h3>
+              <p class="plan__blurb">For operators running a handful of houses.</p>
+              <div class="plan__price"><strong>$39</strong><em>/ month</em></div>
+              <span class="plan__cap">Up to 5 properties</span>
+            </header>
+            <ul class="plan__list">
+              <li>Everything in Starter</li>
+              <li>Vendor management</li>
+              <li>Team roles &amp; permissions</li>
+              <li>Custom inspection templates</li>
+              <li>Portfolio reports</li>
+            </ul>
+            <a href="https://app.roomreport.co/signup" class="btn btn--primary btn--block">Start free</a>
+          </article>
+
+          <article class="plan reveal">
+            <header class="plan__head">
+              <h3>Unlimited</h3>
+              <p class="plan__blurb">For growing portfolios and larger teams.</p>
+              <div class="plan__price"><strong>$79</strong><em>/ month</em></div>
+              <span class="plan__cap">Unlimited properties &amp; team</span>
+            </header>
+            <ul class="plan__list">
+              <li>Everything in Growth</li>
+              <li>Unlimited properties</li>
+              <li>Unlimited team members</li>
+              <li>Priority support</li>
+              <li>Onboarding session</li>
+            </ul>
+            <a href="https://app.roomreport.co/signup" class="btn btn--ghost btn--block">Start free</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA BANNER -->
+    <section class="cta">
+      <div class="container cta__inner reveal">
+        <h2>Ready to know what's happening in every room?</h2>
+        <p>Set up your first property in about ten minutes. No credit card required.</p>
+        <a href="https://app.roomreport.co/signup" class="btn btn--primary btn--lg">Start free</a>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a href="#" class="nav__brand" aria-label="RoomReport home">
+          <span class="nav__logo" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="24" height="24">
+              <rect width="32" height="32" rx="7" fill="#6B8F71"/>
+              <path d="M7 11 L16 5 L25 11 L25 26 L7 26 Z" fill="#FAF8F5"/>
+              <rect x="11" y="16" width="10" height="10" fill="#C4703F"/>
+            </svg>
+          </span>
+          <span>RoomReport</span>
+        </a>
+        <p>Room-by-room inspections for people who actually run houses.</p>
+      </div>
+
+      <div class="footer__cols">
+        <div>
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#inspections">Inspections</a>
+          <a href="#pricing">Pricing</a>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <a href="#faq">FAQ</a>
+          <a href="mailto:hello@roomreport.co">Contact</a>
+          <a href="https://app.roomreport.co/signup">Sign up</a>
+        </div>
+        <div>
+          <h4>Legal</h4>
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer__bar container">
+      <small>© 2026 RoomReport. All rights reserved.</small>
+      <small>Made for operators who care about the details.</small>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
