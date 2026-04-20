@@ -1,6 +1,11 @@
 import { useState, useRef } from 'react';
 import { queuePhoto } from '../lib/offlineStore';
-import { FLAG_CATEGORIES } from '../../../shared/index.js';
+import {
+  FLAG_CATEGORIES,
+  PRIORITIES,
+  PRIORITY_COLORS,
+  suggestPriority,
+} from '../../../shared/index.js';
 
 export { FLAG_CATEGORIES };
 
@@ -26,6 +31,8 @@ export function FlagDrawer({ item, inspectionId, onUpdate }) {
     finally { setUploading(false); fileRef.current.value = ''; }
   };
 
+  const effectivePriority = item.priority || (item.flagCategory ? suggestPriority(item.flagCategory) : 'Medium');
+
   return (
     <div className="q-flag-drawer">
       <div className="q-flag-left">
@@ -34,7 +41,12 @@ export function FlagDrawer({ item, inspectionId, onUpdate }) {
           <select
             className="q-flag-select"
             value={item.flagCategory || ''}
-            onChange={(e) => onUpdate({ ...item, flagCategory: e.target.value || null })}
+            onChange={(e) => {
+              const category = e.target.value || null;
+              // Auto-suggest priority from category if the inspector hasn't overridden
+              const nextPriority = item.priority || (category ? suggestPriority(category) : null);
+              onUpdate({ ...item, flagCategory: category, priority: nextPriority });
+            }}
           >
             <option value="">Select...</option>
             {FLAG_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -50,6 +62,38 @@ export function FlagDrawer({ item, inspectionId, onUpdate }) {
             rows={2}
           />
         </label>
+        <label className="q-flag-label">
+          Priority
+          <select
+            className="q-flag-select"
+            value={effectivePriority}
+            style={{
+              color: PRIORITY_COLORS[effectivePriority],
+              borderColor: PRIORITY_COLORS[effectivePriority],
+            }}
+            onChange={(e) => onUpdate({ ...item, priority: e.target.value })}
+          >
+            {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+        <label className="q-flag-label">
+          Entry code <span className="form-optional">(optional)</span>
+          <input
+            type="text"
+            className="maint-input"
+            value={item.entryCode || ''}
+            onChange={(e) => onUpdate({ ...item, entryCode: e.target.value || null })}
+            placeholder="e.g. 4520#"
+          />
+        </label>
+        <label className="q-flag-toggle">
+          <input
+            type="checkbox"
+            checked={!!item.entryApproved}
+            onChange={(e) => onUpdate({ ...item, entryApproved: e.target.checked })}
+          />
+          Resident has approved entry
+        </label>
       </div>
       <div className="q-flag-right">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
@@ -64,6 +108,13 @@ export function FlagDrawer({ item, inspectionId, onUpdate }) {
         >
           <span className="q-flag-box-icon">{'\uD83D\uDD27'}</span>
           <span>Maintenance</span>
+        </button>
+        <button
+          className={`q-flag-box q-flag-violation ${item.isLeaseViolation ? 'active' : ''}`}
+          onClick={() => onUpdate({ ...item, isLeaseViolation: !item.isLeaseViolation })}
+        >
+          <span className="q-flag-box-icon">{'\u2696'}</span>
+          <span>Lease violation</span>
         </button>
       </div>
     </div>
@@ -111,7 +162,15 @@ export function ChecklistItem({ item, inspectionId, saveItem, onItemUpdate }) {
           inspectionId={inspectionId}
           onUpdate={(updated) => {
             onItemUpdate(updated);
-            saveItem(item.id, { flagCategory: updated.flagCategory, note: updated.note, isMaintenance: updated.isMaintenance });
+            saveItem(item.id, {
+              flagCategory: updated.flagCategory,
+              note: updated.note,
+              isMaintenance: updated.isMaintenance,
+              isLeaseViolation: updated.isLeaseViolation,
+              priority: updated.priority,
+              entryCode: updated.entryCode,
+              entryApproved: updated.entryApproved,
+            });
           }}
         />
       )}

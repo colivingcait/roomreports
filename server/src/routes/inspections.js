@@ -579,13 +579,17 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
         totalItems: visible.length,
         completedItems: visible.filter((i) => i.status).length,
         partialReason: partialItem?.note || null,
-        flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance).map((item) => ({
+        flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation).map((item) => ({
           id: item.id,
           zone: item.zone,
           text: item.text,
           status: item.status,
           flagCategory: item.flagCategory,
           isMaintenance: item.isMaintenance,
+          isLeaseViolation: item.isLeaseViolation,
+          priority: item.priority,
+          entryCode: item.entryCode,
+          entryApproved: item.entryApproved,
           note: item.note,
           photos: item.photos || [],
         })),
