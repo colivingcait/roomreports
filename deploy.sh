@@ -4,8 +4,11 @@ set -e
 APP_DIR="/var/www/roomreport"
 LOG_DIR="/var/log/roomreport"
 
-echo "==> Pulling latest code..."
 cd "$APP_DIR"
+# Record schema state BEFORE the pull so we can detect changes afterward.
+SCHEMA_BEFORE="$(git rev-parse HEAD:prisma/schema.prisma 2>/dev/null || echo '')"
+
+echo "==> Pulling latest code..."
 # Ensure we're on main so the checkout can't drift onto a feature branch.
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$CURRENT_BRANCH" != "main" ]; then
@@ -15,6 +18,8 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
 fi
 git pull --ff-only origin main
 
+SCHEMA_AFTER="$(git rev-parse HEAD:prisma/schema.prisma)"
+
 echo "==> Installing dependencies..."
 npm ci
 
@@ -22,8 +27,19 @@ echo "==> Generating Prisma client..."
 rm -rf server/node_modules/.prisma
 npm run db:generate
 
-# Database schema changes are applied manually via `npx prisma db push`
-# when the schema.prisma file changes. Skipped here to avoid drift prompts.
+# Auto-apply schema changes when schema.prisma changed in this pull.
+# Additive changes (new columns, new enum values) apply cleanly. If `db push`
+# would be destructive (dropped columns, etc.) it will prompt and `set -e`
+# will halt the deploy — inspect and run manually before retrying.
+if [ "$SCHEMA_BEFORE" != "$SCHEMA_AFTER" ]; then
+  echo "==> prisma/schema.prisma changed — applying with prisma db push..."
+  # By default prisma db push aborts on destructive changes. Additive changes
+  # (new columns, new enum values) apply cleanly. If this step fails, inspect
+  # the schema drift before re-running manually.
+  npx prisma db push
+else
+  echo "==> Schema unchanged — skipping prisma db push."
+fi
 
 echo "==> Building client..."
 npm run build
