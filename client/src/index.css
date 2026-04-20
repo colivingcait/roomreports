@@ -2406,6 +2406,138 @@ body {
 .violation-action-date { font-size: 0.75rem; color: #8A8583; }
 .violation-action-desc { grid-column: 1 / -1; color: #4A4543; font-size: 0.85rem; }
 
+/* ─── Templates ───────────────────────────────────────── */
+
+.tpl-zone {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+.tpl-zone-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.tpl-zone-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #4A4543;
+}
+.tpl-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: #F9F7F5;
+  margin-bottom: 0.35rem;
+}
+.tpl-drag {
+  cursor: grab;
+  background: none;
+  border: none;
+  color: #B5B1AF;
+  padding: 0.2rem 0.4rem;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 1.1rem;
+  letter-spacing: -2px;
+}
+.tpl-drag:active { cursor: grabbing; }
+.tpl-row-content { flex: 1; min-width: 0; }
+.tpl-row-text { color: #4A4543; font-weight: 500; }
+.tpl-row-meta { font-size: 0.75rem; color: #8A8583; margin-top: 0.15rem; }
+.tpl-row-actions { display: flex; gap: 0.25rem; }
+
+/* ─── Responsive polish ───────────────────────────────── */
+
+/* Minimum 44px tap targets on mobile for all interactive elements */
+@media (max-width: 768px) {
+  button,
+  .btn-primary,
+  .btn-primary-sm,
+  .btn-secondary,
+  .btn-text,
+  .btn-text-sm,
+  .btn-danger,
+  .btn-danger-sm,
+  .view-btn,
+  .filter-pill,
+  .filter-toggle,
+  .tap-btn,
+  .q-btn,
+  .shortcut-card {
+    min-height: 44px;
+  }
+  .btn-primary-xs,
+  .btn-text-sm,
+  .q-flag-box {
+    min-height: 40px;
+  }
+
+  /* Modal full-screen on mobile */
+  .modal-overlay { padding: 0; align-items: stretch; }
+  .modal-content {
+    border-radius: 0;
+    max-width: none;
+    min-height: 100vh;
+    padding: 1.25rem;
+    overflow-y: auto;
+  }
+  .modal-close { min-width: 44px; min-height: 44px; }
+
+  /* Slide-over takes the full width on narrow screens */
+  .slideover { width: 100%; }
+
+  /* Page header collapses to a vertical stack */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .page-header > div:last-child {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Horizontal filter pills scroll instead of wrapping awkwardly */
+  .maint-filters {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .maint-filters .filter-select { min-height: 44px; }
+
+  /* Property health grid: single column */
+  .health-grid { grid-template-columns: 1fr; }
+
+  /* Calendar cells shorter on phone */
+  .cal-day { min-height: 80px; padding: 0.25rem; }
+  .cal-grid-week .cal-day { min-height: 180px; }
+  .cal-event-text { display: none; }
+  .cal-event { padding: 0.3rem; }
+
+  /* Kanban: single column stack on phone */
+  .kanban-board { grid-template-columns: 1fr !important; }
+
+  /* Tighter padding on the page container */
+  .page-container { padding: 1rem !important; }
+}
+
+/* Tablet-friendly mid-sizes */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .kanban-board { grid-template-columns: repeat(2, 1fr); }
+  .report-row { grid-template-columns: 120px 1fr 80px; }
+}
+
+/* Prevent horizontal scroll from overflowing grids */
+body { overflow-x: hidden; }
+.page-container { overflow-x: auto; }
+
 /* ─── Dashboard ──────────────────────────────────────── */
 
 .db-page { }

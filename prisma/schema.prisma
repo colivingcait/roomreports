@@ -482,6 +482,38 @@ model InspectionSchedule {
   @@map("inspection_schedules")
 }
 
+// ─── InspectionTemplate ─────────────────────────────────
+// Per-org, per-type customization of the built-in checklist.
+
+model InspectionTemplate {
+  id             String         @id @default(cuid())
+  organizationId String
+  inspectionType InspectionType
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  items InspectionTemplateItem[]
+
+  @@unique([organizationId, inspectionType])
+  @@map("inspection_templates")
+}
+
+model InspectionTemplateItem {
+  id         String   @id @default(cuid())
+  templateId String
+  zone       String
+  text       String
+  options    String[]
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template InspectionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("inspection_template_items")
+}
+
 // ─── Suggestion ─────────────────────────────────────────
 
 model Suggestion {

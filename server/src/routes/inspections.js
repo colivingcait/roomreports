@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { generateChecklist, ROOM_TYPES } from '../lib/checklist.js';
+import { generateChecklist, buildChecklist, ROOM_TYPES } from '../lib/checklist.js';
 import { suggestPriority, PRIORITIES } from '../../../shared/index.js';
 
 const router = Router();
@@ -90,7 +90,7 @@ router.post('/quarterly-batch', async (req, res) => {
     for (const room of property.rooms) {
       if (existingByRoom[room.id]) continue;
 
-      const checklistItems = generateChecklist('QUARTERLY', property, room);
+      const checklistItems = await buildChecklist(prisma, organizationId, 'QUARTERLY', property, room);
       const insp = await prisma.inspection.create({
         data: {
           type: 'QUARTERLY',
@@ -180,7 +180,7 @@ router.post('/', async (req, res) => {
     }
 
     // Generate checklist items
-    const checklistItems = generateChecklist(type, property, room, { direction });
+    const checklistItems = await buildChecklist(prisma, organizationId, type, property, room, { direction });
 
     // Create inspection with items in a transaction
     const inspection = await prisma.inspection.create({
