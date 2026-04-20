@@ -412,6 +412,14 @@ export const PROPERTY_ONLY_TYPES = ['COMMON_AREA', 'COMMON_AREA_QUICK'];
 // appended from the defaults so the template covers the per-org customizable
 // "common" items without duplicating per-room dynamic ones.
 export async function buildChecklist(prisma, organizationId, type, property, room, options = {}) {
+  // QUARTERLY and COMMON_AREA_QUICK drive the new multi-screen UI, which
+  // requires a specific zone structure (Maintenance, per-feature zones,
+  // Compliance pills, _Completed marker). Bypass any org template for these
+  // and always use the generator so the UI renders correctly.
+  if (type === 'QUARTERLY' || type === 'COMMON_AREA_QUICK') {
+    return generateChecklist(type, property, room, options);
+  }
+
   const template = await prisma.inspectionTemplate.findUnique({
     where: { organizationId_inspectionType: { organizationId, inspectionType: type } },
     include: { items: { orderBy: { position: 'asc' } } },
