@@ -1,9 +1,12 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+const REGION = process.env.DO_SPACES_REGION || 'nyc3';
+const ENDPOINT = process.env.DO_SPACES_ENDPOINT || `https://${REGION}.digitaloceanspaces.com`;
+
 const s3 = new S3Client({
-  region: process.env.DO_SPACES_REGION || 'nyc3',
-  endpoint: process.env.DO_SPACES_ENDPOINT || 'https://nyc3.digitaloceanspaces.com',
+  region: REGION,
+  endpoint: ENDPOINT,
   credentials: {
     accessKeyId: process.env.DO_SPACES_KEY,
     secretAccessKey: process.env.DO_SPACES_SECRET,
@@ -13,18 +16,22 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.DO_SPACES_BUCKET;
 
+function publicUrl(key) {
+  return `https://${BUCKET}.${REGION}.digitaloceanspaces.com/${key}`;
+}
+
 export async function uploadFile(key, body, contentType) {
   await s3.send(new PutObjectCommand({
     Bucket: BUCKET,
     Key: key,
     Body: body,
     ContentType: contentType,
-    ACL: 'private',
+    ACL: 'public-read',
   }));
 
   return {
     key,
-    url: `${process.env.DO_SPACES_ENDPOINT}/${BUCKET}/${key}`,
+    url: publicUrl(key),
   };
 }
 

@@ -92,7 +92,7 @@ export default function Dashboard() {
           </div>
           <div className="db-card-body">
             {pendingReview.length === 0 ? (
-              <div className="db-empty">{'\u2713'} All caught up</div>
+              <div className="db-empty">✓ All caught up</div>
             ) : (
               pendingReview.slice(0, 4).map((p) => {
                 const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };

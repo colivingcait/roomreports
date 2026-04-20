@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { ChecklistItem } from '../components/InspectionItems';
@@ -25,14 +25,29 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
   const [items, setItems] = useState([]);
   const [loadingRoom, setLoadingRoom] = useState(true);
   const { saveItem, saveStatus } = useAutoSave(inspectionId);
+  const itemsRef = useRef([]);
+  const onItemsSyncedRef = useRef(onItemsSynced);
+  onItemsSyncedRef.current = onItemsSynced;
 
   useEffect(() => {
     setLoadingRoom(true);
     fetch(`/api/inspections/${inspectionId}`, { credentials: 'include' })
       .then((r) => r.json())
-      .then((d) => { if (d.inspection?.items) setItems(d.inspection.items); })
+      .then((d) => {
+        if (d.inspection?.items) {
+          setItems(d.inspection.items);
+          itemsRef.current = d.inspection.items;
+        }
+      })
       .finally(() => setLoadingRoom(false));
   }, [inspectionId]);
+
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  // Browser back / component unmount: sync latest items to parent so room grid reflects progress.
+  useEffect(() => {
+    return () => { onItemsSyncedRef.current(itemsRef.current); };
+  }, []);
 
   const handleItemUpdate = useCallback((updated) => {
     setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));

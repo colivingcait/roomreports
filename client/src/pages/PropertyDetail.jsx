@@ -241,6 +241,30 @@ function RoomCard({ room, propertyId, onRefresh }) {
   );
 }
 
+// ─── Copy Link button with "Copied!" feedback ───────────
+
+function CopyLinkButton({ value, className = 'btn-primary-xs' }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={handleCopy}
+      style={copied ? { color: '#3B6D11', borderColor: '#6B8F71' } : undefined}
+    >
+      {copied ? 'Copied!' : 'Copy Link'}
+    </button>
+  );
+}
+
 // ─── Main component ─────────────────────────────────────
 
 export default function PropertyDetail() {
@@ -357,8 +381,8 @@ export default function PropertyDetail() {
         const addrNum = (property.address || '').match(/\d+/)?.[0] || '';
         const nameSlug = property.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         const slug = addrNum ? `${addrNum}-${nameSlug}` : nameSlug;
-        const moveInUrl = `${window.location.origin}/movein/${slug}`;
-        const selfCheckUrl = `${window.location.origin}/selfcheck/${slug}`;
+        const moveInUrl = `https://roomreport.co/movein/${slug}`;
+        const selfCheckUrl = `https://roomreport.co/selfcheck/${slug}`;
         return (
           <div className="detail-section" style={{ marginTop: '1rem' }}>
             <div className="section-header"><h3>Resident Links</h3></div>
@@ -372,7 +396,7 @@ export default function PropertyDetail() {
                   <QRCodeSVG value={moveInUrl} size={120} level="M" fgColor="#4A4543" />
                 </div>
                 <code className="pub-link-url">{moveInUrl}</code>
-                <button className="btn-primary-xs" onClick={() => navigator.clipboard.writeText(moveInUrl)}>Copy Link</button>
+                <CopyLinkButton value={moveInUrl} />
               </div>
               <div className="pub-link-card">
                 <h4>Monthly Self-Check</h4>
@@ -380,7 +404,7 @@ export default function PropertyDetail() {
                   <QRCodeSVG value={selfCheckUrl} size={120} level="M" fgColor="#4A4543" />
                 </div>
                 <code className="pub-link-url">{selfCheckUrl}</code>
-                <button className="btn-primary-xs" onClick={() => navigator.clipboard.writeText(selfCheckUrl)}>Copy Link</button>
+                <CopyLinkButton value={selfCheckUrl} />
               </div>
             </div>
           </div>

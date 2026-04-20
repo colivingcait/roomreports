@@ -73,7 +73,10 @@ router.post('/quarterly-batch', async (req, res) => {
         roomId: { in: property.rooms.map((r) => r.id) },
       },
       include: {
-        items: { orderBy: { createdAt: 'asc' } },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: { photos: true },
+        },
         room: { select: { id: true, label: true } },
       },
     });
@@ -267,7 +270,10 @@ router.get('/:id', async (req, res) => {
         deletedAt: null,
       },
       include: {
-        items: { orderBy: { createdAt: 'asc' } },
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: { photos: true },
+        },
         property: { select: { id: true, name: true, address: true } },
         room: { select: { id: true, label: true } },
         inspector: { select: { id: true, name: true, role: true } },
@@ -587,7 +593,7 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       date: inspections[0].createdAt,
       completedAt: inspections[0].completedAt,
       status: groupStatus,
-      totalRooms: rooms.length,
+      totalRooms: rooms.filter((r) => r.completedItems > 0).length,
       totalFlags,
       totalMaintenance,
       totalItems: allItemsCount,
