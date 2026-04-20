@@ -414,12 +414,13 @@ function InspectionReports() {
 }
 
 function InspectionReportRow({ item }) {
-  const downloadPdf = (e) => {
-    e.stopPropagation();
-    // Fall back to per-maintenance PDFs for now — inspection PDFs are
-    // not yet implemented server-side. Open the review page instead.
-    window.open(`/inspections/${item.id}/review`, '_blank');
-  };
+  const isQuarterly = item.type === 'QUARTERLY';
+  const dateKey = new Date(item.createdAt).toISOString().slice(0, 10);
+
+  const pdfUrl = (full) => isQuarterly
+    ? `/api/inspections/quarterly-group/${item.property?.id || item.propertyId}/${dateKey}/pdf${full ? '?full=true' : ''}`
+    : `/api/inspections/${item.id}/pdf${full ? '?full=true' : ''}`;
+
   return (
     <div
       className="insp-history-row"
@@ -441,7 +442,20 @@ function InspectionReportRow({ item }) {
           {item._count?.items || 0} items
         </span>
         <span className="insp-status-badge">{item.status}</span>
-        <button className="btn-text-sm" onClick={downloadPdf}>Open &rarr;</button>
+        <button
+          className="btn-text-sm"
+          onClick={(e) => { e.stopPropagation(); window.open(pdfUrl(false), '_blank'); }}
+          title="Download summary PDF"
+        >
+          PDF
+        </button>
+        <button
+          className="btn-text-sm"
+          onClick={(e) => { e.stopPropagation(); window.open(pdfUrl(true), '_blank'); }}
+          title="Download full detail PDF"
+        >
+          Full PDF
+        </button>
       </div>
     </div>
   );

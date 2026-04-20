@@ -119,15 +119,31 @@ export default function QuarterlyReview() {
             {new Date(data.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
           </p>
         </div>
-        <span
-          className="insp-status-badge"
-          style={{
-            color: isReviewed ? '#6B8F71' : '#C4703F',
-            borderColor: isReviewed ? '#6B8F71' : '#C4703F',
-          }}
-        >
-          {data.status}
-        </span>
+        <div className="review-header-right">
+          <button
+            className="btn-edit-inspection"
+            onClick={() => window.open(`/api/inspections/quarterly-group/${propertyId}/${date}/pdf`, '_blank')}
+            title="Summary PDF (flagged items + counts)"
+          >
+            Summary PDF
+          </button>
+          <button
+            className="btn-edit-inspection"
+            onClick={() => window.open(`/api/inspections/quarterly-group/${propertyId}/${date}/pdf?full=true`, '_blank')}
+            title="Full PDF (every checklist item)"
+          >
+            Full PDF
+          </button>
+          <span
+            className="insp-status-badge"
+            style={{
+              color: isReviewed ? '#6B8F71' : '#C4703F',
+              borderColor: isReviewed ? '#6B8F71' : '#C4703F',
+            }}
+          >
+            {data.status}
+          </span>
+        </div>
       </div>
 
       {/* Aggregated summary */}

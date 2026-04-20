@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import PDFDocument from 'pdfkit';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateChecklist, buildChecklist, ROOM_TYPES } from '../lib/checklist.js';
@@ -1416,5 +1417,282 @@ function isDeteriorated(prev, current) {
   const nowBad = badStatuses.includes(current);
   return wasGood && nowBad;
 }
+
+// ─── Inspection PDF (summary / full detail) ─────────────
+
+const INSPECTION_TYPE_LABELS = {
+  QUARTERLY: 'Room Inspection',
+  COMMON_AREA: 'Common Area Inspection',
+  COMMON_AREA_QUICK: 'Common Area Quick Check',
+  ROOM_TURN: 'Room Turn',
+  RESIDENT_SELF_CHECK: 'Resident Self-Check',
+  MOVE_IN_OUT: 'Move-In / Move-Out',
+};
+
+const BAD_STATUSES = new Set(['Fail', 'Poor', 'Dirty', 'No', 'Missing', 'Damaged', 'Heavily Damaged']);
+
+function inspectionSummary(inspection) {
+  const visible = (inspection.items || []).filter((i) => !i.zone?.startsWith('_'));
+  const total = visible.length;
+  const answered = visible.filter((i) => i.status).length;
+  const passed = visible.filter((i) => !BAD_STATUSES.has(i.status) && i.status && i.status !== '').length;
+  const failed = visible.filter((i) => BAD_STATUSES.has(i.status)).length;
+  const notAnswered = total - answered;
+  const flagged = visible.filter((i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation);
+  const maintenance = visible.filter((i) => i.isMaintenance);
+  const violations = visible.filter((i) => i.isLeaseViolation);
+  const partialItem = (inspection.items || []).find((i) => i.zone === '_PartialReason');
+  return {
+    total, answered, passed, failed, notAnswered,
+    flagged, maintenance, violations,
+    partialReason: partialItem?.note || null,
+  };
+}
+
+function writeInspectionHeader(doc, inspection) {
+  const label = INSPECTION_TYPE_LABELS[inspection.type] || inspection.type;
+  doc.fontSize(20).fillColor('#4A4543').text(label);
+  doc.moveDown(0.25);
+  doc.fontSize(11).fillColor('#8A8583');
+  doc.text(`${inspection.property?.name || ''}${inspection.property?.address ? ' — ' + inspection.property.address : ''}`);
+  if (inspection.room?.label) doc.text(`Room: ${inspection.room.label}`);
+  if (inspection.inspectorName) {
+    doc.text(`Inspector: ${inspection.inspectorName}${inspection.inspectorRole ? ` (${inspection.inspectorRole})` : ''}`);
+  }
+  doc.text(`Created: ${new Date(inspection.createdAt).toLocaleString('en-US')}`);
+  if (inspection.completedAt) {
+    doc.text(`Completed: ${new Date(inspection.completedAt).toLocaleString('en-US')}`);
+  }
+  doc.text(`Status: ${inspection.status}`);
+  if (inspection.editCount > 0 && inspection.editedAt) {
+    doc.text(`Last edited: ${new Date(inspection.editedAt).toLocaleString('en-US')} (${inspection.editCount} edit${inspection.editCount === 1 ? '' : 's'})`);
+  }
+}
+
+function writeInspectionSummary(doc, inspection) {
+  const s = inspectionSummary(inspection);
+
+  doc.moveDown(0.75);
+  doc.fontSize(13).fillColor('#4A4543').text('Summary', { underline: true });
+  doc.fontSize(11).fillColor('#4A4543');
+  doc.moveDown(0.25);
+  doc.text(`Items answered: ${s.answered} / ${s.total}`);
+  doc.text(`Passed: ${s.passed}`);
+  doc.text(`Failed / flagged: ${s.failed}`);
+  if (s.notAnswered > 0) doc.text(`Not answered: ${s.notAnswered}`);
+  doc.text(`Maintenance to follow up: ${s.maintenance.length}`);
+  doc.text(`Lease violations: ${s.violations.length}`);
+
+  if (s.partialReason) {
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#C4703F').text('Partial submission', { underline: true });
+    doc.fontSize(10).fillColor('#4A4543').text(s.partialReason);
+  }
+
+  if (s.flagged.length > 0) {
+    doc.moveDown(0.75);
+    doc.fontSize(13).fillColor('#4A4543').text('Flagged items', { underline: true });
+    doc.moveDown(0.25);
+    doc.fontSize(10).fillColor('#4A4543');
+    for (const item of s.flagged) {
+      const title = (item.note && item.note.trim()) || item.text;
+      doc.font('Helvetica-Bold').text(title);
+      doc.font('Helvetica');
+      const meta = [];
+      if (item.zone) meta.push(item.zone);
+      if (item.flagCategory) meta.push(item.flagCategory);
+      if (item.priority) meta.push(item.priority + ' priority');
+      if (item.isMaintenance) meta.push('→ maintenance');
+      if (item.isLeaseViolation) meta.push('→ lease violation');
+      if (meta.length) doc.fillColor('#8A8583').text(meta.join(' · ')).fillColor('#4A4543');
+      if (item.note && item.note !== title) doc.text(item.note);
+      if (item.photos?.length) {
+        doc.fillColor('#8A8583').text(`${item.photos.length} photo${item.photos.length === 1 ? '' : 's'} attached`).fillColor('#4A4543');
+      }
+      doc.moveDown(0.35);
+    }
+  } else {
+    doc.moveDown(0.75);
+    doc.fontSize(11).fillColor('#3B6D11').text('✓ No issues flagged.');
+  }
+}
+
+function writeInspectionFullDetail(doc, inspection) {
+  const visible = (inspection.items || []).filter((i) => !i.zone?.startsWith('_'));
+
+  // Group items by zone, preserving insertion order
+  const zones = [];
+  const byZone = {};
+  for (const it of visible) {
+    if (!byZone[it.zone]) { byZone[it.zone] = []; zones.push(it.zone); }
+    byZone[it.zone].push(it);
+  }
+
+  doc.moveDown(0.75);
+  doc.fontSize(13).fillColor('#4A4543').text('Full checklist', { underline: true });
+  doc.moveDown(0.25);
+
+  for (const zone of zones) {
+    doc.moveDown(0.4);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#6B8F71').text(zone);
+    doc.font('Helvetica').fillColor('#4A4543');
+    for (const item of byZone[zone]) {
+      const statusLabel = item.status || '—';
+      const statusColor = item.status
+        ? (BAD_STATUSES.has(item.status) ? '#C0392B' : '#3B6D11')
+        : '#8A8583';
+      doc.fontSize(10);
+      doc.text('• ', { continued: true });
+      doc.fillColor('#4A4543').text(item.text, { continued: true });
+      doc.fillColor(statusColor).text(`   ${statusLabel}`);
+      doc.fillColor('#4A4543');
+      if (item.note) {
+        doc.fontSize(9).fillColor('#8A8583').text(`   ${item.note}`);
+      }
+      if (item.flagCategory) {
+        doc.fontSize(9).fillColor('#8A8583').text(`   Category: ${item.flagCategory}${item.priority ? ` · ${item.priority} priority` : ''}`);
+      }
+      if (item.photos?.length) {
+        doc.fontSize(9).fillColor('#8A8583').text(`   ${item.photos.length} photo${item.photos.length === 1 ? '' : 's'}`);
+      }
+      doc.fillColor('#4A4543');
+    }
+  }
+}
+
+async function fetchInspectionForPdf(id, orgId) {
+  return prisma.inspection.findFirst({
+    where: { id, organizationId: orgId, deletedAt: null },
+    include: {
+      items: { orderBy: { createdAt: 'asc' }, include: { photos: true } },
+      property: { select: { id: true, name: true, address: true } },
+      room: { select: { id: true, label: true } },
+    },
+  });
+}
+
+// GET /api/inspections/:id/pdf — single inspection; ?full=true for full detail
+router.get('/:id/pdf', async (req, res) => {
+  try {
+    const inspection = await fetchInspectionForPdf(req.params.id, req.user.organizationId);
+    if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
+
+    const full = req.query.full === 'true' || req.query.full === '1';
+    const filename = `inspection-${inspection.id}${full ? '-full' : ''}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+    doc.pipe(res);
+    writeInspectionHeader(doc, inspection);
+    writeInspectionSummary(doc, inspection);
+    if (full) {
+      doc.addPage();
+      writeInspectionHeader(doc, inspection);
+      writeInspectionFullDetail(doc, inspection);
+    }
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor('#8A8583').text(`Generated ${new Date().toLocaleString('en-US')} · ID ${inspection.id}`, { align: 'right' });
+    doc.end();
+  } catch (error) {
+    console.error('Inspection PDF error:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/inspections/quarterly-group/:propertyId/:date/pdf — combined quarterly PDF
+router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
+  try {
+    const { propertyId, date } = req.params;
+    const dayStart = new Date(date + 'T00:00:00.000Z');
+    const dayEnd = new Date(date + 'T23:59:59.999Z');
+    const full = req.query.full === 'true' || req.query.full === '1';
+
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        propertyId,
+        type: 'QUARTERLY',
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        createdAt: { gte: dayStart, lte: dayEnd },
+      },
+      include: {
+        items: { orderBy: { createdAt: 'asc' }, include: { photos: true } },
+        property: { select: { id: true, name: true, address: true } },
+        room: { select: { id: true, label: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (inspections.length === 0) return res.status(404).json({ error: 'No inspections found' });
+
+    inspections.sort((a, b) => {
+      const la = a.room?.label || '';
+      const lb = b.room?.label || '';
+      const na = parseInt(la.match(/\d+/)?.[0], 10);
+      const nb = parseInt(lb.match(/\d+/)?.[0], 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return la.localeCompare(lb);
+    });
+
+    const first = inspections[0];
+    const filename = `room-inspection-${propertyId}-${date}${full ? '-full' : ''}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+    doc.pipe(res);
+
+    // Cover
+    doc.fontSize(22).fillColor('#4A4543').text('Room Inspection Report');
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#8A8583').text(first.property?.name || '');
+    if (first.property?.address) doc.text(first.property.address);
+    doc.text(`${inspections.length} room${inspections.length === 1 ? '' : 's'} inspected`);
+    doc.text(`Inspected: ${new Date(first.createdAt).toLocaleString('en-US')}`);
+    if (first.inspectorName) doc.text(`Inspector: ${first.inspectorName}`);
+    doc.text(`Generated: ${new Date().toLocaleString('en-US')}`);
+
+    // Aggregate summary
+    let totalItems = 0, totalPassed = 0, totalFailed = 0, totalFlagged = 0, totalMaint = 0, totalViol = 0;
+    for (const insp of inspections) {
+      const s = inspectionSummary(insp);
+      totalItems += s.total;
+      totalPassed += s.passed;
+      totalFailed += s.failed;
+      totalFlagged += s.flagged.length;
+      totalMaint += s.maintenance.length;
+      totalViol += s.violations.length;
+    }
+    doc.moveDown(0.75);
+    doc.fontSize(13).fillColor('#4A4543').text('Aggregate', { underline: true });
+    doc.fontSize(11).fillColor('#4A4543');
+    doc.moveDown(0.25);
+    doc.text(`Items checked: ${totalItems}`);
+    doc.text(`Passed: ${totalPassed}`);
+    doc.text(`Failed / flagged: ${totalFailed}`);
+    doc.text(`Maintenance to follow up: ${totalMaint}`);
+    doc.text(`Lease violations: ${totalViol}`);
+    doc.text(`Flagged items total: ${totalFlagged}`);
+
+    for (const insp of inspections) {
+      doc.addPage();
+      writeInspectionHeader(doc, insp);
+      writeInspectionSummary(doc, insp);
+      if (full) {
+        doc.addPage();
+        writeInspectionHeader(doc, insp);
+        writeInspectionFullDetail(doc, insp);
+      }
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Quarterly group PDF error:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 export default router;
