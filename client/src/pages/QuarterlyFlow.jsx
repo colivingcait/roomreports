@@ -22,6 +22,26 @@ const COMPLIANCE_ZONE = 'Compliance';
 const MISC_ZONE = 'Misc';
 const COMPLETED_ZONE = '_Completed';
 
+// Canonical pill order — items are rendered in this exact order on every
+// room's compliance screen regardless of DB insertion order.
+const COMPLIANCE_PILL_ORDER = [
+  'Messy',
+  'Bad odor',
+  'Smoking',
+  'Unauthorized guests',
+  'Pets',
+  'Open food',
+  'Pests/bugs',
+  'Open flames/candles',
+  'Overloaded outlets',
+  'Kitchen appliances in room',
+  'Lithium batteries',
+  'Modifications (paint, holes, etc.)',
+  'Drug paraphernalia',
+  'Weapons',
+  'Unclear egress path',
+];
+
 function sortRooms(inspections) {
   return [...inspections].sort((a, b) => {
     const la = a.roomLabel || '';
@@ -263,7 +283,14 @@ function MaintenanceScreen({ items, inspectionId, saveItem, onItemUpdate, onBack
 // ─── Screen 3: Lease Compliance ────────────────────────
 
 function ComplianceScreen({ items, inspectionId, saveItem, onItemUpdate, onBack, onNext }) {
-  const pills = items.filter((i) => i.zone === COMPLIANCE_ZONE);
+  // Hardcoded canonical order — don't trust DB ordering.
+  const byText = new Map();
+  for (const it of items) {
+    if (it.zone === COMPLIANCE_ZONE) byText.set(it.text, it);
+  }
+  const pills = COMPLIANCE_PILL_ORDER
+    .map((text) => byText.get(text))
+    .filter(Boolean);
   const selected = pills.filter((p) => p.status === 'Fail');
 
   const togglePill = (pill) => {
@@ -631,17 +658,27 @@ function RoomCard({ inspection, onClick }) {
 
 function CommonAreaQuickCheck({ quickCheck, onItemsUpdate }) {
   const [expanded, setExpanded] = useState(false);
-  const { saveItem, saveStatus } = useAutoSave(quickCheck?.id);
+  const inspectionId = quickCheck?.inspectionId;
+  const { saveItem, saveStatus } = useAutoSave(inspectionId);
 
-  if (!quickCheck) return null;
-  const items = visibleItems(quickCheck.items || []);
+  if (!quickCheck || !inspectionId) return null;
+  const items = (quickCheck.items || []).filter((i) => i.zone?.startsWith('_QuickCommon:'));
   if (!items.length) return null;
+
+  // Group by kind ("_QuickCommon:Kitchen" → "Kitchen")
+  const groups = [];
+  const byKind = {};
+  for (const it of items) {
+    const kind = it.zone.split(':')[1] || 'Other';
+    if (!byKind[kind]) { byKind[kind] = []; groups.push(kind); }
+    byKind[kind].push(it);
+  }
 
   const done = items.filter((i) => i.status).length;
   const total = items.length;
 
   const updateItem = (updated) => {
-    onItemsUpdate(quickCheck.items.map((i) => (i.id === updated.id ? updated : i)));
+    onItemsUpdate(items.map((i) => (i.id === updated.id ? updated : i)));
   };
 
   const togglePass = (item) => {
@@ -681,31 +718,36 @@ function CommonAreaQuickCheck({ quickCheck, onItemsUpdate }) {
       </button>
       {expanded && (
         <div className="q-common-body">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={`q-common-card q-common-card-${item.status || 'none'}`}
-            >
-              <div className="q-common-card-row">
-                <div className="q-common-card-label">{item.text}</div>
-                <div className="q-common-card-buttons">
-                  <button
-                    className={`q-btn q-btn-pass ${item.status === 'Pass' ? 'active' : ''}`}
-                    onClick={() => togglePass(item)}
-                  >&#10003;</button>
-                  <button
-                    className={`q-btn q-btn-fail ${item.status === 'Fail' ? 'active' : ''}`}
-                    onClick={() => toggleFail(item)}
-                  >&#10005;</button>
+          {groups.map((kind) => (
+            <div key={kind} className="q-common-zone">
+              <h4 className="q-common-zone-title">{kind}s</h4>
+              {byKind[kind].map((item) => (
+                <div
+                  key={item.id}
+                  className={`q-common-card q-common-card-${item.status || 'none'}`}
+                >
+                  <div className="q-common-card-row">
+                    <div className="q-common-card-label">{item.text}</div>
+                    <div className="q-common-card-buttons">
+                      <button
+                        className={`q-btn q-btn-pass ${item.status === 'Pass' ? 'active' : ''}`}
+                        onClick={() => togglePass(item)}
+                      >&#10003;</button>
+                      <button
+                        className={`q-btn q-btn-fail ${item.status === 'Fail' ? 'active' : ''}`}
+                        onClick={() => toggleFail(item)}
+                      >&#10005;</button>
+                    </div>
+                  </div>
+                  {item.status === 'Fail' && (
+                    <FlagDrawerMini
+                      item={item}
+                      inspectionId={inspectionId}
+                      onUpdate={updateDrawer}
+                    />
+                  )}
                 </div>
-              </div>
-              {item.status === 'Fail' && (
-                <FlagDrawerMini
-                  item={item}
-                  inspectionId={quickCheck.id}
-                  onUpdate={updateDrawer}
-                />
-              )}
+              ))}
             </div>
           ))}
         </div>
@@ -752,8 +794,25 @@ export default function QuarterlyFlow() {
     });
   };
 
-  const handleQuickItemsUpdate = (freshItems) => {
-    setData((prev) => prev && ({ ...prev, commonAreaQuick: { ...prev.commonAreaQuick, items: freshItems } }));
+  // Quick-check items live on the primary room inspection now. When the
+  // user toggles a quick-check row, update that room's items AND the
+  // flattened commonAreaQuick.items view.
+  const handleQuickItemsUpdate = (freshQuickItems) => {
+    setData((prev) => {
+      if (!prev?.commonAreaQuick) return prev;
+      const { inspectionId } = prev.commonAreaQuick;
+      const nextInspections = prev.inspections.map((insp) => {
+        if (insp.id !== inspectionId) return insp;
+        const quickIds = new Set(freshQuickItems.map((i) => i.id));
+        const others = insp.items.filter((i) => !quickIds.has(i.id));
+        return { ...insp, items: [...others, ...freshQuickItems] };
+      });
+      return {
+        ...prev,
+        inspections: nextInspections,
+        commonAreaQuick: { ...prev.commonAreaQuick, items: freshQuickItems },
+      };
+    });
   };
 
   const getIncompleteRooms = () => {
@@ -778,16 +837,8 @@ export default function QuarterlyFlow() {
         await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
       }
 
-      // Submit quick check if user touched it
-      const q = data.commonAreaQuick;
-      if (q) {
-        const touched = visibleItems(q.items).some((i) => i.status);
-        if (touched) {
-          const incomplete = visibleItems(q.items).some((i) => !i.status);
-          const body = partial && incomplete ? { partial: true, partialReason } : {};
-          await api(`/api/inspections/${q.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
-        }
-      }
+      // Quick-check items live on the primary room inspection, so they're
+      // submitted automatically as part of that room's inspection above.
 
       navigate('/dashboard', { state: { notification: `Room inspection submitted for ${data.propertyName}` } });
     } catch (err) {

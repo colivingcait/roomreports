@@ -339,6 +339,56 @@ export default function QuarterlyReview() {
         })}
       </div>
 
+      {/* Quick common area check (shared across the batch) */}
+      {Array.isArray(data.commonAreaQuick) && data.commonAreaQuick.length > 0 && (
+        <div className="qr-common-section">
+          <h3 className="qr-common-title">Common Area Quick Check</h3>
+          {['Kitchen', 'Bathroom'].map((kind) => {
+            const rows = data.commonAreaQuick.filter((c) => c.kind === kind);
+            if (rows.length === 0) return null;
+            return (
+              <div key={kind} className="qr-common-group">
+                <h4 className="qr-common-subtitle">{kind}s</h4>
+                {rows.map((r) => (
+                  <div
+                    key={r.id}
+                    className={`qr-common-row qr-common-row-${r.status || 'empty'}`}
+                  >
+                    <div className="qr-common-main">
+                      <span className="qr-common-label">{r.label}</span>
+                      <span className={`qr-common-status qr-common-status-${r.status || 'empty'}`}>
+                        {r.status === 'Pass' ? 'Pass \u2713'
+                          : r.status === 'Fail' ? 'Fail \u2715'
+                          : 'Not checked'}
+                      </span>
+                    </div>
+                    {r.status === 'Fail' && (r.note || r.flagCategory || r.photos?.length) && (
+                      <div className="qr-common-detail">
+                        {r.flagCategory && <span className="qr-common-cat">{r.flagCategory}</span>}
+                        {r.note && <p className="qr-common-note">{r.note}</p>}
+                        {r.photos?.length > 0 && (
+                          <div className="qr-common-photos">
+                            {r.photos.map((p) => (
+                              <button
+                                key={p.id}
+                                className="qr-common-photo"
+                                onClick={() => setLightboxUrl(p.url)}
+                              >
+                                <img src={p.url} alt="" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {error && <div className="auth-error" style={{ marginTop: '1rem' }}>{error}</div>}
 
       {/* Approve footer */}

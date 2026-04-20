@@ -131,8 +131,16 @@ router.post('/quarterly-batch', async (req, res) => {
     // Combine existing drafts and newly created
     const allInspections = [...existingDrafts, ...created];
 
-    // Find-or-create the companion COMMON_AREA_QUICK inspection for this property
-    let quickCheck = await prisma.inspection.findFirst({
+    // ── Quick common area check ──
+    // Stored as items on the "primary" room inspection (lowest numeric
+    // room label, alphabetical tiebreaker) using zone `_QuickCommon:Kitchen`
+    // or `_QuickCommon:Bathroom`. Shared bathrooms only — ensuite bathrooms
+    // (labels containing "ensuite") are excluded.
+
+    // Clean up any legacy COMMON_AREA_QUICK inspections — the quick check
+    // is no longer a separate inspection. Any DRAFT ones are replaced;
+    // already-submitted ones are left alone so history stays intact.
+    await prisma.inspection.updateMany({
       where: {
         propertyId,
         type: 'COMMON_AREA_QUICK',
@@ -140,27 +148,68 @@ router.post('/quarterly-batch', async (req, res) => {
         organizationId,
         deletedAt: null,
       },
-      include: { items: { orderBy: { createdAt: 'asc' }, include: { photos: true } } },
+      data: { deletedAt: new Date() },
     });
-    if (!quickCheck) {
-      const quickItems = await buildChecklist(prisma, organizationId, 'COMMON_AREA_QUICK', property, null);
-      quickCheck = await prisma.inspection.create({
-        data: {
-          type: 'COMMON_AREA_QUICK',
-          propertyId,
-          inspectorId: req.user.id,
-          inspectorName: req.user.name,
-          inspectorRole: role,
-          organizationId,
-          items: {
-            create: quickItems.map((it) => ({
-              zone: it.zone, text: it.text, options: it.options, status: it.status,
-            })),
+
+    const roomSortKey = (insp) => {
+      const label = insp.room?.label || '';
+      const n = parseInt(label.match(/\d+/)?.[0], 10);
+      return { n: isNaN(n) ? Infinity : n, label };
+    };
+    const primary = allInspections.slice().sort((a, b) => {
+      const ka = roomSortKey(a);
+      const kb = roomSortKey(b);
+      if (ka.n !== kb.n) return ka.n - kb.n;
+      return ka.label.localeCompare(kb.label);
+    })[0];
+
+    const sharedBathrooms = (property.bathrooms || []).filter(
+      (b) => !/ensuite/i.test(b.label || '')
+    );
+    const desired = [
+      ...(property.kitchens || []).map((k) => ({ kind: 'Kitchen', label: k.label || 'Kitchen' })),
+      ...sharedBathrooms.map((b) => ({ kind: 'Bathroom', label: b.label || 'Bathroom' })),
+    ];
+
+    if (primary && desired.length > 0) {
+      const existingQuick = primary.items.filter((i) => i.zone?.startsWith('_QuickCommon:'));
+      const existingKeys = new Set(existingQuick.map((i) => `${i.zone}|${i.text}`));
+
+      const toCreate = [];
+      for (const d of desired) {
+        const zone = `_QuickCommon:${d.kind}`;
+        const key = `${zone}|${d.label}`;
+        if (!existingKeys.has(key)) {
+          toCreate.push({
+            inspectionId: primary.id,
+            zone,
+            text: d.label,
+            options: ['Pass', 'Fail'],
+            status: '',
+          });
+        }
+      }
+      if (toCreate.length > 0) {
+        await prisma.inspectionItem.createMany({ data: toCreate });
+        // Refetch the primary so we return fresh quick items
+        const refreshed = await prisma.inspection.findUnique({
+          where: { id: primary.id },
+          include: {
+            items: { orderBy: { createdAt: 'asc' }, include: { photos: true } },
+            room: { select: { id: true, label: true } },
           },
-        },
-        include: { items: { orderBy: { createdAt: 'asc' }, include: { photos: true } } },
-      });
+        });
+        const idx = allInspections.findIndex((i) => i.id === primary.id);
+        if (idx >= 0) allInspections[idx] = refreshed;
+      }
     }
+
+    // Build the commonAreaQuick payload from the primary inspection's
+    // _QuickCommon:* items. Frontend reads/writes these via the primary id.
+    const primaryAfter = allInspections.find((i) => i.id === primary?.id) || null;
+    const quickCheckItems = primaryAfter
+      ? primaryAfter.items.filter((i) => i.zone?.startsWith('_QuickCommon:'))
+      : [];
 
     return res.status(201).json({
       inspections: allInspections.map((i) => ({
@@ -171,15 +220,14 @@ router.post('/quarterly-batch', async (req, res) => {
         items: i.items,
         completedAt: i.completedAt,
       })),
-      commonAreaQuick: {
-        id: quickCheck.id,
-        status: quickCheck.status,
-        items: quickCheck.items,
-      },
+      commonAreaQuick: primary ? {
+        inspectionId: primary.id,
+        items: quickCheckItems,
+      } : null,
       propertyId,
       propertyName: property.name,
       kitchens: (property.kitchens || []).map((k) => ({ id: k.id, label: k.label || 'Kitchen' })),
-      bathrooms: (property.bathrooms || []).map((b) => ({ id: b.id, label: b.label || 'Bathroom' })),
+      bathrooms: sharedBathrooms.map((b) => ({ id: b.id, label: b.label || 'Bathroom' })),
     });
   } catch (error) {
     console.error('Quarterly batch error:', error);
@@ -737,6 +785,27 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
     if (statuses.every((s) => s === 'REVIEWED')) groupStatus = 'REVIEWED';
     else if (statuses.some((s) => s === 'SUBMITTED')) groupStatus = 'SUBMITTED';
 
+    // Quick common area check: pull from any inspection holding
+    // `_QuickCommon:*` items. Group by kind (Kitchen / Bathroom).
+    const commonAreaQuick = [];
+    for (const insp of inspections) {
+      for (const it of insp.items) {
+        if (!it.zone?.startsWith('_QuickCommon:')) continue;
+        const kind = it.zone.split(':')[1] || 'Other';
+        commonAreaQuick.push({
+          id: it.id,
+          kind,
+          label: it.text,
+          status: it.status,
+          note: it.note,
+          flagCategory: it.flagCategory,
+          isMaintenance: it.isMaintenance,
+          priority: it.priority,
+          photos: it.photos || [],
+        });
+      }
+    }
+
     return res.json({
       propertyId,
       property: inspections[0].property,
@@ -749,6 +818,7 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       totalMaintenance,
       totalItems: allItemsCount,
       rooms,
+      commonAreaQuick,
     });
   } catch (error) {
     console.error('Quarterly group error:', error);

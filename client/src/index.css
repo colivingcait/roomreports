@@ -4111,6 +4111,96 @@ body { overflow-x: hidden; }
   text-align: center;
 }
 
+/* Quarterly review — common area quick check section at the bottom */
+.qr-common-section {
+  margin: 1.5rem 0 1rem;
+  padding: 1rem 1rem 1.25rem;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+}
+.qr-common-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #4A4543;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.75rem;
+}
+.qr-common-group { margin-top: 0.75rem; }
+.qr-common-subtitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+.qr-common-row {
+  border: 1px solid #E8E4E1;
+  border-radius: 8px;
+  background: #FAF8F5;
+  margin-bottom: 0.5rem;
+  padding: 0.625rem 0.75rem;
+}
+.qr-common-row-Pass { border-color: #6B8F71; background: #EEF5EF; }
+.qr-common-row-Fail { border-color: #C0392B; background: #FCEBEB; }
+.qr-common-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.qr-common-label { font-size: 0.9rem; color: #4A4543; font-weight: 500; }
+.qr-common-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.qr-common-status-Pass { color: #3B6D11; }
+.qr-common-status-Fail { color: #C0392B; }
+.qr-common-status-empty { color: #8A8583; }
+.qr-common-detail {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed rgba(192, 57, 43, 0.3);
+}
+.qr-common-cat {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #8B2218;
+  background: #fff;
+  border: 1px solid #C0392B;
+  border-radius: 999px;
+  margin-bottom: 0.35rem;
+}
+.qr-common-note {
+  font-size: 0.85rem;
+  color: #4A4543;
+  line-height: 1.4;
+  margin: 0.25rem 0;
+}
+.qr-common-photos {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+.qr-common-photo {
+  width: 60px;
+  height: 60px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.qr-common-photo img { width: 100%; height: 100%; object-fit: cover; }
+
 .review-footer .btn-finish {
   width: 100%;
   max-width: 320px;
@@ -5651,16 +5741,6 @@ button.review-photo-thumb {
 .q-misc-add:hover { border-color: #6B8F71; background: #F0F6F1; }
 .q-misc-add:disabled { opacity: 0.5; cursor: wait; }
 
-/* Common area quick check card — now supports drawer */
-.q-common-card { display: block; padding: 0; }
-.q-common-card-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-}
-
 /* Edit inspection button on review page */
 .review-header-right {
   display: flex;
@@ -5834,15 +5914,13 @@ button.review-photo-thumb {
 }
 
 .q-common-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
+  display: block;
   border: 1px solid #E8E4E1;
   border-radius: 10px;
   background: #FAF8F5;
   transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
 }
 
 .q-common-card-Pass {
@@ -5853,6 +5931,14 @@ button.review-photo-thumb {
 .q-common-card-Fail {
   border-color: #C0392B;
   background: #FCEBEB;
+}
+
+.q-common-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
 }
 
 .q-common-card-label {
@@ -5871,6 +5957,17 @@ button.review-photo-thumb {
   width: 52px;
   height: 40px;
   font-size: 1rem;
+}
+
+/* The flag drawer that expands below a failed quick-check card spans the
+   full width of the card and stacks its left (notes/category) and right
+   (photo/maintenance) sections side by side exactly like the room
+   maintenance drawer. */
+.q-common-card > .q-flag-drawer {
+  width: 100%;
+  border-top: 1px solid rgba(192, 57, 43, 0.3);
+  border-radius: 0;
+  background: #FDF6F4;
 }
 
 /* ─── Inspection List Delete ─────────────────────────── */
