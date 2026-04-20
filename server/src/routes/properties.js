@@ -3,6 +3,128 @@ import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signPropertyInvite } from '../lib/propertyInvite.js';
 import { propertyScope } from '../lib/scope.js';
+import { computeHealth } from '../lib/healthGrade.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function gradePropertyIds(orgId, propertyIds) {
+  if (propertyIds.length === 0) return {};
+
+  const now = new Date();
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY_MS);
+
+  // Open maintenance counts per property (excluding RESOLVED)
+  const openMaint = await prisma.maintenanceItem.groupBy({
+    by: ['propertyId'],
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      deletedAt: null,
+      status: { not: 'RESOLVED' },
+    },
+    _count: true,
+  });
+  const openMap = {};
+  for (const row of openMaint) openMap[row.propertyId] = row._count;
+
+  // Resolved maintenance in the last 90 days — for resolution-time average
+  const resolvedRecent = await prisma.maintenanceItem.findMany({
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      status: 'RESOLVED',
+      deletedAt: null,
+      resolvedAt: { gte: ninetyDaysAgo },
+    },
+    select: { propertyId: true, createdAt: true, resolvedAt: true },
+  });
+  const resMap = {};
+  for (const r of resolvedRecent) {
+    const days = (new Date(r.resolvedAt) - new Date(r.createdAt)) / DAY_MS;
+    if (!resMap[r.propertyId]) resMap[r.propertyId] = [];
+    resMap[r.propertyId].push(days);
+  }
+
+  // Recent inspections for fail ratio
+  const recentInspections = await prisma.inspection.findMany({
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      createdAt: { gte: ninetyDaysAgo },
+      status: { in: ['SUBMITTED', 'REVIEWED'] },
+      deletedAt: null,
+    },
+    include: {
+      items: {
+        where: { NOT: { zone: { startsWith: '_' } } },
+        select: { propertyId: true, status: true },
+      },
+    },
+  });
+  const failMap = {}; // { propertyId: { total, failed } }
+  for (const insp of recentInspections) {
+    const bucket = failMap[insp.propertyId] || { total: 0, failed: 0 };
+    for (const it of insp.items) {
+      bucket.total += 1;
+      if (it.status === 'Fail') bucket.failed += 1;
+    }
+    failMap[insp.propertyId] = bucket;
+  }
+
+  // Overdue inspection schedules
+  const schedules = await prisma.inspectionSchedule.findMany({
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      active: true,
+    },
+  });
+  const lastByKey = await prisma.inspection.findMany({
+    where: {
+      organizationId: orgId,
+      propertyId: { in: propertyIds },
+      status: { in: ['SUBMITTED', 'REVIEWED'] },
+      deletedAt: null,
+    },
+    select: { propertyId: true, type: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const lastMap = {};
+  for (const r of lastByKey) {
+    const key = `${r.propertyId}:${r.type}`;
+    if (!lastMap[key]) lastMap[key] = r.createdAt;
+  }
+  const overdueMap = {};
+  for (const s of schedules) {
+    const last = lastMap[`${s.propertyId}:${s.inspectionType}`];
+    const baseline = last || s.startsOn;
+    const nextDue = new Date(new Date(baseline).getTime() + s.frequencyDays * DAY_MS);
+    if (nextDue < now) overdueMap[s.propertyId] = (overdueMap[s.propertyId] || 0) + 1;
+  }
+
+  const out = {};
+  for (const pid of propertyIds) {
+    const resolutionDays = resMap[pid]?.length
+      ? resMap[pid].reduce((a, b) => a + b, 0) / resMap[pid].length
+      : null;
+    const fails = failMap[pid];
+    const failRatio = fails?.total ? fails.failed / fails.total : 0;
+    const { score, grade } = computeHealth({
+      openMaintenanceCount: openMap[pid] || 0,
+      overdueInspectionCount: overdueMap[pid] || 0,
+      failRatio,
+      avgResolutionDays: resolutionDays,
+    });
+    out[pid] = {
+      score,
+      grade,
+      openMaintenanceCount: openMap[pid] || 0,
+      overdueInspectionCount: overdueMap[pid] || 0,
+      avgResolutionDays: resolutionDays,
+    };
+  }
+  return out;
+}
 
 const router = Router();
 
@@ -20,6 +142,7 @@ async function findOrgProperty(propertyId, organizationId) {
 // ─── Properties CRUD ────────────────────────────────────
 
 // GET /api/properties — list all properties for the user's org
+// ?withHealth=true → returns a health grade per property
 router.get('/', async (req, res) => {
   try {
     const scope = await propertyScope(req.user);
@@ -37,7 +160,16 @@ router.get('/', async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    return res.json({ properties });
+    let out = properties;
+    if (req.query.withHealth === 'true' && properties.length > 0) {
+      const grades = await gradePropertyIds(
+        req.user.organizationId,
+        properties.map((p) => p.id),
+      );
+      out = properties.map((p) => ({ ...p, health: grades[p.id] || null }));
+    }
+
+    return res.json({ properties: out });
   } catch (error) {
     console.error('List properties error:', error);
     return res.status(500).json({ error: 'Internal server error' });
