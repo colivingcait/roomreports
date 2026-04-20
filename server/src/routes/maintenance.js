@@ -232,6 +232,67 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ─── POST /api/maintenance — create manually (not from an inspection) ──
+// Body: { propertyId, roomId?, description, flagCategory?, priority?, note?, zone? }
+
+router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const {
+      propertyId, roomId,
+      description, flagCategory, priority, note, zone,
+    } = req.body || {};
+
+    if (!propertyId || !description?.trim()) {
+      return res.status(400).json({ error: 'propertyId and description are required' });
+    }
+    if (priority && !PRIORITIES.includes(priority)) {
+      return res.status(400).json({ error: `priority must be one of ${PRIORITIES.join(', ')}` });
+    }
+
+    const property = await prisma.property.findFirst({
+      where: {
+        id: propertyId,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    // Verify room (if given) belongs to this property
+    if (roomId) {
+      const room = await prisma.room.findFirst({
+        where: { id: roomId, propertyId, deletedAt: null },
+      });
+      if (!room) return res.status(400).json({ error: 'Room not found in this property' });
+    }
+
+    const created = await prisma.maintenanceItem.create({
+      data: {
+        organizationId: req.user.organizationId,
+        propertyId,
+        roomId: roomId || null,
+        description: description.trim(),
+        zone: zone || 'Reported Issue',
+        flagCategory: flagCategory || 'General',
+        priority: priority || null,
+        note: note?.trim() || null,
+        reportedById: req.user.id,
+        reportedByName: req.user.name,
+        reportedByRole: req.user.role,
+        // inspectionItemId / inspectionId stay null — this is a manual ticket
+      },
+      include: MAINTENANCE_INCLUDE,
+    });
+
+    await logEvent(created.id, req.user, 'created', null, 'OPEN', 'Manually created');
+
+    return res.status(201).json({ item: shapeItem(created) });
+  } catch (error) {
+    console.error('Create maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── PUT /api/maintenance/:id — update ──────────────────
 
 router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {

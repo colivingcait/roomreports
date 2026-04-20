@@ -18,6 +18,7 @@ import {
   roleLabel,
 } from '../../../shared/index.js';
 import MaintenanceDetail from '../components/MaintenanceDetail';
+import NewMaintenance from '../components/NewMaintenance';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
@@ -160,6 +161,7 @@ export default function Maintenance() {
 
   // Select mode (for batch PDF)
   const [selectMode, setSelectMode] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   // Drag state
@@ -292,7 +294,7 @@ export default function Maintenance() {
           <h1>Maintenance</h1>
           <p className="page-subtitle">{totalOpen} open item{totalOpen !== 1 ? 's' : ''}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           {selectMode ? (
             <>
               <button className="btn-secondary" onClick={() => { setSelectMode(false); setSelected(new Set()); }}>
@@ -303,7 +305,10 @@ export default function Maintenance() {
               </button>
             </>
           ) : (
-            <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select for work order</button>
+            <>
+              <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select for work order</button>
+              <button className="btn-primary-sm" onClick={() => setShowNew(true)}>+ New Maintenance</button>
+            </>
           )}
         </div>
       </div>
@@ -399,6 +404,16 @@ export default function Maintenance() {
           }}
         />
       )}
+
+      <NewMaintenance
+        open={showNew}
+        onClose={() => setShowNew(false)}
+        onCreated={(created) => {
+          // Drop in at the top of Open column optimistically
+          setItems((prev) => [created, ...prev]);
+          fetchItems();
+        }}
+      />
     </div>
   );
 }
