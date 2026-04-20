@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
       include: {
         property: { select: { id: true, name: true } },
         room: { select: { id: true, label: true } },
-        inspector: { select: { id: true, name: true, role: true } },
+        inspector: { select: { id: true, name: true, role: true, customRole: true } },
         items: {
           where: { flagCategory: { not: null } },
           select: { id: true, isMaintenance: true },

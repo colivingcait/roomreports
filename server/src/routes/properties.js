@@ -120,7 +120,7 @@ router.get('/:id/overview', async (req, res) => {
       },
       include: {
         room: { select: { id: true, label: true } },
-        inspector: { select: { name: true, role: true } },
+        inspector: { select: { name: true, role: true, customRole: true } },
         items: {
           where: { flagCategory: { not: null } },
           select: { id: true },

@@ -262,13 +262,33 @@ router.get('/me', requireAuth, async (req, res) => {
         email: true,
         name: true,
         role: true,
+        customRole: true,
         organizationId: true,
-        organization: { select: { id: true, name: true } },
+        organization: { select: { id: true, name: true, slug: true } },
       },
     });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Lazy backfill: generate an org slug if none exists yet
+    if (user.organization && !user.organization.slug) {
+      const baseSlug = (user.organization.name || 'org')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'org';
+      let slug = baseSlug;
+      let n = 1;
+      while (await prisma.organization.findUnique({ where: { slug } })) {
+        n += 1;
+        slug = `${baseSlug}-${n}`;
+      }
+      await prisma.organization.update({
+        where: { id: user.organization.id },
+        data: { slug },
+      });
+      user.organization.slug = slug;
     }
 
     return res.json({ user });

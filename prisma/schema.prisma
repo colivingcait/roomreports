@@ -13,7 +13,9 @@ enum Role {
   OWNER
   PM
   CLEANER
+  HANDYPERSON
   RESIDENT
+  OTHER
 }
 
 enum InspectionType {
@@ -42,6 +44,7 @@ enum MaintenanceStatus {
 model Organization {
   id        String   @id @default(cuid())
   name      String
+  slug      String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
@@ -64,6 +67,7 @@ model User {
   hashedPassword String?
   googleId       String?  @unique
   role           Role
+  customRole     String?
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -292,6 +296,21 @@ model MaintenanceItem {
   @@index([propertyId])
   @@index([status])
   @@map("maintenance_items")
+}
+
+// ─── Suggestion ─────────────────────────────────────────
+
+model Suggestion {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  userName       String
+  userEmail      String
+  text           String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("suggestions")
 }
 
 // ─── Photo ──────────────────────────────────────────────

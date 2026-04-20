@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { roleLabel } from '../../../shared/index.js';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -81,7 +82,7 @@ export default function QuarterlyReview() {
 
       navigate('/dashboard', {
         state: {
-          notification: `Quarterly inspection approved. ${result.maintenanceItemsCreated} maintenance task${result.maintenanceItemsCreated !== 1 ? 's' : ''} created.`,
+          notification: `Room inspection approved. ${result.maintenanceItemsCreated} maintenance task${result.maintenanceItemsCreated !== 1 ? 's' : ''} created.`,
         },
       });
     } catch (err) {
@@ -91,7 +92,7 @@ export default function QuarterlyReview() {
     }
   };
 
-  if (loading) return <div className="page-loading">Loading quarterly inspection...</div>;
+  if (loading) return <div className="page-loading">Loading room inspection...</div>;
   if (!data) return <div className="page-container"><div className="auth-error">{error || 'Not found'}</div></div>;
 
   const isReviewable = data.status === 'SUBMITTED';
@@ -108,7 +109,7 @@ export default function QuarterlyReview() {
       <div className="page-header">
         <div>
           <button className="btn-text-sm" onClick={() => navigate(-1)}>&larr; Back</button>
-          <h1 style={{ marginTop: '0.25rem' }}>Quarterly Inspection</h1>
+          <h1 style={{ marginTop: '0.25rem' }}>Room Inspection</h1>
           <p className="page-subtitle">
             {data.property.name} &middot;{' '}
             {new Date(data.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -129,7 +130,7 @@ export default function QuarterlyReview() {
       <div className="review-summary">
         <div className="review-summary-row">
           <span className="review-label">Inspector</span>
-          <span className="review-value">{data.inspector?.name} ({data.inspector?.role})</span>
+          <span className="review-value">{data.inspector?.name} ({roleLabel(data.inspector?.role, data.inspector?.customRole)})</span>
         </div>
         <div className="review-summary-row">
           <span className="review-label">Rooms</span>

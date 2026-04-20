@@ -5,7 +5,7 @@ import RoomHistory from '../components/RoomHistory';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Quarterly',
+  COMMON_AREA: 'Common Area', ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
   RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
 };
 const STATUS_COLORS = { DRAFT: '#C4703F', SUBMITTED: '#6B8F71', REVIEWED: '#8A8583' };
@@ -390,11 +390,11 @@ export default function Inspections() {
           if (!deleteTarget) return '';
           if (deleteTarget.status === 'REVIEWED') {
             return deleteTarget.isGroup
-              ? `Delete this completed quarterly inspection (${deleteTarget.roomCount} rooms)? The inspection record and any associated data will be archived. This cannot be undone.`
+              ? `Delete this completed room inspection (${deleteTarget.roomCount} rooms)? The inspection record and any associated data will be archived. This cannot be undone.`
               : 'Delete this completed inspection? The inspection record and any associated data will be archived. This cannot be undone.';
           }
           return deleteTarget.isGroup
-            ? `Delete this quarterly draft (${deleteTarget.roomCount} rooms)? This cannot be undone.`
+            ? `Delete this room inspection draft (${deleteTarget.roomCount} rooms)? This cannot be undone.`
             : 'Delete this draft inspection? This cannot be undone.';
         })()}
         confirmLabel={deleteTarget?.status === 'REVIEWED' ? 'Archive' : 'Delete'}

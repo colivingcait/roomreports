@@ -169,9 +169,16 @@ export default function PublicInspection() {
   const path = window.location.pathname;
   const isMoveIn = path.startsWith('/movein');
 
+  // Org-slug mode: street search → property → rooms. Legacy mode: slug is a property slug directly.
+  const [orgMode, setOrgMode] = useState(false);
   const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Property search (org-slug mode)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
 
   // Landing state
   const [residentName, setResidentName] = useState('');
@@ -202,16 +209,62 @@ export default function PublicInspection() {
     }
   }, [roomId, property]);
 
+  // On mount: try org-slug first, fall back to legacy per-property slug
   useEffect(() => {
-    fetch(`/api/public/property/${slug}`)
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
+    let cancelled = false;
+    (async () => {
+      try {
+        const orgRes = await fetch(`/api/public/org/${slug}`);
+        if (!cancelled && orgRes.ok) {
+          setOrgMode(true);
+          setLoading(false);
+          return;
+        }
+        const propRes = await fetch(`/api/public/property/${slug}`);
+        const data = await propRes.json();
+        if (cancelled) return;
+        if (!propRes.ok) throw new Error(data.error || 'Not found');
         setProperty(data);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [slug]);
+
+  // Debounced property search
+  useEffect(() => {
+    if (!orgMode) return;
+    const q = searchQuery.trim();
+    if (q.length < 2) { setSearchResults([]); return; }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/public/org/${slug}/properties?search=${encodeURIComponent(q)}`);
+        const data = await r.json();
+        if (r.ok) setSearchResults(data.properties || []);
+      } catch { /* ignore */ }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery, orgMode, slug]);
+
+  const selectProperty = async (propertyId) => {
+    try {
+      const r = await fetch(`/api/public/org/${slug}/property/${propertyId}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      setProperty({
+        propertyId: data.propertyId,
+        propertyName: data.address,
+        rooms: data.rooms,
+      });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const handleTakePhoto = async (file) => {
     setUploading(true);
@@ -257,10 +310,13 @@ export default function PublicInspection() {
         });
       }
 
+      const body = orgMode
+        ? { residentName, roomId, propertyId: property.propertyId, items }
+        : { residentName, roomId, items };
       const res = await fetch(`/api/public/${endpoint}/${slug}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ residentName, roomId, items }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -286,7 +342,50 @@ export default function PublicInspection() {
   };
 
   if (loading) return <div className="pub-loading">Loading...</div>;
-  if (error && !property) return <div className="pub-error-page"><div className="auth-error">{error}</div></div>;
+  if (error && !property && !orgMode) return <div className="pub-error-page"><div className="auth-error">{error}</div></div>;
+
+  // ─── PROPERTY SEARCH (org-slug mode, no property selected yet) ──
+  if (orgMode && !property) {
+    return (
+      <div className="pub-landing">
+        <div className="pub-landing-card">
+          <h1 className="pub-logo">RoomReport</h1>
+          <h2 className="pub-landing-title">
+            {isMoveIn ? 'Move-In Room Inspection' : 'Monthly Room Check'}
+          </h2>
+          <p className="pub-landing-desc">Enter your street name to find your place.</p>
+          {error && <div className="auth-error">{error}</div>}
+          <label className="pub-field">
+            Street name
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="e.g. Main St"
+              className="pub-input"
+              autoFocus
+            />
+          </label>
+          <div className="pub-search-results">
+            {searching && <p className="pub-hint">Searching...</p>}
+            {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+              <p className="pub-hint">No matches. Try a different street name.</p>
+            )}
+            {searchResults.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="pub-search-item"
+                onClick={() => selectProperty(p.id)}
+              >
+                {p.address}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ─── CONFIRMATION ──────────────────────────────────────
   if (done) {

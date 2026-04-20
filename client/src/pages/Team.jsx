@@ -1,17 +1,77 @@
 import { useState, useEffect, useCallback } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { ROLE_LABELS, roleLabel } from '../../../shared/index.js';
 
-const ROLE_COLORS = { OWNER: '#4A4543', PM: '#6B8F71', CLEANER: '#C4703F', RESIDENT: '#C9A84C' };
-const INVITABLE_ROLES = ['PM', 'CLEANER', 'RESIDENT'];
+// ─── Resident Link card with Copy Link + QR download ────
+
+function ResidentLinkCard({ title, url }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleDownload = () => {
+    const svg = document.getElementById(`qr-${title.replace(/\s/g, '-')}`);
+    if (!svg) return;
+    const serializer = new XMLSerializer();
+    const data = serializer.serializeToString(svg);
+    const blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+    const dl = document.createElement('a');
+    dl.href = URL.createObjectURL(blob);
+    dl.download = `${title.replace(/\s/g, '-').toLowerCase()}-qr.svg`;
+    document.body.appendChild(dl);
+    dl.click();
+    document.body.removeChild(dl);
+    URL.revokeObjectURL(dl.href);
+  };
+
+  return (
+    <div className="pub-link-card">
+      <h4>{title}</h4>
+      <div className="pub-link-qr">
+        <QRCodeSVG id={`qr-${title.replace(/\s/g, '-')}`} value={url} size={120} level="M" fgColor="#4A4543" />
+      </div>
+      <code className="pub-link-url">{url}</code>
+      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginTop: '0.5rem' }}>
+        <button
+          type="button"
+          className="btn-primary-xs"
+          onClick={handleCopy}
+          style={copied ? { color: '#3B6D11', borderColor: '#6B8F71' } : undefined}
+        >
+          {copied ? 'Copied!' : 'Copy Link'}
+        </button>
+        <button type="button" className="btn-secondary" onClick={handleDownload}>
+          Download QR
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const ROLE_COLORS = {
+  OWNER: '#4A4543',
+  PM: '#6B8F71',
+  CLEANER: '#C4703F',
+  HANDYPERSON: '#5B7A8A',
+  RESIDENT: '#C9A84C',
+  OTHER: '#8A8583',
+};
+const INVITABLE_ROLES = ['PM', 'CLEANER', 'HANDYPERSON', 'RESIDENT', 'OTHER'];
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
 
 export default function Team() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const [users, setUsers] = useState([]);
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +81,8 @@ export default function Team() {
   const [invEmail, setInvEmail] = useState('');
   const [invName, setInvName] = useState('');
   const [invRole, setInvRole] = useState('CLEANER');
-  const [invPropertyId, setInvPropertyId] = useState('');
+  const [invCustomRole, setInvCustomRole] = useState('');
+  const [invPropertyIds, setInvPropertyIds] = useState([]);
   const [inviting, setInviting] = useState(false);
   const [invError, setInvError] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState(null);
@@ -30,6 +91,7 @@ export default function Team() {
   // Edit modal
   const [editUser, setEditUser] = useState(null);
   const [editRole, setEditRole] = useState('');
+  const [editCustomRole, setEditCustomRole] = useState('');
   const [editPropertyIds, setEditPropertyIds] = useState([]);
   const [saving, setSaving] = useState(false);
 
@@ -67,7 +129,8 @@ export default function Team() {
     setInvEmail('');
     setInvName('');
     setInvRole('CLEANER');
-    setInvPropertyId('');
+    setInvCustomRole('');
+    setInvPropertyIds([]);
     setInvError('');
     setCreatedCredentials(null);
     setCopied('');
@@ -84,7 +147,8 @@ export default function Team() {
           email: invEmail,
           name: invName || undefined,
           role: invRole,
-          propertyId: invPropertyId || undefined,
+          customRole: invRole === 'OTHER' ? invCustomRole.trim() : undefined,
+          propertyIds: invPropertyIds,
         }),
       });
       setCreatedCredentials({ email: data.user.email, password: data.password });
@@ -94,6 +158,12 @@ export default function Team() {
     } finally {
       setInviting(false);
     }
+  };
+
+  const toggleInvProperty = (pid) => {
+    setInvPropertyIds((prev) =>
+      prev.includes(pid) ? prev.filter((id) => id !== pid) : [...prev, pid],
+    );
   };
 
   const copyToClipboard = (text, label) => {
@@ -106,6 +176,7 @@ export default function Team() {
   const openEdit = (u) => {
     setEditUser(u);
     setEditRole(u.role);
+    setEditCustomRole(u.customRole || '');
     setEditPropertyIds(u.propertyAssignments?.map((a) => a.property.id) || []);
   };
 
@@ -114,7 +185,11 @@ export default function Team() {
     try {
       await api(`/api/team/${editUser.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ role: editRole, propertyIds: editPropertyIds }),
+        body: JSON.stringify({
+          role: editRole,
+          customRole: editRole === 'OTHER' ? editCustomRole.trim() : undefined,
+          propertyIds: editPropertyIds,
+        }),
       });
       setEditUser(null);
       fetchData();
@@ -248,7 +323,7 @@ export default function Team() {
                 {u.id === user?.id && <span className="team-you">(you)</span>}
               </div>
               <div className="team-card-email">{u.email}</div>
-              {u.role === 'CLEANER' && u.propertyAssignments?.length > 0 && (
+              {u.propertyAssignments?.length > 0 && (
                 <div className="team-props">
                   {u.propertyAssignments.map((a) => (
                     <span key={a.property.id} className="team-prop-tag">{a.property.name}</span>
@@ -257,8 +332,8 @@ export default function Team() {
               )}
             </div>
             <div className="team-card-right">
-              <span className="team-role-badge" style={{ color: ROLE_COLORS[u.role], borderColor: ROLE_COLORS[u.role] }}>
-                {u.role}
+              <span className="team-role-badge" style={{ color: ROLE_COLORS[u.role] || '#8A8583', borderColor: ROLE_COLORS[u.role] || '#8A8583' }}>
+                {roleLabel(u.role, u.customRole)}
               </span>
               {isOwner && u.id !== user?.id && (
                 <div className="team-actions">
@@ -285,9 +360,33 @@ export default function Team() {
                   <div className="team-card-name">{u.name}</div>
                   <div className="team-card-email">{u.email}</div>
                 </div>
-                <span className="team-role-badge" style={{ color: '#B5B1AF', borderColor: '#D4D0CE' }}>{u.role}</span>
+                <span className="team-role-badge" style={{ color: '#B5B1AF', borderColor: '#D4D0CE' }}>{roleLabel(u.role, u.customRole)}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Resident Links — org-wide */}
+      {organization?.slug && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <h3 className="team-section-title">Resident Links</h3>
+          <p className="suggestion-help">
+            Share these links or print the QR codes. Residents enter their street name to find their place.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <ResidentLinkCard
+              title="Move-In Inspection"
+              url={`https://roomreport.co/movein/${organization.slug}`}
+            />
+            <ResidentLinkCard
+              title="Monthly Self-Check"
+              url={`https://roomreport.co/selfcheck/${organization.slug}`}
+            />
+            <ResidentLinkCard
+              title="Report Maintenance"
+              url={`https://roomreport.co/report/${organization.slug}`}
+            />
           </div>
         </div>
       )}
@@ -323,7 +422,7 @@ export default function Team() {
           {(isOwner || user?.role === 'PM') && (
             <div className="suggestion-admin">
               <button className="btn-text-sm" onClick={loadSuggestions}>
-                View submitted suggestions &rarr;
+                See past requests &rarr;
               </button>
             </div>
           )}
@@ -374,19 +473,43 @@ export default function Team() {
             <label>
               Role
               <select className="form-select" value={invRole} onChange={(e) => setInvRole(e.target.value)}>
-                {INVITABLE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                {INVITABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
             </label>
-            {(invRole === 'CLEANER' || invRole === 'RESIDENT') && (
+            {invRole === 'OTHER' && (
               <label>
-                Property {invRole === 'CLEANER' ? '(assignment)' : '(residence)'}
-                <select className="form-select" value={invPropertyId} onChange={(e) => setInvPropertyId(e.target.value)}>
-                  <option value="">Select property...</option>
-                  {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                Role name
+                <input
+                  type="text"
+                  value={invCustomRole}
+                  onChange={(e) => setInvCustomRole(e.target.value)}
+                  placeholder="e.g. Regional Manager"
+                  required
+                />
               </label>
             )}
-            <button type="submit" className="btn-primary" disabled={inviting}>
+            {properties.length > 0 && (
+              <label>
+                Property Assignments <span className="form-optional">(select one or more)</span>
+                <div className="team-prop-checkboxes">
+                  {properties.map((p) => (
+                    <label key={p.id} className="team-prop-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={invPropertyIds.includes(p.id)}
+                        onChange={() => toggleInvProperty(p.id)}
+                      />
+                      {p.name}
+                    </label>
+                  ))}
+                </div>
+              </label>
+            )}
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={inviting || (invRole === 'OTHER' && !invCustomRole.trim())}
+            >
               {inviting ? 'Creating...' : 'Create Account'}
             </button>
           </form>
@@ -420,11 +543,20 @@ export default function Team() {
           <label>
             Role
             <select className="form-select" value={editRole} onChange={(e) => setEditRole(e.target.value)}>
-              <option value="PM">PM</option>
-              <option value="CLEANER">Cleaner</option>
-              <option value="RESIDENT">Resident</option>
+              {INVITABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
           </label>
+          {editRole === 'OTHER' && (
+            <label>
+              Role name
+              <input
+                type="text"
+                value={editCustomRole}
+                onChange={(e) => setEditCustomRole(e.target.value)}
+                placeholder="e.g. Regional Manager"
+              />
+            </label>
+          )}
           <label>
             Property Assignments
             <div className="team-prop-checkboxes">
@@ -440,7 +572,11 @@ export default function Team() {
               ))}
             </div>
           </label>
-          <button className="btn-primary" onClick={handleSaveEdit} disabled={saving}>
+          <button
+            className="btn-primary"
+            onClick={handleSaveEdit}
+            disabled={saving || (editRole === 'OTHER' && !editCustomRole.trim())}
+          >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>

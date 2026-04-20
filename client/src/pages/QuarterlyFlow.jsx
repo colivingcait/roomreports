@@ -85,7 +85,7 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
         </div>
         <div className="q-room-header-info">
           <h1>{roomLabel}</h1>
-          <span className="q-room-header-meta">{propertyName} &middot; Quarterly &middot; {done}/{total}</span>
+          <span className="q-room-header-meta">{propertyName} &middot; Room Inspection &middot; {done}/{total}</span>
         </div>
         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${progress}%` }} /></div>
       </div>
@@ -207,7 +207,7 @@ export default function QuarterlyFlow() {
         const body = partial && isIncomplete ? { partial: true, partialReason } : {};
         await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
       }
-      navigate('/dashboard', { state: { notification: `Quarterly inspection submitted for ${data.propertyName}` } });
+      navigate('/dashboard', { state: { notification: `Room inspection submitted for ${data.propertyName}` } });
     } catch (err) {
       setError(err.message);
       setShowPartialModal(false);
@@ -216,7 +216,7 @@ export default function QuarterlyFlow() {
     }
   };
 
-  if (loading) return <div className="page-loading">Loading quarterly inspection...</div>;
+  if (loading) return <div className="page-loading">Loading room inspection...</div>;
   if (error && !data) return <div className="page-container"><div className="auth-error">{error}</div></div>;
   if (!data) return null;
 
@@ -248,7 +248,7 @@ export default function QuarterlyFlow() {
     <div className="q-flow-page">
       <div className="q-flow-header">
         <button className="btn-text" onClick={() => navigate('/dashboard')}>Save &amp; exit</button>
-        <h1>Quarterly Inspection</h1>
+        <h1>Room Inspection</h1>
         <p className="q-flow-subtitle">{data.propertyName} &middot; {completedRooms}/{totalRooms} rooms completed</p>
         <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${totalRooms > 0 ? (completedRooms / totalRooms) * 100 : 0}%` }} /></div>
       </div>
