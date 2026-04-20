@@ -5244,6 +5244,488 @@ button.review-photo-thumb {
 .q-done-btn:hover { background: #5A7D60; }
 .q-done-btn:disabled { opacity: 0.5; cursor: not-allowed; color: #fff; background: #8A8583; }
 
+/* ─── Quarterly Room Grid (square cards) ─────────────── */
+
+.q-flow-counter {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4A4543;
+  margin-top: 0.25rem;
+}
+
+.q-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .q-grid { grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+}
+
+.q-grid-card {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1.5px solid #E8E4E1;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.12s, box-shadow 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.q-grid-card:active {
+  transform: scale(0.97);
+}
+
+.q-grid-card-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4A4543;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.q-grid-card-state {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.q-grid-card-not-started {
+  background: #fff;
+  border-color: #E8E4E1;
+}
+.q-grid-card-not-started .q-grid-card-state { color: #8A8583; }
+
+.q-grid-card-in-progress {
+  background: #FAEEDA;
+  border-color: #BA7517;
+}
+.q-grid-card-in-progress .q-grid-card-label { color: #3A2F1D; }
+.q-grid-card-in-progress .q-grid-card-state { color: #854F0B; }
+
+.q-grid-card-complete {
+  background: #E8F0E9;
+  border-color: #6B8F71;
+}
+.q-grid-card-complete .q-grid-card-label { color: #1F3B26; }
+.q-grid-card-complete .q-grid-card-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #6B8F71;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* ─── Quarterly Progress Stepper ─────────────────────── */
+
+.q-stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.5rem 0 0.75rem;
+  position: relative;
+}
+
+.q-stepper-step {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  z-index: 1;
+}
+
+.q-stepper-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #F0EDEB;
+  color: #8A8583;
+  border: 2px solid #E8E4E1;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.q-stepper-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.q-stepper-line {
+  position: absolute;
+  top: 13px;
+  left: 50%;
+  right: -50%;
+  height: 2px;
+  background: #E8E4E1;
+  z-index: -1;
+}
+
+.q-stepper-active .q-stepper-dot {
+  background: #6B8F71;
+  border-color: #6B8F71;
+  color: #fff;
+}
+.q-stepper-active .q-stepper-label {
+  color: #4A4543;
+}
+
+.q-stepper-done .q-stepper-dot {
+  background: #fff;
+  border-color: #6B8F71;
+  color: #6B8F71;
+}
+.q-stepper-done .q-stepper-line {
+  background: #6B8F71;
+}
+.q-stepper-done .q-stepper-label {
+  color: #6B8F71;
+}
+
+/* ─── Quarterly Screen (per-screen body & footer) ────── */
+
+.q-screen-body {
+  padding: 1rem 1rem 100px;
+}
+
+.q-screen-intro {
+  margin-bottom: 1rem;
+}
+
+.q-screen-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4A4543;
+}
+
+.q-screen-sub {
+  font-size: 0.85rem;
+  color: #8A8583;
+  margin-top: 0.15rem;
+}
+
+.q-screen-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6B8F71;
+  margin-top: 0.35rem;
+}
+
+.q-screen-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid #E8E4E1;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+  z-index: 100;
+}
+
+.q-next-btn {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: #6B8F71;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+.q-next-btn:hover { background: #5A7D60; }
+.q-next-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.q-screen-footer-split {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.q-screen-count-fail {
+  color: #C0392B;
+}
+
+/* ─── Compliance Pills ───────────────────────────────── */
+
+.q-pill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.q-pill-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+
+.q-pill-wrap-selected {
+  box-shadow: 0 0 0 1.5px #C0392B;
+}
+
+.q-pill {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4A4543;
+  background: #F5F2EF;
+  border: 1.5px solid #E8E4E1;
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  min-height: 48px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.q-pill:hover { border-color: #8A8583; }
+
+.q-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #E8E4E1;
+  color: #8A8583;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.q-pill-label {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.q-pill-selected {
+  background: #FCEBEB;
+  border-color: #C0392B;
+  color: #8B2218;
+  border-radius: 12px 12px 0 0;
+}
+
+.q-pill-selected .q-pill-icon {
+  background: #C0392B;
+  color: #fff;
+}
+
+.q-pill-detail {
+  padding: 0.75rem 1rem 0.9rem;
+  background: #FDF6F4;
+  border: 1.5px solid #C0392B;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  animation: slideDown 220ms ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.q-pill-detail-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.q-pill-detail-actions .q-flag-box {
+  flex: 0 0 110px;
+}
+
+.q-allclear-btn {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #3B6D11;
+  background: #fff;
+  border: 1.5px solid #6B8F71;
+  border-radius: 10px;
+  cursor: pointer;
+  min-height: 48px;
+  font-family: inherit;
+}
+
+.q-allclear-btn:hover { background: #E8F0E9; }
+
+/* ─── Misc screen ────────────────────────────────────── */
+
+.q-misc-card {
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.q-misc-note {
+  min-height: 120px;
+}
+
+.q-misc-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.q-misc-actions .q-flag-box {
+  flex: 1;
+  max-width: 160px;
+}
+
+.q-skip-btn {
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #8A8583;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.q-skip-btn:hover { color: #4A4543; }
+
+.q-done-room-btn {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: #6B8F71;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  min-height: 48px;
+  font-family: inherit;
+}
+
+.q-done-room-btn:hover { background: #5A7D60; }
+
+/* ─── Common Area Quick Check ────────────────────────── */
+
+.q-common-section {
+  margin-top: 1.5rem;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.q-common-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  background: #fff;
+  border: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4A4543;
+  cursor: pointer;
+  text-align: left;
+}
+
+.q-common-toggle:hover { background: #FAF8F5; }
+
+.q-common-toggle-sub {
+  font-weight: 400;
+  color: #8A8583;
+  font-size: 0.8rem;
+  margin-left: 0.25rem;
+}
+
+.q-common-toggle-chev {
+  display: inline-block;
+  color: #8A8583;
+  font-size: 0.75rem;
+  transition: transform 0.15s;
+}
+
+.q-common-toggle-chev.open { transform: rotate(90deg); }
+
+.q-common-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem 0.875rem;
+  border-top: 1px solid #F0EDEB;
+}
+
+@media (min-width: 600px) {
+  .q-common-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.q-common-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+  background: #FAF8F5;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.q-common-card-Pass {
+  border-color: #6B8F71;
+  background: #EEF5EF;
+}
+
+.q-common-card-Fail {
+  border-color: #C0392B;
+  background: #FCEBEB;
+}
+
+.q-common-card-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4A4543;
+  flex: 1;
+}
+
+.q-common-card-buttons {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.q-common-card .q-btn {
+  width: 52px;
+  height: 40px;
+  font-size: 1rem;
+}
+
 /* ─── Inspection List Delete ─────────────────────────── */
 
 .insp-delete-btn {

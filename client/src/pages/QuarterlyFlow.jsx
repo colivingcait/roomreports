@@ -2,11 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { ChecklistItem } from '../components/InspectionItems';
-import Modal from '../components/Modal';
+import { queuePhoto } from '../lib/offlineStore';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
+
+const MAINTENANCE_ZONES = ['Room Condition', 'Safety', 'Features'];
+const COMPLIANCE_ZONE = 'Compliance';
+const MISC_ZONE = 'Misc';
 
 function sortRooms(inspections) {
   return [...inspections].sort((a, b) => {
@@ -19,11 +23,332 @@ function sortRooms(inspections) {
   });
 }
 
-// ─── Room Checklist ─────────────────────────────────────
+function visibleItems(items) {
+  return items.filter((i) => !i.zone?.startsWith('_'));
+}
 
-function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, onItemsSynced }) {
+function roomState(items) {
+  const vis = visibleItems(items);
+  const total = vis.length;
+  const done = vis.filter((i) => i.status).length;
+  if (total === 0) return 'not-started';
+  if (done === 0) return 'not-started';
+  if (done < total) return 'in-progress';
+  return 'complete';
+}
+
+// ─── Shared photo uploader ─────────────────────────────
+
+function usePhotoUpload(inspectionId, item, onItemUpdate) {
+  const fileRef = useRef();
+  const [uploading, setUploading] = useState(false);
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      if (!navigator.onLine) {
+        await queuePhoto(inspectionId, item.id, file, file.name);
+        onItemUpdate({ ...item, photos: [...(item.photos || []), { id: `local-${Date.now()}`, url: URL.createObjectURL(file), local: true }] });
+      } else {
+        const form = new FormData();
+        form.append('photo', file);
+        const res = await fetch(`/api/inspections/${inspectionId}/items/${item.id}/photos`, { method: 'POST', credentials: 'include', body: form });
+        if (res.ok) {
+          const d = await res.json();
+          onItemUpdate({ ...item, photos: [...(item.photos || []), d.photo] });
+        }
+      }
+    } catch { /* ignore */ }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  return { fileRef, uploading, handlePhoto };
+}
+
+// ─── Progress Stepper ──────────────────────────────────
+
+function ProgressStepper({ active }) {
+  const steps = [
+    { key: 'maintenance', label: 'Maintenance' },
+    { key: 'compliance', label: 'Compliance' },
+    { key: 'misc', label: 'Misc' },
+  ];
+  const activeIdx = steps.findIndex((s) => s.key === active);
+
+  return (
+    <div className="q-stepper">
+      {steps.map((s, i) => {
+        const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'upcoming';
+        return (
+          <div key={s.key} className={`q-stepper-step q-stepper-${state}`}>
+            <div className="q-stepper-dot">{i < activeIdx ? '\u2713' : i + 1}</div>
+            <div className="q-stepper-label">{s.label}</div>
+            {i < steps.length - 1 && <div className="q-stepper-line" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Screen 1: Maintenance ─────────────────────────────
+
+function MaintenanceScreen({ items, inspectionId, saveItem, onItemUpdate, onNext }) {
+  const zoneItems = visibleItems(items).filter((i) => MAINTENANCE_ZONES.includes(i.zone));
+  const zones = [];
+  const zoneMap = {};
+  for (const it of zoneItems) {
+    if (!zoneMap[it.zone]) { zoneMap[it.zone] = []; zones.push(it.zone); }
+    zoneMap[it.zone].push(it);
+  }
+
+  const done = zoneItems.filter((i) => i.status).length;
+  const total = zoneItems.length;
+
+  return (
+    <>
+      <div className="q-screen-body">
+        <div className="q-screen-intro">
+          <h2 className="q-screen-title">Maintenance Items</h2>
+          <p className="q-screen-sub">Mark each item pass or fail. Flag anything needing attention.</p>
+          {total > 0 && <div className="q-screen-count">{done} of {total} checked</div>}
+        </div>
+        {zones.map((zone) => (
+          <div key={zone} className="q-zone">
+            <h3 className="q-zone-title">{zone}</h3>
+            {zoneMap[zone].map((item) => (
+              <ChecklistItem
+                key={item.id}
+                item={item}
+                inspectionId={inspectionId}
+                saveItem={saveItem}
+                onItemUpdate={onItemUpdate}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="q-screen-footer">
+        <button className="q-next-btn" onClick={onNext}>
+          Next: Compliance &rarr;
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Compliance Pill (selected → detail card) ──────────
+
+function CompliancePill({ item, inspectionId, onUpdate }) {
+  const { fileRef, uploading, handlePhoto } = usePhotoUpload(inspectionId, item, onUpdate);
+  const isViolation = item.status === 'Fail';
+
+  const toggle = () => {
+    if (isViolation) {
+      onUpdate({ ...item, status: '', note: null, isMaintenance: false });
+    } else {
+      onUpdate({ ...item, status: 'Fail' });
+    }
+  };
+
+  return (
+    <div className={`q-pill-wrap ${isViolation ? 'q-pill-wrap-selected' : ''}`}>
+      <button className={`q-pill ${isViolation ? 'q-pill-selected' : ''}`} onClick={toggle}>
+        <span className="q-pill-icon">{isViolation ? '\u2715' : '\u00b7'}</span>
+        <span className="q-pill-label">{item.text}</span>
+      </button>
+      {isViolation && (
+        <div className="q-pill-detail">
+          <label className="q-flag-label">
+            What&apos;s the issue?
+            <textarea
+              className="q-flag-note"
+              value={item.note || ''}
+              onChange={(e) => onUpdate({ ...item, note: e.target.value || null })}
+              placeholder="Describe the issue..."
+              rows={2}
+            />
+          </label>
+          <div className="q-pill-detail-actions">
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
+            <button className="q-flag-box" onClick={() => fileRef.current.click()} disabled={uploading}>
+              <span className="q-flag-box-icon">{uploading ? '...' : '\uD83D\uDCF7'}</span>
+              <span>Photo</span>
+              {(item.photos?.length > 0) && <span className="q-flag-badge">{item.photos.length}</span>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Screen 2: Lease Compliance ────────────────────────
+
+function ComplianceScreen({ items, inspectionId, saveItem, onItemUpdate, onNext }) {
+  const complianceItems = visibleItems(items).filter((i) => i.zone === COMPLIANCE_ZONE);
+  const anySelected = complianceItems.some((i) => i.status === 'Fail');
+  const violationCount = complianceItems.filter((i) => i.status === 'Fail').length;
+
+  const handlePillUpdate = (updated) => {
+    onItemUpdate(updated);
+    saveItem(updated.id, {
+      status: updated.status || '',
+      note: updated.note,
+      isMaintenance: updated.isMaintenance,
+    });
+  };
+
+  const markAllClear = () => {
+    complianceItems.forEach((it) => {
+      const cleared = { ...it, status: 'Pass', note: null, isMaintenance: false };
+      onItemUpdate(cleared);
+      saveItem(it.id, { status: 'Pass', note: null, isMaintenance: false });
+    });
+    onNext();
+  };
+
+  return (
+    <>
+      <div className="q-screen-body">
+        <div className="q-screen-intro">
+          <h2 className="q-screen-title">Lease Compliance</h2>
+          <p className="q-screen-sub">Tap any violations you observe. Add details when selected.</p>
+          {violationCount > 0 && (
+            <div className="q-screen-count q-screen-count-fail">
+              {violationCount} violation{violationCount !== 1 ? 's' : ''} noted
+            </div>
+          )}
+        </div>
+
+        <div className="q-pill-list">
+          {complianceItems.map((item) => (
+            <CompliancePill
+              key={item.id}
+              item={item}
+              inspectionId={inspectionId}
+              onUpdate={handlePillUpdate}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="q-screen-footer q-screen-footer-split">
+        {!anySelected && (
+          <button className="q-allclear-btn" onClick={markAllClear}>
+            All clear &#10003;
+          </button>
+        )}
+        <button className="q-next-btn" onClick={onNext}>
+          Next: Misc &rarr;
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Screen 3: Misc ────────────────────────────────────
+
+function MiscScreen({ items, inspectionId, saveItem, onItemUpdate, roomLabel, onDone }) {
+  const miscItem = visibleItems(items).find((i) => i.zone === MISC_ZONE);
+  const { fileRef, uploading, handlePhoto } = usePhotoUpload(inspectionId, miscItem || {}, onItemUpdate);
+
+  if (!miscItem) {
+    return (
+      <div className="q-screen-body">
+        <div className="q-screen-intro">
+          <h2 className="q-screen-title">Misc</h2>
+          <p className="q-screen-sub">No misc item on this inspection.</p>
+        </div>
+        <div className="q-screen-footer">
+          <button className="q-next-btn" onClick={onDone}>Done &rarr;</button>
+        </div>
+      </div>
+    );
+  }
+
+  const update = (changes) => {
+    const updated = { ...miscItem, ...changes };
+    onItemUpdate(updated);
+    const { photos, ...saveable } = changes;
+    if (Object.keys(saveable).length) saveItem(miscItem.id, saveable);
+  };
+
+  const handleDone = () => {
+    // If anything was entered, mark as Fail with the notes; otherwise leave as is.
+    const hasContent = miscItem.note || miscItem.isMaintenance || (miscItem.photos?.length > 0);
+    if (hasContent && miscItem.status !== 'Fail') {
+      update({ status: 'Fail' });
+    } else if (!miscItem.status) {
+      update({ status: 'Pass' });
+    }
+    onDone();
+  };
+
+  const handleSkip = () => {
+    update({ status: 'Pass', note: null, isMaintenance: false });
+    onDone();
+  };
+
+  return (
+    <>
+      <div className="q-screen-body">
+        <div className="q-screen-intro">
+          <h2 className="q-screen-title">Misc</h2>
+          <p className="q-screen-sub">Anything else worth reporting? Notes, a photo, or flag for maintenance.</p>
+        </div>
+
+        <div className="q-misc-card">
+          <label className="q-flag-label">
+            Notes
+            <textarea
+              className="q-flag-note q-misc-note"
+              value={miscItem.note || ''}
+              onChange={(e) => update({ note: e.target.value || null })}
+              placeholder="Anything not covered above..."
+              rows={4}
+            />
+          </label>
+
+          <div className="q-misc-actions">
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display: 'none' }} />
+            <button className="q-flag-box" onClick={() => fileRef.current.click()} disabled={uploading}>
+              <span className="q-flag-box-icon">{uploading ? '...' : '\uD83D\uDCF7'}</span>
+              <span>Photo</span>
+              {(miscItem.photos?.length > 0) && <span className="q-flag-badge">{miscItem.photos.length}</span>}
+            </button>
+            <button
+              className={`q-flag-box q-flag-maint ${miscItem.isMaintenance ? 'active' : ''}`}
+              onClick={() => update({ isMaintenance: !miscItem.isMaintenance })}
+            >
+              <span className="q-flag-box-icon">{'\uD83D\uDD27'}</span>
+              <span>Maintenance</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="q-screen-footer q-screen-footer-split">
+        <button className="q-skip-btn" onClick={handleSkip}>
+          Skip &mdash; nothing to report
+        </button>
+        <button className="q-done-room-btn" onClick={handleDone}>
+          Done with {roomLabel} &rarr;
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Room Inspection (multi-screen) ────────────────────
+
+function RoomInspection({ inspectionId, roomLabel, propertyName, onBack, onItemsSynced, onRoomDone }) {
   const [items, setItems] = useState([]);
   const [loadingRoom, setLoadingRoom] = useState(true);
+  const [screen, setScreen] = useState('maintenance');
   const { saveItem, saveStatus } = useAutoSave(inspectionId);
   const itemsRef = useRef([]);
   const onItemsSyncedRef = useRef(onItemsSynced);
@@ -44,7 +369,6 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
 
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  // Browser back / component unmount: sync latest items to parent so room grid reflects progress.
   useEffect(() => {
     return () => { onItemsSyncedRef.current(itemsRef.current); };
   }, []);
@@ -54,21 +378,7 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
   }, []);
 
   const handleBack = () => { onItemsSynced(items); onBack(); };
-  const handleDone = () => { onItemsSynced(items); onDone(items); };
-
-  const visibleItems = items.filter((i) => !i.zone.startsWith('_'));
-  const zones = [];
-  const zoneMap = {};
-  for (const item of visibleItems) {
-    if (!zoneMap[item.zone]) { zoneMap[item.zone] = []; zones.push(item.zone); }
-    zoneMap[item.zone].push(item);
-  }
-
-  const total = visibleItems.length;
-  const done = visibleItems.filter((i) => i.status).length;
-  const flags = visibleItems.filter((i) => i.status === 'Fail').length;
-  const progress = total > 0 ? (done / total) * 100 : 0;
-  const allDone = done === total;
+  const handleDone = () => { onItemsSynced(itemsRef.current); onRoomDone(); };
 
   if (loadingRoom) return <div className="page-loading">Loading room...</div>;
 
@@ -76,7 +386,7 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
     <div className="q-room-page">
       <div className="q-room-header">
         <div className="q-room-header-top">
-          <button className="btn-text" onClick={handleBack}>&larr; Back to rooms</button>
+          <button className="btn-text" onClick={handleBack}>&larr; Rooms</button>
           <div className="save-indicator">
             {saveStatus === 'saving' && <span className="save-saving">Saving...</span>}
             {saveStatus === 'saved' && <span className="save-saved">Saved &#10003;</span>}
@@ -85,45 +395,114 @@ function RoomChecklist({ inspectionId, roomLabel, onBack, onDone, propertyName, 
         </div>
         <div className="q-room-header-info">
           <h1>{roomLabel}</h1>
-          <span className="q-room-header-meta">{propertyName} &middot; Room Inspection &middot; {done}/{total}</span>
+          <span className="q-room-header-meta">{propertyName}</span>
         </div>
-        <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${progress}%` }} /></div>
+        <ProgressStepper active={screen} />
       </div>
 
-      <div className="q-room-body">
-        {zones.map((zone) => (
-          <div key={zone} className="q-zone">
-            <h3 className="q-zone-title">{zone}</h3>
-            {zoneMap[zone].map((item) => (
-              <ChecklistItem key={item.id} item={item} inspectionId={inspectionId} saveItem={saveItem} onItemUpdate={handleItemUpdate} />
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div className="q-room-footer">
-        <button className="btn-text" onClick={handleBack}>&larr; Back to rooms</button>
-        <button className="q-done-btn" onClick={handleDone} disabled={!allDone}>
-          {allDone ? `Done with room${flags > 0 ? ` (${flags} flag${flags !== 1 ? 's' : ''})` : ''}` : `${total - done} items remaining`}
-        </button>
-      </div>
+      {screen === 'maintenance' && (
+        <MaintenanceScreen
+          items={items}
+          inspectionId={inspectionId}
+          saveItem={saveItem}
+          onItemUpdate={handleItemUpdate}
+          onNext={() => setScreen('compliance')}
+        />
+      )}
+      {screen === 'compliance' && (
+        <ComplianceScreen
+          items={items}
+          inspectionId={inspectionId}
+          saveItem={saveItem}
+          onItemUpdate={handleItemUpdate}
+          onNext={() => setScreen('misc')}
+        />
+      )}
+      {screen === 'misc' && (
+        <MiscScreen
+          items={items}
+          inspectionId={inspectionId}
+          saveItem={saveItem}
+          onItemUpdate={handleItemUpdate}
+          roomLabel={roomLabel}
+          onDone={handleDone}
+        />
+      )}
     </div>
   );
 }
 
-// ─── Main Quarterly Flow ────────────────────────────────
+// ─── Room Selector Grid ────────────────────────────────
+
+function RoomCard({ inspection, onClick }) {
+  const state = roomState(inspection.items);
+  const vis = visibleItems(inspection.items);
+  const done = vis.filter((i) => i.status).length;
+  const total = vis.length;
+
+  return (
+    <button className={`q-grid-card q-grid-card-${state}`} onClick={onClick}>
+      <div className="q-grid-card-label">{inspection.roomLabel}</div>
+      <div className="q-grid-card-state">
+        {state === 'complete' && <span className="q-grid-card-check">&#10003;</span>}
+        {state === 'in-progress' && <span className="q-grid-card-progress">{done}/{total}</span>}
+        {state === 'not-started' && <span className="q-grid-card-start">Start</span>}
+      </div>
+    </button>
+  );
+}
+
+// ─── Common Area Quick Check ───────────────────────────
+
+function CommonAreaQuickCheck({ areas, statuses, onChange }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!areas.length) return null;
+
+  return (
+    <div className="q-common-section">
+      <button className="q-common-toggle" onClick={() => setExpanded(!expanded)}>
+        <span className="q-common-toggle-label">
+          Common Area Quick Check <span className="q-common-toggle-sub">(optional)</span>
+        </span>
+        <span className={`q-common-toggle-chev ${expanded ? 'open' : ''}`}>&#9656;</span>
+      </button>
+      {expanded && (
+        <div className="q-common-grid">
+          {areas.map((a) => {
+            const status = statuses[a.id];
+            return (
+              <div key={a.id} className={`q-common-card q-common-card-${status || 'none'}`}>
+                <div className="q-common-card-label">{a.label}</div>
+                <div className="q-common-card-buttons">
+                  <button
+                    className={`q-btn q-btn-pass ${status === 'Pass' ? 'active' : ''}`}
+                    onClick={() => onChange(a.id, status === 'Pass' ? null : 'Pass')}
+                  >&#10003;</button>
+                  <button
+                    className={`q-btn q-btn-fail ${status === 'Fail' ? 'active' : ''}`}
+                    onClick={() => onChange(a.id, status === 'Fail' ? null : 'Fail')}
+                  >&#10005;</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ─────────────────────────────────────────
 
 export default function QuarterlyFlow() {
   const navigate = useNavigate();
   const { propertyId, roomId: activeRoomId } = useParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [roomStatuses, setRoomStatuses] = useState({});
-  const [nextRoomId, setNextRoomId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [showPartialModal, setShowPartialModal] = useState(false);
-  const [partialReason, setPartialReason] = useState('');
+  const [commonStatuses, setCommonStatuses] = useState({});
 
   const fetchBatch = useCallback(async () => {
     try {
@@ -133,17 +512,6 @@ export default function QuarterlyFlow() {
       });
       d.inspections = sortRooms(d.inspections);
       setData(d);
-      const statuses = {};
-      for (const insp of d.inspections) {
-        const visible = insp.items.filter((i) => !i.zone?.startsWith('_'));
-        statuses[insp.roomId] = {
-          total: visible.length,
-          done: visible.filter((i) => i.status).length,
-          flags: visible.filter((i) => i.status === 'Fail').length,
-          inspectionId: insp.id,
-        };
-      }
-      setRoomStatuses(statuses);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -156,61 +524,23 @@ export default function QuarterlyFlow() {
   const handleItemsSynced = (roomId, freshItems) => {
     setData((prev) => {
       if (!prev) return prev;
-      return { ...prev, inspections: prev.inspections.map((insp) => insp.roomId === roomId ? { ...insp, items: freshItems } : insp) };
+      return { ...prev, inspections: prev.inspections.map((insp) =>
+        insp.roomId === roomId ? { ...insp, items: freshItems } : insp
+      ) };
     });
-    const visible = freshItems.filter((i) => !i.zone?.startsWith('_'));
-    setRoomStatuses((prev) => ({
-      ...prev,
-      [roomId]: { ...prev[roomId], total: visible.length, done: visible.filter((i) => i.status).length, flags: visible.filter((i) => i.status === 'Fail').length },
-    }));
   };
 
-  const handleRoomDone = (doneRoomId, items) => {
-    handleItemsSynced(doneRoomId, items);
-    // Find next uncompleted room
-    const visible = items.filter((i) => !i.zone?.startsWith('_'));
-    const updatedStatuses = { ...roomStatuses, [doneRoomId]: { ...roomStatuses[doneRoomId], done: visible.filter((i) => i.status).length, total: visible.length, flags: visible.filter((i) => i.status === 'Fail').length } };
-    const idx = data.inspections.findIndex((i) => i.roomId === doneRoomId);
-    const nextInsp = data.inspections.slice(idx + 1).concat(data.inspections.slice(0, idx))
-      .find((i) => { const s = updatedStatuses[i.roomId]; return !s || s.done < s.total; });
-    setNextRoomId(nextInsp?.roomId || null);
-    navigate(`/quarterly/${propertyId}`, { replace: true });
-  };
-
-  const handleBackToRooms = () => navigate(`/quarterly/${propertyId}`);
-
-  const getIncompleteRooms = () => {
-    return data.inspections.filter((insp) => {
-      const vis = insp.items.filter((i) => !i.zone.startsWith('_'));
-      return vis.filter((i) => i.status).length < vis.length;
-    }).map((insp) => ({
-      id: insp.roomId,
-      label: insp.roomLabel,
-      done: insp.items.filter((i) => !i.zone.startsWith('_') && i.status).length,
-      total: insp.items.filter((i) => !i.zone.startsWith('_')).length,
-    }));
-  };
-
-  const onSubmitClick = () => {
-    if (getIncompleteRooms().length > 0) setShowPartialModal(true);
-    else doSubmit(false);
-  };
-
-  const doSubmit = async (partial) => {
+  const doSubmit = async () => {
     setSubmitting(true);
     setError('');
     try {
       for (const insp of data.inspections) {
         if (insp.status !== 'DRAFT') continue;
-        const vis = insp.items.filter((i) => !i.zone.startsWith('_'));
-        const isIncomplete = vis.filter((i) => i.status).length < vis.length;
-        const body = partial && isIncomplete ? { partial: true, partialReason } : {};
-        await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
+        await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify({}) });
       }
       navigate('/dashboard', { state: { notification: `Room inspection submitted for ${data.propertyName}` } });
     } catch (err) {
       setError(err.message);
-      setShowPartialModal(false);
     } finally {
       setSubmitting(false);
     }
@@ -224,83 +554,54 @@ export default function QuarterlyFlow() {
     const insp = data.inspections.find((i) => i.roomId === activeRoomId);
     if (insp) {
       return (
-        <RoomChecklist
-          inspectionId={insp.id} roomLabel={insp.roomLabel} propertyName={data.propertyName}
-          onBack={handleBackToRooms} onDone={(items) => handleRoomDone(activeRoomId, items)}
+        <RoomInspection
+          inspectionId={insp.id}
+          roomLabel={insp.roomLabel}
+          propertyName={data.propertyName}
+          onBack={() => navigate(`/quarterly/${propertyId}`)}
           onItemsSynced={(freshItems) => handleItemsSynced(activeRoomId, freshItems)}
+          onRoomDone={() => navigate(`/quarterly/${propertyId}`)}
         />
       );
     }
   }
 
   const totalRooms = data.inspections.length;
-  const completedRooms = Object.values(roomStatuses).filter((s) => s.done === s.total).length;
-
-  const roomStatusBadge = (rid) => {
-    const s = roomStatuses[rid];
-    if (!s || s.done === 0) return { label: 'Start', color: '#8A8583', bg: '#F0EDEB' };
-    if (s.done < s.total) return { label: `${s.done}/${s.total}`, color: '#854F0B', bg: '#FAEEDA' };
-    if (s.flags > 0) return { label: `Done \u00b7 ${s.flags} flag${s.flags !== 1 ? 's' : ''}`, color: '#C0392B', bg: '#FCEBEB' };
-    return { label: 'Done \u2713', color: '#3B6D11', bg: '#E8F0E9' };
-  };
+  const completedRooms = data.inspections.filter((i) => roomState(i.items) === 'complete').length;
+  const commonAreas = [...(data.kitchens || []), ...(data.bathrooms || [])];
 
   return (
     <div className="q-flow-page">
       <div className="q-flow-header">
-        <button className="btn-text" onClick={() => navigate('/dashboard')}>Save &amp; exit</button>
+        <button className="btn-text" onClick={() => navigate('/dashboard')}>&larr; Save &amp; exit</button>
         <h1>Room Inspection</h1>
-        <p className="q-flow-subtitle">{data.propertyName} &middot; {completedRooms}/{totalRooms} rooms completed</p>
-        <div className="progress-bar-container"><div className="progress-bar" style={{ width: `${totalRooms > 0 ? (completedRooms / totalRooms) * 100 : 0}%` }} /></div>
+        <p className="q-flow-subtitle">{data.propertyName}</p>
+        <div className="q-flow-counter">{completedRooms} of {totalRooms} done</div>
       </div>
 
       {error && <div className="auth-error" style={{ margin: '1rem 0' }}>{error}</div>}
 
-      <div className="q-room-grid">
-        {data.inspections.map((insp) => {
-          const badge = roomStatusBadge(insp.roomId);
-          const s = roomStatuses[insp.roomId] || { done: 0, total: insp.items.length };
-          return (
-            <div key={insp.roomId} className={`q-room-card ${nextRoomId === insp.roomId ? 'q-room-card-next' : ''}`}
-              onClick={() => { setNextRoomId(null); navigate(`/quarterly/${propertyId}/${insp.roomId}`); }}>
-              <div className="q-room-card-bar" style={{ background: s.done === s.total && s.total > 0 ? '#6B8F71' : s.done > 0 ? '#C9A84C' : '#E8E4E1' }} />
-              <div className="q-room-card-body">
-                <div className="q-room-card-top">
-                  <h3>{insp.roomLabel}</h3>
-                  <span className="q-room-badge" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
-                </div>
-                <div className="q-room-card-meta">{insp.items.length} items</div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="q-grid">
+        {data.inspections.map((insp) => (
+          <RoomCard
+            key={insp.roomId}
+            inspection={insp}
+            onClick={() => navigate(`/quarterly/${propertyId}/${insp.roomId}`)}
+          />
+        ))}
       </div>
 
+      <CommonAreaQuickCheck
+        areas={commonAreas}
+        statuses={commonStatuses}
+        onChange={(id, status) => setCommonStatuses((prev) => ({ ...prev, [id]: status }))}
+      />
+
       <div className="q-flow-footer">
-        <button className="btn-text" onClick={() => navigate('/dashboard')}>Save &amp; exit</button>
-        <button className="q-submit-btn" onClick={onSubmitClick} disabled={submitting}>
+        <button className="q-submit-btn" onClick={doSubmit} disabled={submitting}>
           {submitting ? 'Submitting...' : 'Submit Inspection'}
         </button>
       </div>
-
-      <Modal open={showPartialModal} onClose={() => { setShowPartialModal(false); setPartialReason(''); }} title="Partial Submission">
-        <div className="modal-form">
-          <p style={{ fontSize: '0.9rem', color: '#4A4543', marginBottom: '0.5rem' }}>The following rooms are not complete:</p>
-          <ul className="partial-room-list">
-            {getIncompleteRooms().map((r) => <li key={r.id}><strong>{r.label}</strong> ({r.done}/{r.total} items)</li>)}
-          </ul>
-          <label>
-            Reason for partial submission
-            <textarea className="detail-textarea" value={partialReason} onChange={(e) => setPartialReason(e.target.value)} placeholder="e.g. Room 3 locked — resident not home" rows={3} />
-          </label>
-          {error && <div className="auth-error">{error}</div>}
-          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-            <button className="btn-secondary" onClick={() => { setShowPartialModal(false); setPartialReason(''); }}>Go back</button>
-            <button className="btn-primary" style={{ width: 'auto' }} onClick={() => doSubmit(true)} disabled={submitting || !partialReason.trim()}>
-              {submitting ? 'Submitting...' : 'Submit anyway'}
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
