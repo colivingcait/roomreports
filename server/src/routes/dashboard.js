@@ -227,7 +227,7 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const openMaintenance = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
+    const openMaintenanceTotal = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
     return res.json({
       pendingReview,
       maintenance: {
@@ -236,7 +236,7 @@ router.get('/', async (req, res) => {
         recentOpen: recentMaintenance,
       },
       tasks: { openCount: taskOpenCount },
-      combinedOpen: openMaintenance + taskOpenCount,
+      combinedOpen: openMaintenanceTotal + taskOpenCount,
       propertyHealth,
       overdueRooms,
     });
