@@ -57,6 +57,28 @@ export function roleLabel(role, customRole) {
   return ROLE_LABELS[role] || role;
 }
 
+// ─── Priority ───────────────────────────────────────────
+
+export const PRIORITIES = ['High', 'Medium', 'Low'];
+
+export const PRIORITY_COLORS = {
+  High: '#C0392B',
+  Medium: '#C4703F',
+  Low: '#6B8F71',
+};
+
+// Category → suggested priority. Everything else defaults to Medium.
+const HIGH_CATEGORIES = ['Safety', 'Plumbing', 'Electrical'];
+const LOW_CATEGORIES = ['Cleaning', 'Surfaces', 'Furniture & Fixtures'];
+
+export function suggestPriority(category) {
+  if (HIGH_CATEGORIES.includes(category)) return 'High';
+  if (LOW_CATEGORIES.includes(category)) return 'Low';
+  return 'Medium';
+}
+
+export const ATTACHMENT_LABELS = ['quote', 'receipt', 'invoice', 'other'];
+
 // Map legacy categories to current ones so old data still fits filters
 export const LEGACY_CATEGORY_MAP = {
   'Maintenance': 'General',

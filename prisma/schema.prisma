@@ -245,16 +245,20 @@ model Inspection {
 // ─── InspectionItem ─────────────────────────────────────
 
 model InspectionItem {
-  id            String   @id @default(cuid())
-  inspectionId  String
-  zone          String
-  text          String
-  options       String[]
-  status        String
-  flagCategory  String?
-  note          String?
-  isMaintenance Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id               String   @id @default(cuid())
+  inspectionId     String
+  zone             String
+  text             String
+  options          String[]
+  status           String
+  flagCategory     String?
+  note             String?
+  isMaintenance    Boolean  @default(false)
+  isLeaseViolation Boolean  @default(false)
+  priority         String?
+  entryCode        String?
+  entryApproved    Boolean  @default(false)
+  createdAt        DateTime @default(now())
 
   inspection      Inspection       @relation(fields: [inspectionId], references: [id])
   maintenanceItem MaintenanceItem?
@@ -267,35 +271,106 @@ model InspectionItem {
 // ─── MaintenanceItem ────────────────────────────────────
 
 model MaintenanceItem {
-  id               String            @id @default(cuid())
-  inspectionItemId String            @unique
-  inspectionId     String
-  propertyId       String
-  roomId           String?
-  organizationId   String
-  description      String
-  zone             String
-  status           MaintenanceStatus @default(OPEN)
-  assignedTo       String?
-  flagCategory     String
-  note             String?
-  priority         String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  resolvedAt       DateTime?
-  deletedAt        DateTime?
+  id                String            @id @default(cuid())
+  inspectionItemId  String            @unique
+  inspectionId      String
+  propertyId        String
+  roomId            String?
+  organizationId    String
+  description       String
+  zone              String
+  status            MaintenanceStatus @default(OPEN)
+  assignedTo        String?
+  flagCategory      String
+  note              String?
+  priority          String?           // Low | Medium | High
+  estimatedCost     Float?
+  actualCost        Float?
+  vendor            String?
+  entryApproved     Boolean           @default(false)
+  entryApprovedAt   DateTime?
+  entryCode         String?
+  reportedById      String?
+  reportedByName    String?
+  reportedByRole    String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  resolvedAt        DateTime?
+  deletedAt         DateTime?
 
-  inspectionItem InspectionItem @relation(fields: [inspectionItemId], references: [id])
-  inspection     Inspection     @relation(fields: [inspectionId], references: [id])
-  property       Property       @relation(fields: [propertyId], references: [id])
-  room           Room?          @relation(fields: [roomId], references: [id])
-  organization   Organization   @relation(fields: [organizationId], references: [id])
+  inspectionItem InspectionItem          @relation(fields: [inspectionItemId], references: [id])
+  inspection     Inspection              @relation(fields: [inspectionId], references: [id])
+  property       Property                @relation(fields: [propertyId], references: [id])
+  room           Room?                   @relation(fields: [roomId], references: [id])
+  organization   Organization            @relation(fields: [organizationId], references: [id])
   photos         Photo[]
+  attachments    MaintenanceAttachment[]
+  events         MaintenanceEvent[]
 
   @@index([organizationId])
   @@index([propertyId])
   @@index([status])
   @@map("maintenance_items")
+}
+
+// ─── MaintenanceAttachment ──────────────────────────────
+
+model MaintenanceAttachment {
+  id                String   @id @default(cuid())
+  maintenanceItemId String
+  url               String
+  key               String
+  label             String   // quote | receipt | invoice | other
+  originalName      String
+  contentType       String?
+  createdAt         DateTime @default(now())
+
+  maintenance MaintenanceItem @relation(fields: [maintenanceItemId], references: [id])
+
+  @@index([maintenanceItemId])
+  @@map("maintenance_attachments")
+}
+
+// ─── MaintenanceEvent ───────────────────────────────────
+
+model MaintenanceEvent {
+  id                String   @id @default(cuid())
+  maintenanceItemId String
+  type              String   // created | status | assigned | priority | note | cost | vendor | attachment | resolved | reopened
+  fromValue         String?
+  toValue           String?
+  note              String?
+  byUserId          String?
+  byUserName        String?
+  createdAt         DateTime @default(now())
+
+  maintenance MaintenanceItem @relation(fields: [maintenanceItemId], references: [id])
+
+  @@index([maintenanceItemId])
+  @@map("maintenance_events")
+}
+
+// ─── LeaseViolation ─────────────────────────────────────
+
+model LeaseViolation {
+  id               String    @id @default(cuid())
+  organizationId   String
+  propertyId       String
+  roomId           String?
+  inspectionId     String
+  inspectionItemId String    @unique
+  description      String
+  category         String?
+  note             String?
+  reportedById     String?
+  reportedByName   String?
+  createdAt        DateTime  @default(now())
+  resolvedAt       DateTime?
+  deletedAt        DateTime?
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@map("lease_violations")
 }
 
 // ─── Suggestion ─────────────────────────────────────────
