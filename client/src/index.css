@@ -6784,6 +6784,47 @@ button.review-photo-thumb {
 }
 .q-compliance-pill.selected:hover { filter: brightness(1.08); }
 
+/* Compliance / violation CARDS — 2-column grid, rectangular with rounded
+   corners. Shares the same CSS-variable colour system as the pill
+   variant, so COMPLIANCE_PILL_COLORS drives both surfaces. */
+.q-compliance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+.q-compliance-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 64px;
+  padding: 0.75rem 0.625rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.25;
+  color: var(--pill-fg, #4A4543);
+  background: var(--pill-bg, #FAF8F5);
+  border: 1.5px solid var(--pill-border, #D4D0CE);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s, box-shadow 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.q-compliance-card:hover {
+  border-color: var(--pill-fg, #8A8583);
+  filter: brightness(0.97);
+}
+.q-compliance-card:active { transform: scale(0.98); }
+.q-compliance-card.selected {
+  background: var(--pill-sel-bg, #C0392B);
+  border-color: var(--pill-sel-bg, #C0392B);
+  color: var(--pill-sel-fg, #fff);
+  box-shadow: 0 2px 6px rgba(74, 69, 67, 0.18);
+}
+.q-compliance-card.selected:hover { filter: brightness(1.08); }
+
 /* Compliance detail cards — stacked below all pills */
 .q-compliance-details {
   margin-top: 1rem;

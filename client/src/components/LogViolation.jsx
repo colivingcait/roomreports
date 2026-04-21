@@ -85,14 +85,14 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
 
         <label>
           Violation type
-          <div className="violation-pill-row">
+          <div className="q-compliance-grid">
             {VIOLATION_CATEGORIES.map((c) => {
               const col = pillColors(c);
               return (
               <button
                 key={c}
                 type="button"
-                className={`q-compliance-pill ${category === c ? 'selected' : ''}`}
+                className={`q-compliance-card ${category === c ? 'selected' : ''}`}
                 style={{
                   '--pill-bg': col.bg,
                   '--pill-fg': col.fg,

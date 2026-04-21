@@ -315,14 +315,14 @@ function ComplianceScreen({ items, inspectionId, saveItem, onItemUpdate, onBack,
       <div className="q-screen-body">
         <h2 className="q-screen-title">Select any that apply:</h2>
 
-        <div className="q-pill-row">
+        <div className="q-compliance-grid">
           {pills.map((p) => {
             const c = pillColors(p.text);
             return (
               <button
                 key={p.id}
                 type="button"
-                className={`q-compliance-pill ${p.status === 'Fail' ? 'selected' : ''}`}
+                className={`q-compliance-card ${p.status === 'Fail' ? 'selected' : ''}`}
                 style={{
                   '--pill-bg': c.bg,
                   '--pill-fg': c.fg,
