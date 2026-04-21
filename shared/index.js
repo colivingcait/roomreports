@@ -20,6 +20,40 @@ export const INSPECTION_TYPE_COLORS = {
   MOVE_IN_OUT: { bg: '#F0E8E3', color: '#6D3B11' },
 };
 
+// Compliance / lease-violation pill palette.
+// Keyed by the pill's display text (which is also stored as the
+// InspectionItem.text server-side). Each entry pairs a soft unselected
+// background with a saturated "selected" background that reads as the
+// same hue but clearly asserts the pill is on.
+//   bg / fg / border  — idle
+//   selBg / selFg     — selected (border matches selBg)
+export const COMPLIANCE_PILL_COLORS = {
+  'Messy':                            { bg: '#F1E5D6', fg: '#6B4524', border: '#D8B88E', selBg: '#7A4A25', selFg: '#fff' },
+  'Bad odor':                         { bg: '#EFE9CC', fg: '#5F5213', border: '#CEC182', selBg: '#7A6D1F', selFg: '#fff' },
+  'Smoking':                          { bg: '#E6E3DF', fg: '#3E3B39', border: '#B9B5B1', selBg: '#4A4543', selFg: '#fff' },
+  'Unauthorized guests':              { bg: '#EADCEC', fg: '#5A2075', border: '#C9A7CE', selBg: '#6D2B8A', selFg: '#fff' },
+  'Pets':                             { bg: '#D6EAE6', fg: '#1F5754', border: '#95C7BE', selBg: '#2B6D6D', selFg: '#fff' },
+  'Open food':                        { bg: '#F8E2CB', fg: '#8C4F13', border: '#E6B98D', selBg: '#B06D2B', selFg: '#fff' },
+  'Pests/bugs':                       { bg: '#D8E8D7', fg: '#235029', border: '#9AC6A1', selBg: '#2D6D3B', selFg: '#fff' },
+  'Open flames/candles':              { bg: '#F8EBC6', fg: '#8A6609', border: '#E6CE82', selBg: '#B58A0F', selFg: '#fff' },
+  'Overloaded outlets':               { bg: '#F4D6D0', fg: '#7F241A', border: '#DA968C', selBg: '#A03020', selFg: '#fff' },
+  'Kitchen appliances in room':       { bg: '#DBE3ED', fg: '#2C3F5F', border: '#9FB1C9', selBg: '#3A5680', selFg: '#fff' },
+  'Lithium batteries':                { bg: '#F6DBC7', fg: '#8B4917', border: '#E3A97F', selBg: '#B86020', selFg: '#fff' },
+  'Modifications (paint, holes, etc.)': { bg: '#DEE8D9', fg: '#3C5D34', border: '#A6C098', selBg: '#4F7A43', selFg: '#fff' },
+  'Drug paraphernalia':               { bg: '#F0D6E2', fg: '#6F2048', border: '#D79AB5', selBg: '#8A2B5A', selFg: '#fff' },
+  'Weapons':                          { bg: '#E8D0D0', fg: '#5E1818', border: '#C48E8E', selBg: '#7A1F1F', selFg: '#fff' },
+  'Unclear egress path':              { bg: '#F5E2C2', fg: '#6F470B', border: '#DDB978', selBg: '#8A5A0F', selFg: '#fff' },
+};
+
+// Default for any pill text not in the map (future-proof)
+export const COMPLIANCE_PILL_DEFAULT = {
+  bg: '#F5F2EF', fg: '#4A4543', border: '#D4D0CE', selBg: '#C0392B', selFg: '#fff',
+};
+
+export function pillColors(text) {
+  return COMPLIANCE_PILL_COLORS[text] || COMPLIANCE_PILL_DEFAULT;
+}
+
 export {
   PLANS,
   PLAN_LABELS,

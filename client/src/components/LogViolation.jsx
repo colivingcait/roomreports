@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Modal from './Modal';
+import { pillColors } from '../../../shared/index.js';
 
 // Same canonical pills the inspection compliance screen uses.
 const VIOLATION_CATEGORIES = [
@@ -85,16 +86,26 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
         <label>
           Violation type
           <div className="violation-pill-row">
-            {VIOLATION_CATEGORIES.map((c) => (
+            {VIOLATION_CATEGORIES.map((c) => {
+              const col = pillColors(c);
+              return (
               <button
                 key={c}
                 type="button"
                 className={`q-compliance-pill ${category === c ? 'selected' : ''}`}
+                style={{
+                  '--pill-bg': col.bg,
+                  '--pill-fg': col.fg,
+                  '--pill-border': col.border,
+                  '--pill-sel-bg': col.selBg,
+                  '--pill-sel-fg': col.selFg,
+                }}
                 onClick={() => setCategory(c)}
               >
                 {c}
               </button>
-            ))}
+              );
+            })}
           </div>
         </label>
 

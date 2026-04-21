@@ -6754,26 +6754,35 @@ button.review-photo-thumb {
   gap: 0.4rem;
   margin-top: 0.75rem;
 }
+/* Per-pill colors are driven by CSS variables set inline from
+   COMPLIANCE_PILL_COLORS. Defaults below keep the component usable even
+   when a variable isn't supplied. */
 .q-compliance-pill {
-  padding: 0.55rem 0.85rem;
-  font-size: 0.85rem;
-  font-weight: 500;
+  padding: 0.7rem 1.05rem;
+  font-size: 0.92rem;
+  font-weight: 600;
   font-family: inherit;
-  color: #4A4543;
-  background: #FAF8F5;
-  border: 1.5px solid #D4D0CE;
+  color: var(--pill-fg, #4A4543);
+  background: var(--pill-bg, #FAF8F5);
+  border: 1.5px solid var(--pill-border, #D4D0CE);
   border-radius: 100px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s;
   line-height: 1.2;
   -webkit-tap-highlight-color: transparent;
 }
-.q-compliance-pill:hover { border-color: #8A8583; }
-.q-compliance-pill.selected {
-  background: #C0392B;
-  border-color: #C0392B;
-  color: #fff;
+.q-compliance-pill:hover {
+  border-color: var(--pill-fg, #8A8583);
+  filter: brightness(0.97);
 }
+.q-compliance-pill:active { transform: scale(0.97); }
+.q-compliance-pill.selected {
+  background: var(--pill-sel-bg, #C0392B);
+  border-color: var(--pill-sel-bg, #C0392B);
+  color: var(--pill-sel-fg, #fff);
+  box-shadow: 0 1px 3px rgba(74, 69, 67, 0.15);
+}
+.q-compliance-pill.selected:hover { filter: brightness(1.08); }
 
 /* Compliance detail cards — stacked below all pills */
 .q-compliance-details {

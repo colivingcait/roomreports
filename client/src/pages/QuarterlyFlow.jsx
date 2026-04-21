@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
 import Modal from '../components/Modal';
-import { FLAG_CATEGORIES } from '../../../shared/index.js';
+import { FLAG_CATEGORIES, pillColors } from '../../../shared/index.js';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -316,16 +316,26 @@ function ComplianceScreen({ items, inspectionId, saveItem, onItemUpdate, onBack,
         <h2 className="q-screen-title">Select any that apply:</h2>
 
         <div className="q-pill-row">
-          {pills.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`q-compliance-pill ${p.status === 'Fail' ? 'selected' : ''}`}
-              onClick={() => togglePill(p)}
-            >
-              {p.text}
-            </button>
-          ))}
+          {pills.map((p) => {
+            const c = pillColors(p.text);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                className={`q-compliance-pill ${p.status === 'Fail' ? 'selected' : ''}`}
+                style={{
+                  '--pill-bg': c.bg,
+                  '--pill-fg': c.fg,
+                  '--pill-border': c.border,
+                  '--pill-sel-bg': c.selBg,
+                  '--pill-sel-fg': c.selFg,
+                }}
+                onClick={() => togglePill(p)}
+              >
+                {p.text}
+              </button>
+            );
+          })}
         </div>
 
         {selected.length > 0 && (
