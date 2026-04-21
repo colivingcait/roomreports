@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
+import UpgradeModal from '../components/UpgradeModal';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -32,6 +34,7 @@ export default function PropertyHealth() {
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState('');
   const navigate = useNavigate();
+  const { limit, isBeta, gate, promptUpgrade, dismiss } = useFeatureGate();
 
   const load = () => {
     setLoading(true);
@@ -76,10 +79,26 @@ export default function PropertyHealth() {
     setSaving(true);
     setAddError('');
     try {
-      await api('/api/properties', {
+      const res = await fetch('/api/properties', {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), address: address.trim() }),
       });
+      const d = await res.json();
+      if (!res.ok) {
+        if (d.code === 'PLAN_LIMIT_PROPERTIES') {
+          setShowAdd(false);
+          setAddError('');
+          promptUpgrade({
+            feature: 'unlimitedProperties',
+            title: 'Property limit reached',
+            body: `Your plan allows ${d.limit} properties. Upgrade to add more.`,
+          });
+          return;
+        }
+        throw new Error(d.error || 'Failed to create property');
+      }
       setShowAdd(false);
       setName('');
       setAddress('');
@@ -93,14 +112,30 @@ export default function PropertyHealth() {
 
   if (loading) return <div className="page-loading">Loading properties...</div>;
 
+  const propertyLimit = limit('properties');
+  const atLimit = isFinite(propertyLimit) && properties.length >= propertyLimit;
+  const usageLabel = isFinite(propertyLimit)
+    ? `${properties.length} of ${propertyLimit} properties used`
+    : `${properties.length} ${properties.length === 1 ? 'property' : 'properties'}`;
+
+  const handleAddClick = () => {
+    if (atLimit) {
+      promptUpgrade({
+        feature: 'unlimitedProperties',
+        title: 'Property limit reached',
+        body: `You're at your plan's limit of ${propertyLimit} properties. Upgrade to add more.`,
+      });
+    } else {
+      setShowAdd(true);
+    }
+  };
+
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1>Properties</h1>
-          <p className="page-subtitle">
-            {properties.length} {properties.length === 1 ? 'property' : 'properties'}
-          </p>
+          <p className="page-subtitle">{usageLabel}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <select
@@ -113,7 +148,13 @@ export default function PropertyHealth() {
             <option value="open">Sort: Open maintenance</option>
             <option value="violations">Sort: Active violations</option>
           </select>
-          <button className="btn-primary-sm" onClick={() => setShowAdd(true)}>+ Add Property</button>
+          <button
+            className={`btn-primary-sm ${atLimit ? 'btn-at-limit' : ''}`}
+            onClick={handleAddClick}
+            title={atLimit ? 'Property limit reached — upgrade to add more' : 'Add a new property'}
+          >
+            + Add Property
+          </button>
         </div>
       </div>
 
@@ -220,6 +261,15 @@ export default function PropertyHealth() {
           </div>
         </form>
       </Modal>
+
+      <UpgradeModal
+        open={gate.open}
+        onClose={dismiss}
+        feature={gate.feature}
+        plan={gate.plan}
+        title={gate.title}
+        body={gate.body}
+      />
     </div>
   );
 }

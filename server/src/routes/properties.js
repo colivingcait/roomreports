@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signPropertyInvite } from '../lib/propertyInvite.js';
 import { propertyScope } from '../lib/scope.js';
 import { computeHealth } from '../lib/healthGrade.js';
+import { planLimit, wouldExceed } from '../../../shared/features.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -208,6 +209,23 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
 
     if (!name || !address) {
       return res.status(400).json({ error: 'name and address are required' });
+    }
+
+    // Enforce property limit for this org's plan (beta bypasses via planLimit → Infinity)
+    const org = await prisma.organization.findUnique({
+      where: { id: req.user.organizationId },
+      select: { plan: true, isBeta: true },
+    });
+    const currentCount = await prisma.property.count({
+      where: { organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (wouldExceed(org, 'properties', currentCount)) {
+      return res.status(403).json({
+        error: 'Property limit reached for your plan',
+        code: 'PLAN_LIMIT_PROPERTIES',
+        limit: planLimit(org, 'properties'),
+        currentCount,
+      });
     }
 
     const property = await prisma.property.create({

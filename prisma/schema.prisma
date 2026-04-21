@@ -46,6 +46,12 @@ enum TaskStatus {
   DONE
 }
 
+enum Plan {
+  STARTER
+  GROWTH
+  OPERATOR
+}
+
 // ─── Organization ───────────────────────────────────────
 
 model Organization {
@@ -53,6 +59,8 @@ model Organization {
   name      String
   slug      String?  @unique
   timezone  String?
+  plan      Plan     @default(OPERATOR)
+  isBeta    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?

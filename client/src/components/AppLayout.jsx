@@ -32,6 +32,7 @@ export default function AppLayout() {
   const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(user?.role));
 
   const initials = user?.name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || '?';
+  const isBeta = !!organization?.isBeta;
 
   return (
     <div className="shell">
@@ -40,6 +41,7 @@ export default function AppLayout() {
         <div className="sidebar-top">
           <div className="sidebar-brand" onClick={() => navigate('/dashboard')}>
             RoomReport
+            {isBeta && <span className="beta-badge">Beta</span>}
           </div>
 
           <div className="sidebar-search" onClick={() => setShowSearch(true)}>
@@ -77,7 +79,10 @@ export default function AppLayout() {
 
       {/* Mobile Header */}
       <header className="mobile-header">
-        <span className="mobile-brand">RoomReport</span>
+        <span className="mobile-brand">
+          RoomReport
+          {isBeta && <span className="beta-badge">Beta</span>}
+        </span>
         <div className="mobile-header-actions">
           <button className="mobile-header-btn" onClick={() => setShowSearch(true)}>
             {icons.search}

@@ -1,4 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import {
+  PLANS,
+  PLAN_LABELS,
+  PLAN_PRICES,
+  PLAN_TAGLINES,
+  FEATURE_META,
+  FEATURES,
+  PLAN_LIMITS,
+} from '../../../shared/index.js';
 
 const api = (path) =>
   fetch(path, { credentials: 'include' }).then(async (r) => {
@@ -7,17 +17,26 @@ const api = (path) =>
     return d;
   });
 
-const PLANS = [
-  { name: 'Starter', price: '$19/mo', desc: 'Up to 2 properties' },
-  { name: 'Growth', price: '$39/mo', desc: 'Up to 5 properties' },
-  { name: 'Unlimited', price: '$79/mo', desc: 'Unlimited properties' },
-];
+// Which features each plan includes (for the comparison cards).
+const STARTER_FEATURES = ['inspections', 'maintenance', 'residentLinks', 'offline', 'basicReports', 'toDo'];
+const GROWTH_FEATURES = [...STARTER_FEATURES, 'vendors', 'teamScoping', 'customTemplates', 'fullReportsPDF', 'leaseViolations', 'unlimitedTeam'];
+const OPERATOR_FEATURES = [...GROWTH_FEATURES, 'unlimitedProperties', 'batchWorkOrders', 'csvExport', 'prioritySupport'];
+
+const PLAN_INCLUDES = {
+  STARTER: STARTER_FEATURES,
+  GROWTH: GROWTH_FEATURES,
+  OPERATOR: OPERATOR_FEATURES,
+};
 
 export default function Billing() {
+  const { organization } = useAuth();
   const [propertyCount, setPropertyCount] = useState(null);
   const [promo, setPromo] = useState('');
   const [applying, setApplying] = useState(false);
   const [message, setMessage] = useState('');
+
+  const plan = organization?.plan || 'STARTER';
+  const isBeta = !!organization?.isBeta;
 
   useEffect(() => {
     api('/api/properties')
@@ -30,7 +49,6 @@ export default function Billing() {
     if (!promo.trim()) return;
     setApplying(true);
     setMessage('');
-    // Stored locally for now — wires to Stripe once billing launches.
     try {
       const stored = JSON.parse(localStorage.getItem('roomreport:promoCodes') || '[]');
       stored.push({ code: promo.trim(), at: new Date().toISOString() });
@@ -53,29 +71,73 @@ export default function Billing() {
         </div>
       </div>
 
-      <div className="billing-banner">
-        <div className="billing-banner-tag">Beta Access</div>
-        <h2 className="billing-banner-title">All features unlocked</h2>
+      {/* Current plan */}
+      <div className={`billing-banner ${isBeta ? '' : 'billing-banner-paid'}`}>
+        <div className="billing-banner-tag">
+          {isBeta ? 'Beta Access' : 'Current Plan'}
+        </div>
+        <h2 className="billing-banner-title">
+          {isBeta ? 'All features unlocked' : PLAN_LABELS[plan]}
+        </h2>
         <p className="billing-banner-body">
-          You&apos;re in the beta program — nothing to pay, and every feature is turned on.
-          When billing launches, your plan will be based on your property count.
+          {isBeta
+            ? "You're in the beta program — nothing to pay, and every feature is turned on."
+            : `${PLAN_TAGLINES[plan]}. ${PLAN_PRICES[plan]}.`}
         </p>
         <div className="billing-banner-stat">
           Current:
-          <strong> {propertyCount ?? '—'} propert{propertyCount === 1 ? 'y' : 'ies'}</strong>
+          <strong>
+            {' '}
+            {propertyCount ?? '—'} propert{propertyCount === 1 ? 'y' : 'ies'}
+            {!isBeta && PLAN_LIMITS[plan]?.properties !== Infinity && (
+              <> of {PLAN_LIMITS[plan].properties}</>
+            )}
+          </strong>
         </div>
       </div>
 
+      {/* Compare plans */}
       <div className="billing-section">
-        <h3 className="md-section-title">Pricing (when billing launches)</h3>
+        <h3 className="md-section-title">
+          {isBeta ? 'Pricing (when billing launches)' : 'Plans'}
+        </h3>
         <div className="billing-plans">
-          {PLANS.map((p) => (
-            <div key={p.name} className="billing-plan">
-              <div className="billing-plan-name">{p.name}</div>
-              <div className="billing-plan-price">{p.price}</div>
-              <div className="billing-plan-desc">{p.desc}</div>
-            </div>
-          ))}
+          {PLANS.map((p) => {
+            const isCurrent = !isBeta && p === plan;
+            const includes = PLAN_INCLUDES[p] || [];
+            return (
+              <div
+                key={p}
+                className={`billing-plan-card ${isCurrent ? 'billing-plan-card-current' : ''}`}
+              >
+                <div className="billing-plan-card-head">
+                  <div className="billing-plan-name">{PLAN_LABELS[p]}</div>
+                  {isCurrent && <span className="billing-plan-current-pill">Current</span>}
+                </div>
+                <div className="billing-plan-price">{PLAN_PRICES[p]}</div>
+                <div className="billing-plan-desc">{PLAN_TAGLINES[p]}</div>
+                <ul className="billing-plan-features">
+                  {includes.map((f) => (
+                    <li key={f}>
+                      <span className="billing-check">&#10003;</span>
+                      {FEATURE_META[f]?.label || f}
+                    </li>
+                  ))}
+                </ul>
+                {!isCurrent && !isBeta && (
+                  <button
+                    className="btn-primary-sm billing-plan-upgrade-btn"
+                    onClick={() => setMessage(`Self-serve upgrade launches soon — email hello@roomreport.co to move to ${PLAN_LABELS[p]} now.`)}
+                  >
+                    Upgrade to {PLAN_LABELS[p]}
+                  </button>
+                )}
+                {isBeta && (
+                  <div className="billing-plan-beta-note">Included during beta</div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

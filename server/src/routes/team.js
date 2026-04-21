@@ -3,6 +3,7 @@ import { hash } from '@node-rs/argon2';
 import { generateIdFromEntropySize } from 'lucia';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { planLimit, wouldExceed } from '../../../shared/features.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -83,6 +84,23 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return res.status(409).json({ error: 'A user with this email already exists' });
+    }
+
+    // Enforce team-member limit for this org's plan (beta bypasses)
+    const org = await prisma.organization.findUnique({
+      where: { id: req.user.organizationId },
+      select: { plan: true, isBeta: true },
+    });
+    const currentMembers = await prisma.user.count({
+      where: { organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (wouldExceed(org, 'teamMembers', currentMembers)) {
+      return res.status(403).json({
+        error: 'Team member limit reached for your plan',
+        code: 'PLAN_LIMIT_TEAM',
+        limit: planLimit(org, 'teamMembers'),
+        currentCount: currentMembers,
+      });
     }
 
     // Generate password and hash it

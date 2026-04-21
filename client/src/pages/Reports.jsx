@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FLAG_CATEGORIES, PRIORITIES } from '../../../shared/index.js';
+import UpgradeModal from '../components/UpgradeModal';
+import { useFeatureGate } from '../hooks/useFeatureGate';
 
 const PRESETS = [
   { value: 'this_month', label: 'This Month' },
@@ -23,6 +25,15 @@ function fmtHours(ms) {
   if (hrs < 1) return `${Math.round(ms / 60000)}m`;
   if (hrs < 48) return `${hrs.toFixed(1)}h`;
   return `${(hrs / 24).toFixed(1)}d`;
+}
+
+function LockGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', marginLeft: '0.25rem' }}>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  );
 }
 
 function Bar({ value, max, color }) {
@@ -166,6 +177,7 @@ function LineChart({ data, valueKey = 'total', height = 180, label = '', formatt
 // ─── Maintenance Reports tab ───────────────────────────
 
 function MaintenanceReports() {
+  const { can, gate, promptUpgrade, dismiss } = useFeatureGate();
   const [preset, setPreset] = useState('ytd');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -213,6 +225,10 @@ function MaintenanceReports() {
   useEffect(() => { load(); }, [load]);
 
   const downloadCsv = () => {
+    if (!can('csvExport')) {
+      promptUpgrade({ feature: 'csvExport' });
+      return;
+    }
     window.open(`/api/reports/csv?${params}`, '_blank');
   };
 
@@ -224,8 +240,22 @@ function MaintenanceReports() {
         <span className="reports-tab-count">
           {data?.totalTickets != null ? `${data.totalTickets} ticket${data.totalTickets === 1 ? '' : 's'} in selected range` : '—'}
         </span>
-        <button className="btn-primary-sm" onClick={downloadCsv}>Export CSV</button>
+        <button
+          className={`btn-primary-sm ${!can('csvExport') ? 'btn-locked' : ''}`}
+          onClick={downloadCsv}
+          title={can('csvExport') ? 'Download CSV' : 'CSV export requires Operator plan'}
+        >
+          Export CSV {!can('csvExport') && <LockGlyph />}
+        </button>
       </div>
+      <UpgradeModal
+        open={gate.open}
+        onClose={dismiss}
+        feature={gate.feature}
+        plan={gate.plan}
+        title={gate.title}
+        body={gate.body}
+      />
 
       {/* Filters */}
       <div className="maint-filters" style={{ flexWrap: 'wrap' }}>
@@ -337,6 +367,7 @@ function InspectionReports() {
   const [filterStatus, setFilterStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const { can, gate, promptUpgrade, dismiss } = useFeatureGate();
 
   useEffect(() => {
     api('/api/properties').then((d) => setProperties(d.properties || [])).catch(() => {});
@@ -404,22 +435,41 @@ function InspectionReports() {
             <div className="empty-state"><p>No inspections match these filters.</p></div>
           ) : (
             filtered.map((i) => (
-              <InspectionReportRow key={i.id} item={i} />
+              <InspectionReportRow
+                key={i.id}
+                item={i}
+                canPdf={can('fullReportsPDF')}
+                onLockedPdf={() => promptUpgrade({ feature: 'fullReportsPDF' })}
+              />
             ))
           )}
         </div>
       )}
+      <UpgradeModal
+        open={gate.open}
+        onClose={dismiss}
+        feature={gate.feature}
+        plan={gate.plan}
+        title={gate.title}
+        body={gate.body}
+      />
     </>
   );
 }
 
-function InspectionReportRow({ item }) {
+function InspectionReportRow({ item, canPdf, onLockedPdf }) {
   const isQuarterly = item.type === 'QUARTERLY';
   const dateKey = new Date(item.createdAt).toISOString().slice(0, 10);
 
   const pdfUrl = (full) => isQuarterly
     ? `/api/inspections/quarterly-group/${item.property?.id || item.propertyId}/${dateKey}/pdf${full ? '?full=true' : ''}`
     : `/api/inspections/${item.id}/pdf${full ? '?full=true' : ''}`;
+
+  const openPdf = (e, full) => {
+    e.stopPropagation();
+    if (!canPdf) { onLockedPdf(); return; }
+    window.open(pdfUrl(full), '_blank');
+  };
 
   return (
     <div
@@ -443,18 +493,18 @@ function InspectionReportRow({ item }) {
         </span>
         <span className="insp-status-badge">{item.status}</span>
         <button
-          className="btn-text-sm"
-          onClick={(e) => { e.stopPropagation(); window.open(pdfUrl(false), '_blank'); }}
-          title="Download summary PDF"
+          className={`btn-text-sm ${!canPdf ? 'btn-locked' : ''}`}
+          onClick={(e) => openPdf(e, false)}
+          title={canPdf ? 'Download summary PDF' : 'PDF export requires Growth plan'}
         >
-          PDF
+          PDF {!canPdf && <LockGlyph />}
         </button>
         <button
-          className="btn-text-sm"
-          onClick={(e) => { e.stopPropagation(); window.open(pdfUrl(true), '_blank'); }}
-          title="Download full detail PDF"
+          className={`btn-text-sm ${!canPdf ? 'btn-locked' : ''}`}
+          onClick={(e) => openPdf(e, true)}
+          title={canPdf ? 'Download full detail PDF' : 'PDF export requires Growth plan'}
         >
-          Full PDF
+          Full PDF {!canPdf && <LockGlyph />}
         </button>
       </div>
     </div>
@@ -469,6 +519,7 @@ function ViolationReports() {
   const [filterProperty, setFilterProperty] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [loading, setLoading] = useState(true);
+  const { can, gate, promptUpgrade, dismiss } = useFeatureGate();
 
   useEffect(() => {
     api('/api/properties').then((d) => setProperties(d.properties || [])).catch(() => {});
@@ -490,6 +541,10 @@ function ViolationReports() {
     : violations;
 
   const downloadCsv = () => {
+    if (!can('csvExport')) {
+      promptUpgrade({ feature: 'csvExport' });
+      return;
+    }
     const rows = [['Property', 'Room', 'Category', 'Created', 'Resolved', 'Description']];
     for (const v of filtered) {
       rows.push([
@@ -511,12 +566,47 @@ function ViolationReports() {
     URL.revokeObjectURL(url);
   };
 
+  if (!can('leaseViolations')) {
+    return (
+      <div className="feature-gate-block">
+        <div className="feature-gate-lock"><LockGlyph /></div>
+        <h3>Lease violation tracking isn&apos;t on your plan</h3>
+        <p>Track violations by resident, log follow-ups, and export PDFs. Available on the Growth plan.</p>
+        <button className="btn-primary-sm" onClick={() => promptUpgrade({ feature: 'leaseViolations' })}>
+          See upgrade options
+        </button>
+        <UpgradeModal
+          open={gate.open}
+          onClose={dismiss}
+          feature={gate.feature}
+          plan={gate.plan}
+          title={gate.title}
+          body={gate.body}
+        />
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="reports-tab-header">
         <span className="reports-tab-count">{filtered.length} violation{filtered.length === 1 ? '' : 's'}</span>
-        <button className="btn-primary-sm" onClick={downloadCsv}>Export CSV</button>
+        <button
+          className={`btn-primary-sm ${!can('csvExport') ? 'btn-locked' : ''}`}
+          onClick={downloadCsv}
+          title={can('csvExport') ? 'Download CSV' : 'CSV export requires Operator plan'}
+        >
+          Export CSV {!can('csvExport') && <LockGlyph />}
+        </button>
       </div>
+      <UpgradeModal
+        open={gate.open}
+        onClose={dismiss}
+        feature={gate.feature}
+        plan={gate.plan}
+        title={gate.title}
+        body={gate.body}
+      />
       <div className="maint-filters" style={{ flexWrap: 'wrap' }}>
         <select className="filter-select" value={filterProperty} onChange={(e) => setFilterProperty(e.target.value)}>
           <option value="">All Properties</option>
@@ -563,6 +653,8 @@ function ViolationReports() {
 
 export default function Reports() {
   const [tab, setTab] = useState('inspections');
+  const { can } = useFeatureGate();
+  const canViolations = can('leaseViolations');
   return (
     <div className="page-container">
       <div className="page-header">
@@ -584,10 +676,11 @@ export default function Reports() {
           Maintenance Reports
         </button>
         <button
-          className={`reports-tab ${tab === 'violations' ? 'active' : ''}`}
+          className={`reports-tab ${tab === 'violations' ? 'active' : ''} ${!canViolations ? 'reports-tab-locked' : ''}`}
           onClick={() => setTab('violations')}
+          title={canViolations ? '' : 'Lease violation tracking requires Growth plan'}
         >
-          Lease Violations
+          Lease Violations {!canViolations && <LockGlyph />}
         </button>
       </div>
       {tab === 'inspections' && <InspectionReports />}

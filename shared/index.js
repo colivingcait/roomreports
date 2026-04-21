@@ -1,5 +1,21 @@
 export const APP_NAME = 'RoomReport';
 
+export {
+  PLANS,
+  PLAN_LABELS,
+  PLAN_PRICES,
+  PLAN_TAGLINES,
+  FEATURES,
+  FEATURE_META,
+  PLAN_LIMITS,
+  requiredPlan,
+  featureLabel,
+  featureDescription,
+  canAccess,
+  planLimit,
+  wouldExceed,
+} from './features.js';
+
 export const DEFAULT_FEATURES = [
   'Ensuite Bathroom',
   'Mini Fridge',

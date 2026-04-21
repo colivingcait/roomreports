@@ -264,7 +264,7 @@ router.get('/me', requireAuth, async (req, res) => {
         role: true,
         customRole: true,
         organizationId: true,
-        organization: { select: { id: true, name: true, slug: true } },
+        organization: { select: { id: true, name: true, slug: true, plan: true, isBeta: true, timezone: true } },
       },
     });
 
