@@ -10,36 +10,8 @@ const api = (path, opts = {}) =>
       return d;
     });
 
-const GRADE_COLORS = {
-  A: '#3B6D11',
-  B: '#6B8F71',
-  C: '#BA7517',
-  D: '#C4703F',
-  F: '#C0392B',
-};
-
-const INSPECTION_TYPE_LABELS = {
-  QUARTERLY: 'Room Inspection',
-  COMMON_AREA: 'Common Area',
-  COMMON_AREA_QUICK: 'Quick Check',
-  ROOM_TURN: 'Room Turn',
-  RESIDENT_SELF_CHECK: 'Self-Check',
-  MOVE_IN_OUT: 'Move-In / Out',
-};
-
-function GradeBadge({ grade }) {
-  return (
-    <span
-      className="grade-badge"
-      style={{ color: GRADE_COLORS[grade] || '#8A8583', borderColor: GRADE_COLORS[grade] || '#D4D0CE' }}
-    >
-      {grade || '—'}
-    </span>
-  );
-}
-
 function timeAgo(date) {
-  if (!date) return 'Never';
+  if (!date) return null;
   const d = new Date(date);
   const now = new Date();
   const diff = Math.floor((now - d) / 1000);
@@ -53,7 +25,7 @@ export default function PropertyHealth() {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sortBy, setSortBy] = useState('grade'); // grade | name | open | violations
+  const [sortBy, setSortBy] = useState('attention');
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -72,11 +44,27 @@ export default function PropertyHealth() {
 
   useEffect(() => { load(); }, []);
 
+  const needsAttention = (p) => {
+    const open = p.health?.openMaintenanceCount || 0;
+    const viol = p.health?.activeViolationCount || 0;
+    return open >= 3 || viol >= 3;
+  };
+
   const sorted = [...properties].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name);
-    if (sortBy === 'open') return (b.health?.openMaintenanceCount || 0) - (a.health?.openMaintenanceCount || 0);
-    if (sortBy === 'violations') return (b.health?.activeViolationCount || 0) - (a.health?.activeViolationCount || 0);
-    return (b.health?.score || 0) - (a.health?.score || 0);
+    if (sortBy === 'open') {
+      return (b.health?.openMaintenanceCount || 0) - (a.health?.openMaintenanceCount || 0);
+    }
+    if (sortBy === 'violations') {
+      return (b.health?.activeViolationCount || 0) - (a.health?.activeViolationCount || 0);
+    }
+    // 'attention' default — needs-attention first, then by combined open + violations desc
+    const aAtt = needsAttention(a) ? 1 : 0;
+    const bAtt = needsAttention(b) ? 1 : 0;
+    if (aAtt !== bAtt) return bAtt - aAtt;
+    const aSum = (a.health?.openMaintenanceCount || 0) + (a.health?.activeViolationCount || 0);
+    const bSum = (b.health?.openMaintenanceCount || 0) + (b.health?.activeViolationCount || 0);
+    return bSum - aSum;
   });
 
   const handleAdd = async (e) => {
@@ -120,7 +108,7 @@ export default function PropertyHealth() {
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
           >
-            <option value="grade">Sort: Health grade</option>
+            <option value="attention">Sort: Needs attention</option>
             <option value="name">Sort: Name</option>
             <option value="open">Sort: Open maintenance</option>
             <option value="violations">Sort: Active violations</option>
@@ -137,68 +125,49 @@ export default function PropertyHealth() {
           <button className="btn-primary-sm" onClick={() => setShowAdd(true)}>Add your first property</button>
         </div>
       ) : (
-        <div className="health-grid">
+        <div className="prop-grid">
           {sorted.map((p) => {
-            const h = p.health || {};
-            const last = h.lastInspection;
-            const activeViol = h.activeViolationCount || 0;
+            const open = p.health?.openMaintenanceCount || 0;
+            const viol = p.health?.activeViolationCount || 0;
+            const last = p.health?.lastInspection;
+            const roomCount = p._count?.rooms || 0;
+            const attention = needsAttention(p);
+            const subtitle = last
+              ? `${roomCount} room${roomCount === 1 ? '' : 's'} · Inspected ${timeAgo(last.date)}`
+              : `${roomCount} room${roomCount === 1 ? '' : 's'} · Never inspected`;
             return (
-              <div
+              <button
                 key={p.id}
-                className="health-card"
+                className={`prop-card ${attention ? 'prop-card-attention' : ''}`}
                 onClick={() => navigate(`/properties/${p.id}/overview`)}
               >
-                <div className="health-card-head">
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <h3 className="health-card-name">{p.name}</h3>
-                    <p className="health-card-address">{p.address}</p>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    {activeViol >= 3 && (
-                      <span
-                        className="po-room-escalation"
-                        title={`${activeViol} active violations`}
-                      >
-                        &#9888; {activeViol}
-                      </span>
-                    )}
-                    <GradeBadge grade={h.grade} />
-                  </div>
-                </div>
-                <div className="health-card-stats">
-                  <div>
-                    <span className="health-card-stat-label">Open maintenance</span>
-                    <span className="health-card-stat-value">{h.openMaintenanceCount || 0}</span>
-                  </div>
-                  <div>
-                    <span className="health-card-stat-label">Active violations</span>
-                    <span
-                      className="health-card-stat-value"
-                      style={activeViol > 0 ? { color: '#C4703F' } : undefined}
-                    >
-                      {activeViol}
+                {attention && <span className="prop-card-pill">Needs attention</span>}
+                <div className="prop-card-name">{p.name}</div>
+                <div className="prop-card-subtitle">{subtitle}</div>
+                <div className="prop-card-status">
+                  {open === 0 && viol === 0 ? (
+                    <span className="prop-status">
+                      <span className="prop-status-dot prop-status-dot-good" />
+                      All clear
                     </span>
-                  </div>
-                  <div>
-                    <span className="health-card-stat-label">Overdue inspections</span>
-                    <span className="health-card-stat-value">{h.overdueInspectionCount || 0}</span>
-                  </div>
-                  <div>
-                    <span className="health-card-stat-label">Avg resolution</span>
-                    <span className="health-card-stat-value">
-                      {h.avgResolutionDays != null ? `${h.avgResolutionDays.toFixed(1)}d` : '—'}
-                    </span>
-                  </div>
+                  ) : (
+                    <>
+                      {open > 0 && (
+                        <span className="prop-status">
+                          <span className="prop-status-dot prop-status-dot-open" />
+                          {open} open
+                        </span>
+                      )}
+                      {viol > 0 && (
+                        <span className="prop-status">
+                          <span className="prop-status-dot prop-status-dot-violation" />
+                          {viol} violation{viol === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div className="health-card-foot">
-                  <span>
-                    {last
-                      ? `${INSPECTION_TYPE_LABELS[last.type] || last.type} · ${timeAgo(last.date)}`
-                      : 'Never inspected'}
-                  </span>
-                  <span>{p._count?.rooms || 0} rooms</span>
-                </div>
-              </div>
+              </button>
             );
           })}
         </div>

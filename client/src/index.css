@@ -2308,6 +2308,104 @@ body {
   color: #8A8583;
 }
 
+/* ─── Properties page (redesigned cards) ── */
+.prop-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+@media (min-width: 600px) {
+  .prop-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+}
+@media (min-width: 1000px) {
+  .prop-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.prop-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  padding: 1rem 1.125rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.prop-card:hover {
+  border-color: #6B8F71;
+  box-shadow: 0 2px 8px rgba(107, 143, 113, 0.08);
+}
+.prop-card:active { transform: scale(0.99); }
+
+.prop-card-attention {
+  border-color: #E0837A;
+  background: #FFFAF9;
+}
+.prop-card-attention:hover {
+  border-color: #C0392B;
+  box-shadow: 0 2px 8px rgba(192, 57, 43, 0.12);
+}
+
+.prop-card-pill {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.625rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: #C0392B;
+  border-radius: 999px;
+}
+
+.prop-card-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #4A4543;
+  line-height: 1.25;
+  padding-right: 6.5rem;
+}
+
+.prop-card-subtitle {
+  font-size: 11px;
+  color: #8A8583;
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+.prop-card-status {
+  margin-top: 0.625rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+  font-size: 0.8rem;
+  color: #4A4543;
+}
+
+.prop-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.prop-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.prop-status-dot-open { background: #C0392B; }
+.prop-status-dot-violation { background: #C4703F; }
+.prop-status-dot-good { background: #6B8F71; }
+
 /* ─── More page ──────────────────────────── */
 .more-list {
   display: flex;
