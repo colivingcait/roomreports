@@ -423,7 +423,11 @@ export default function PropertyOverview() {
         </section>
       </div>
 
-      <StartInspection open={showStart} onClose={() => setShowStart(false)} />
+      <StartInspection
+        open={showStart}
+        onClose={() => setShowStart(false)}
+        defaultPropertyId={property.id}
+      />
       <NewMaintenance
         open={showNewMaint}
         onClose={() => setShowNewMaint(false)}

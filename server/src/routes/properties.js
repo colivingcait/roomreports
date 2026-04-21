@@ -1,10 +1,22 @@
 import { Router } from 'express';
+import multer from 'multer';
+import sharp from 'sharp';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signPropertyInvite } from '../lib/propertyInvite.js';
 import { propertyScope } from '../lib/scope.js';
 import { computeHealth } from '../lib/healthGrade.js';
 import { planLimit, wouldExceed } from '../../../shared/features.js';
+import { uploadFile, deleteFile } from '../lib/storage.js';
+
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files are allowed'));
+    cb(null, true);
+  },
+});
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -517,6 +529,74 @@ router.delete('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete property error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Property image ─────────────────────────────────────
+
+// POST /api/properties/:id/image — upload a property cover image (OWNER/PM)
+router.post(
+  '/:id/image',
+  requireRole('OWNER', 'PM'),
+  uploadImage.single('photo'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      const property = await findOrgProperty(req.params.id, req.user.organizationId);
+      if (!property) return res.status(404).json({ error: 'Property not found' });
+
+      // Resize to a reasonable cover size, keep aspect ratio, center-crop-ish.
+      const resized = await sharp(req.file.buffer)
+        .rotate()
+        .resize({ width: 1200, height: 800, fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+
+      const key = `property-images/${property.id}/${Date.now()}.jpg`;
+      const { url } = await uploadFile(key, resized, 'image/jpeg');
+
+      // If there was a previous image in our bucket, best-effort delete it so
+      // we don't accumulate orphans. Silent on failure.
+      const previous = property.imageUrl;
+      if (previous) {
+        const match = previous.match(/property-images\/[^?]+/);
+        if (match) deleteFile(match[0]).catch(() => {});
+      }
+
+      const updated = await prisma.property.update({
+        where: { id: property.id },
+        data: { imageUrl: url },
+      });
+      return res.status(201).json({ property: updated });
+    } catch (error) {
+      console.error('Property image upload error:', error);
+      if (error.message === 'Only image files are allowed') {
+        return res.status(400).json({ error: error.message });
+      }
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// DELETE /api/properties/:id/image — clear the property image
+router.delete('/:id/image', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const property = await findOrgProperty(req.params.id, req.user.organizationId);
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    if (property.imageUrl) {
+      const match = property.imageUrl.match(/property-images\/[^?]+/);
+      if (match) deleteFile(match[0]).catch(() => {});
+    }
+
+    const updated = await prisma.property.update({
+      where: { id: property.id },
+      data: { imageUrl: null },
+    });
+    return res.json({ property: updated });
+  } catch (error) {
+    console.error('Property image delete error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

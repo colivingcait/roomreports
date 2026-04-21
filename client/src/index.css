@@ -2924,6 +2924,233 @@ body {
 .btn-danger:hover { background: #A0302A; }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ─── Wide modal variant (card pickers) ── */
+.modal-content-wide {
+  max-width: 720px;
+  width: calc(100vw - 2rem);
+}
+@media (max-width: 600px) {
+  .modal-content-wide {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    min-height: 100vh;
+  }
+}
+
+/* ─── Start Inspection card picker ──────── */
+.si-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 200px;
+}
+.si-context-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background: #FAF8F5;
+  border: 1px solid #E8E4E1;
+  border-radius: 10px;
+}
+.si-context-label {
+  font-size: 0.7rem;
+  color: #8A8583;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.si-context-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4A4543;
+}
+.si-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+@media (min-width: 520px) {
+  .si-grid-prop { grid-template-columns: repeat(2, 1fr); }
+  .si-grid-type { grid-template-columns: repeat(2, 1fr); }
+  .si-grid-room { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 720px) {
+  .si-grid-room { grid-template-columns: repeat(4, 1fr); }
+}
+
+.si-card {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #E8E4E1;
+  border-radius: 12px;
+  padding: 0.875rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.si-card:hover {
+  border-color: #6B8F71;
+  box-shadow: 0 2px 8px rgba(107, 143, 113, 0.12);
+}
+.si-card:active { transform: scale(0.99); }
+.si-card:disabled { opacity: 0.6; cursor: wait; }
+
+.si-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #4A4543;
+  line-height: 1.25;
+}
+.si-card-sub {
+  font-size: 12px;
+  color: #8A8583;
+  margin-top: 0.2rem;
+  line-height: 1.35;
+}
+
+/* Property step cards */
+.si-card-prop {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.si-card-prop .si-card-body { min-width: 0; flex: 1; }
+
+.si-prop-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.si-prop-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Type step cards — icon tile + text */
+.si-card-type {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-height: 120px;
+  border-left: 4px solid var(--type-color, #6B8F71);
+}
+.si-type-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--type-bg, #F0EDEB);
+  color: var(--type-color, #4A4543);
+}
+
+/* Room step cards — compact */
+.si-card-room {
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.si-room-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+.si-room-feature {
+  font-size: 0.65rem;
+  color: #8A8583;
+  background: #F0EDEB;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+}
+
+.si-footer {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+.si-starting {
+  font-size: 0.85rem;
+  color: #6B8F71;
+  font-weight: 500;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+/* ─── Property card thumbnail on the Properties list ─── */
+.prop-card-head-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.prop-card-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.prop-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.prop-card-thumb-initials {
+  /* background color is applied inline from tileHueFor */
+}
+
+/* ─── Property image uploader on PropertyDetail ─── */
+.prop-image-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.prop-image-preview {
+  width: 200px;
+  height: 130px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #E8E4E1;
+  background: #F0EDEB;
+}
+.prop-image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.prop-image-placeholder {
+  width: 200px;
+  height: 130px;
+  border-radius: 10px;
+  border: 1px dashed #D4D0CE;
+  background: #FAF8F5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #8A8583;
+  font-size: 0.85rem;
+}
+.prop-image-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.prop-image-upload {
+  cursor: pointer;
+  display: inline-block;
+}
+
 /* ─── Feature gating ─────────────────────── */
 .beta-badge {
   display: inline-block;

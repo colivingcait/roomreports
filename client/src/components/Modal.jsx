@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export default function Modal({ open, onClose, title, children }) {
+export default function Modal({ open, onClose, title, children, size }) {
   const overlayRef = useRef();
 
   useEffect(() => {
@@ -14,9 +14,11 @@ export default function Modal({ open, onClose, title, children }) {
 
   if (!open) return null;
 
+  const sizeClass = size === 'wide' ? 'modal-content modal-content-wide' : 'modal-content';
+
   return (
     <div className="modal-overlay" ref={overlayRef} onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className="modal-content">
+      <div className={sizeClass}>
         <div className="modal-header">
           <h3>{title}</h3>
           <button className="modal-close" onClick={onClose}>&times;</button>

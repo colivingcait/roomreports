@@ -14,6 +14,92 @@ const api = (path, opts = {}) =>
       return d;
     });
 
+// ─── Property image uploader ────────────────────────────
+
+function PropertyImageSection({ property, propertyId, onRefresh }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('photo', file);
+      const res = await fetch(`/api/properties/${propertyId}/image`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      onRefresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemove = async () => {
+    setUploading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/properties/${propertyId}/image`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Remove failed');
+      onRefresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="detail-section">
+      <div className="section-header">
+        <h3>Cover image</h3>
+      </div>
+      <div className="prop-image-row">
+        {property.imageUrl ? (
+          <div className="prop-image-preview">
+            <img src={property.imageUrl} alt={property.name} />
+          </div>
+        ) : (
+          <div className="prop-image-placeholder">
+            No image yet
+          </div>
+        )}
+        <div className="prop-image-controls">
+          <label className="btn-secondary prop-image-upload">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFile}
+              disabled={uploading}
+              style={{ display: 'none' }}
+            />
+            {uploading ? 'Uploading…' : property.imageUrl ? 'Replace image' : 'Upload image'}
+          </label>
+          {property.imageUrl && (
+            <button className="btn-text-sm" onClick={handleRemove} disabled={uploading}>
+              Remove
+            </button>
+          )}
+          {error && <div className="auth-error">{error}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Inline editable field ──────────────────────────────
 
 function InlineEdit({ value, onSave, placeholder }) {
@@ -357,6 +443,8 @@ export default function PropertyDetail() {
           <button className="btn-danger-sm" onClick={() => setDeleteProperty(true)}>Archive Property</button>
         </div>
       </div>
+
+      <PropertyImageSection property={property} propertyId={id} onRefresh={fetchProperty} />
 
       <SpaceSection title="Kitchens" items={property.kitchens} propertyId={id} endpoint="kitchens" onRefresh={fetchProperty} />
       <SpaceSection title="Shared Bathrooms" items={property.bathrooms} propertyId={id} endpoint="bathrooms" onRefresh={fetchProperty} />

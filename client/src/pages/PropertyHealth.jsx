@@ -4,6 +4,16 @@ import Modal from '../components/Modal';
 import UpgradeModal from '../components/UpgradeModal';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 
+const TILE_HUES = ['#6B8F71', '#C4703F', '#8A2B6D', '#2B5F8A', '#BA7517'];
+function tileHueFor(id) {
+  const seed = (id || '').charCodeAt(0) || 0;
+  return TILE_HUES[seed % TILE_HUES.length];
+}
+function initialsOf(name) {
+  if (!name) return '?';
+  return name.split(/\s+/).map((s) => s[0]).filter(Boolean).join('').toUpperCase().slice(0, 2);
+}
+
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => {
@@ -183,8 +193,24 @@ export default function PropertyHealth() {
                 onClick={() => navigate(`/properties/${p.id}/overview`)}
               >
                 {attention && <span className="prop-card-pill">Needs attention</span>}
-                <div className="prop-card-name">{p.name}</div>
-                <div className="prop-card-subtitle">{subtitle}</div>
+                <div className="prop-card-head-row">
+                  {p.imageUrl ? (
+                    <div className="prop-card-thumb">
+                      <img src={p.imageUrl} alt="" />
+                    </div>
+                  ) : (
+                    <div
+                      className="prop-card-thumb prop-card-thumb-initials"
+                      style={{ background: tileHueFor(p.id) }}
+                    >
+                      {initialsOf(p.name)}
+                    </div>
+                  )}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="prop-card-name">{p.name}</div>
+                    <div className="prop-card-subtitle">{subtitle}</div>
+                  </div>
+                </div>
                 <div className="prop-card-status">
                   {open === 0 && viol === 0 ? (
                     <span className="prop-status">
