@@ -76,14 +76,67 @@ export default function Dashboard() {
       .then((d) => { if (d.inspection) navigate(`/inspections/${d.inspection.id}`); });
   };
 
+  // ── Top metrics ──
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
+  });
+
+  const openMaint =
+    (sc.OPEN || 0) + (sc.ASSIGNED || 0) + (sc.IN_PROGRESS || 0);
+  const activeViolations = (propertyHealth || []).reduce(
+    (acc, p) => acc + (p.activeViolationCount || 0), 0,
+  );
+  const avgResolutionDays = data?.maintenance?.avgResolutionDays ?? data?.avgResolutionDays ?? null;
+
+  const pendingTone =
+    pendingReview.length > 0 ? 'db-metric-value-terracotta' : 'db-metric-value-good';
+  const openTone =
+    openMaint > 5 ? 'db-metric-value-danger'
+    : openMaint > 0 ? 'db-metric-value-terracotta'
+    : 'db-metric-value-good';
+  const violTone =
+    activeViolations > 3 ? 'db-metric-value-danger'
+    : activeViolations > 0 ? 'db-metric-value-terracotta'
+    : 'db-metric-value-good';
+  const avgTone =
+    avgResolutionDays == null ? ''
+    : avgResolutionDays > 5 ? 'db-metric-value-danger'
+    : avgResolutionDays > 3 ? 'db-metric-value-terracotta'
+    : 'db-metric-value-good';
+
   return (
-    <div className="db-page">
-      <div className="db-top">
-        <h1 className="db-title">Dashboard</h1>
-        <button className="db-new-btn" onClick={() => setShowStart(true)}>+ New Inspection</button>
+    <div className="db-page page-container">
+      <div className="db-top page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">{todayLabel}</p>
+        </div>
+        <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
       </div>
 
       {notification && <div className="notification-bar">{notification}</div>}
+
+      {/* Four metric cards across the top */}
+      <div className="db-metrics">
+        <div className="db-metric">
+          <div className="db-metric-label">Pending review</div>
+          <div className={`db-metric-value ${pendingTone}`}>{pendingReview.length}</div>
+        </div>
+        <div className="db-metric">
+          <div className="db-metric-label">Open maintenance</div>
+          <div className={`db-metric-value ${openTone}`}>{openMaint}</div>
+        </div>
+        <div className="db-metric">
+          <div className="db-metric-label">Active violations</div>
+          <div className={`db-metric-value ${violTone}`}>{activeViolations}</div>
+        </div>
+        <div className="db-metric">
+          <div className="db-metric-label">Avg resolution time</div>
+          <div className={`db-metric-value ${avgTone}`}>
+            {avgResolutionDays != null ? `${avgResolutionDays.toFixed(1)}d` : '—'}
+          </div>
+        </div>
+      </div>
 
       <div className="db-grid">
 

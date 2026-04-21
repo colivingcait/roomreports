@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import SearchBar from './SearchBar';
 import OfflineBanner from './OfflineBanner';
+
+const COLLAPSE_KEY = 'roomreport:sidebar-collapsed';
 
 // SVG icons as inline components
 const icons = {
@@ -27,7 +29,15 @@ export default function AppLayout() {
   const { user, organization, logout } = useAuth();
   const navigate = useNavigate();
   const [showSearch, setShowSearch] = useState(false);
-  const [showMobileMore, setShowMobileMore] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === '1'; }
+    catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); }
+    catch { /* ignore */ }
+  }, [collapsed]);
 
   const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(user?.role));
 
@@ -35,19 +45,25 @@ export default function AppLayout() {
   const isBeta = !!organization?.isBeta;
 
   return (
-    <div className="shell">
+    <div className={`shell ${collapsed ? 'shell-collapsed' : ''}`}>
       {/* Desktop Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="sidebar-top">
-          <div className="sidebar-brand" onClick={() => navigate('/dashboard')}>
-            RoomReport
-            {isBeta && <span className="beta-badge">Beta</span>}
+          <div
+            className="sidebar-brand"
+            onClick={() => navigate('/dashboard')}
+            title="Dashboard"
+          >
+            <span className="sidebar-brand-text">RoomReport</span>
+            {!collapsed && isBeta && <span className="beta-badge">Beta</span>}
           </div>
 
-          <div className="sidebar-search" onClick={() => setShowSearch(true)}>
-            {icons.search}
-            <span>Search...</span>
-          </div>
+          {!collapsed && (
+            <div className="sidebar-search" onClick={() => setShowSearch(true)}>
+              {icons.search}
+              <span>Search</span>
+            </div>
+          )}
 
           <nav className="sidebar-nav">
             {filteredNav.map((item) => (
@@ -55,6 +71,7 @@ export default function AppLayout() {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                title={collapsed ? item.label : undefined}
               >
                 {icons[item.icon]}
                 <span>{item.label}</span>
@@ -66,13 +83,31 @@ export default function AppLayout() {
         <div className="sidebar-bottom">
           <div className="sidebar-user">
             <div className="sidebar-avatar">{initials}</div>
-            <div className="sidebar-user-info">
-              <span className="sidebar-user-name">{user?.name}</span>
-              <span className="sidebar-user-org">{organization?.name}</span>
-            </div>
+            {!collapsed && (
+              <div className="sidebar-user-info">
+                <span className="sidebar-user-name">{user?.name}</span>
+                <span className="sidebar-user-org">{organization?.name}</span>
+              </div>
+            )}
           </div>
+          <button
+            className="sidebar-collapse-btn"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <svg
+              width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: collapsed ? 'rotate(180deg)' : 'none' }}
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            <span>Collapse</span>
+          </button>
           <button className="sidebar-logout" onClick={logout} title="Sign out">
             {icons.logout}
+            <span>Sign out</span>
           </button>
         </div>
       </aside>
