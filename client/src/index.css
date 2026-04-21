@@ -3034,23 +3034,45 @@ body {
 }
 .si-prop-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Type step cards — icon tile + text */
+/* Type step cards — compact horizontal (icon left + text right) so all 5
+   types fit within a single iPhone viewport without scrolling. */
 .si-card-type {
   display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  min-height: 120px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  min-height: 0;
   border-left: 4px solid var(--type-color, #6B8F71);
 }
+.si-card-type .si-card-body { min-width: 0; flex: 1; }
+.si-card-type .si-card-title { font-size: 14px; }
+.si-card-type .si-card-sub {
+  font-size: 11px;
+  margin-top: 0.1rem;
+  /* Keep description to one line on small screens so cards stay compact */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .si-type-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--type-bg, #F0EDEB);
   color: var(--type-color, #4A4543);
+  flex-shrink: 0;
+}
+.si-type-icon svg { width: 20px; height: 20px; }
+
+/* On wider screens, let the type cards breathe a bit more */
+@media (min-width: 520px) {
+  .si-card-type { padding: 0.75rem 0.875rem; }
+  .si-card-type .si-card-title { font-size: 15px; }
+  .si-card-type .si-card-sub { font-size: 12px; -webkit-line-clamp: unset; display: block; }
 }
 
 /* Room step cards — compact */
