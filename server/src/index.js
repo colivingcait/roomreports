@@ -18,6 +18,7 @@ import violationRoutes from './routes/violations.js';
 import reportsRoutes from './routes/reports.js';
 import templateRoutes from './routes/templates.js';
 import publicInspectionRoutes from './routes/publicInspections.js';
+import organizationRoutes from './routes/organization.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -61,6 +62,7 @@ app.use('/api/schedules', scheduleRoutes);
 app.use('/api/violations', violationRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/templates', templateRoutes);
+app.use('/api/organization', organizationRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -25,7 +25,27 @@ router.get('/', async (req, res) => {
       },
       orderBy: [{ name: 'asc' }],
     });
-    return res.json({ vendors });
+
+    // Active-jobs count per vendor (OPEN + ASSIGNED + IN_PROGRESS)
+    let activeCounts = [];
+    if (vendors.length > 0) {
+      activeCounts = await prisma.maintenanceItem.groupBy({
+        by: ['assignedVendorId'],
+        where: {
+          organizationId: req.user.organizationId,
+          deletedAt: null,
+          status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+          assignedVendorId: { in: vendors.map((v) => v.id) },
+        },
+        _count: true,
+      });
+    }
+    const countMap = {};
+    for (const row of activeCounts) countMap[row.assignedVendorId] = row._count;
+
+    return res.json({
+      vendors: vendors.map((v) => ({ ...v, activeJobs: countMap[v.id] || 0 })),
+    });
   } catch (error) {
     console.error('List vendors error:', error);
     return res.status(500).json({ error: 'Internal server error' });

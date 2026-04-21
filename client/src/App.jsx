@@ -26,6 +26,11 @@ import Violations from './pages/Violations';
 import PropertyHealth from './pages/PropertyHealth';
 import Templates from './pages/Templates';
 import More from './pages/More';
+import Vendors from './pages/Vendors';
+import Sharing from './pages/Sharing';
+import Settings from './pages/Settings';
+import Billing from './pages/Billing';
+import Suggest from './pages/Suggest';
 import VendorProfile from './pages/VendorProfile';
 import ResidentHome from './pages/ResidentHome';
 import ResidentCheck from './pages/ResidentCheck';
@@ -73,6 +78,11 @@ function App() {
               <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/more" element={<More />} />
               <Route path="/team" element={<Team />} />
+              <Route path="/vendors" element={<Vendors />} />
+              <Route path="/sharing" element={<Sharing />} />
+              <Route path="/billing" element={<Billing />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/suggest" element={<Suggest />} />
               <Route path="/todo" element={<Tasks />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/all" element={<MaintenanceToDoAll />} />

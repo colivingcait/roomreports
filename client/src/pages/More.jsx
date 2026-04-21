@@ -5,7 +5,7 @@ const items = [
   { label: 'Team', path: '/team', desc: 'Members, invitations, roles' },
   { label: 'Vendors', path: '/vendors', desc: 'Vendor directory' },
   { label: 'Templates', path: '/templates', desc: 'Customize inspection checklists' },
-  { label: 'Sharing', path: '/team?section=sharing', desc: 'Resident QR links (move-in, self-check, report)' },
+  { label: 'Sharing', path: '/sharing', desc: 'Resident QR links (move-in, self-check, report)' },
   { label: 'Billing', path: '/billing', desc: 'Subscription & invoices' },
   { label: 'Settings', path: '/settings', desc: 'Organization settings' },
   { label: 'Suggest a Feature', path: '/suggest', desc: 'Send us product feedback' },
