@@ -211,22 +211,13 @@ export default function InspectionReview() {
         </div>
         <div className="review-header-right">
           {(isSubmitted || isReviewed) && (
-            <>
-              <button
-                className="btn-edit-inspection"
-                onClick={() => window.open(`/api/inspections/${id}/pdf`, '_blank')}
-                title="Summary PDF (flagged items + counts)"
-              >
-                Summary PDF
-              </button>
-              <button
-                className="btn-edit-inspection"
-                onClick={() => window.open(`/api/inspections/${id}/pdf?full=true`, '_blank')}
-                title="Full PDF (every checklist item)"
-              >
-                Full PDF
-              </button>
-            </>
+            <button
+              className="btn-edit-inspection"
+              onClick={() => window.open(`/api/inspections/${id}/pdf`, '_blank')}
+              title="Download PDF"
+            >
+              Download PDF
+            </button>
           )}
           {(user?.role === 'PM' || user?.role === 'OWNER') && (isSubmitted || isReviewed) && (
             <button

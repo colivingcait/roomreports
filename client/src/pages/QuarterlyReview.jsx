@@ -123,16 +123,9 @@ export default function QuarterlyReview() {
           <button
             className="btn-edit-inspection"
             onClick={() => window.open(`/api/inspections/quarterly-group/${propertyId}/${date}/pdf`, '_blank')}
-            title="Summary PDF (flagged items + counts)"
+            title="Download PDF"
           >
-            Summary PDF
-          </button>
-          <button
-            className="btn-edit-inspection"
-            onClick={() => window.open(`/api/inspections/quarterly-group/${propertyId}/${date}/pdf?full=true`, '_blank')}
-            title="Full PDF (every checklist item)"
-          >
-            Full PDF
+            Download PDF
           </button>
           <span
             className="insp-status-badge"

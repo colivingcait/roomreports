@@ -351,7 +351,33 @@ router.get('/', async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    return res.json({ inspections });
+    // Flagged-item count per inspection so the reports list can show it
+    // without a second request per row.
+    const ids = inspections.map((i) => i.id);
+    let flagCounts = [];
+    if (ids.length > 0) {
+      flagCounts = await prisma.inspectionItem.groupBy({
+        by: ['inspectionId'],
+        where: {
+          inspectionId: { in: ids },
+          OR: [
+            { flagCategory: { not: null } },
+            { isMaintenance: true },
+            { isLeaseViolation: true },
+          ],
+        },
+        _count: true,
+      });
+    }
+    const flagMap = {};
+    for (const row of flagCounts) flagMap[row.inspectionId] = row._count;
+
+    return res.json({
+      inspections: inspections.map((i) => ({
+        ...i,
+        flagCount: flagMap[i.id] || 0,
+      })),
+    });
   } catch (error) {
     console.error('List inspections error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1418,18 +1444,76 @@ function isDeteriorated(prev, current) {
   return wasGood && nowBad;
 }
 
-// ─── Inspection PDF (summary / full detail) ─────────────
+// ─── Inspection PDF ─────────────────────────────────────
 
 const INSPECTION_TYPE_LABELS = {
   QUARTERLY: 'Room Inspection',
-  COMMON_AREA: 'Common Area Inspection',
+  COMMON_AREA: 'Common Area',
   COMMON_AREA_QUICK: 'Common Area Quick Check',
   ROOM_TURN: 'Room Turn',
-  RESIDENT_SELF_CHECK: 'Resident Self-Check',
-  MOVE_IN_OUT: 'Move-In / Move-Out',
+  RESIDENT_SELF_CHECK: 'Self-Check',
+  MOVE_IN_OUT: 'Move-In',
 };
 
 const BAD_STATUSES = new Set(['Fail', 'Poor', 'Dirty', 'No', 'Missing', 'Damaged', 'Heavily Damaged']);
+
+// Fetch a photo URL as a Buffer, with a short timeout so a single slow
+// image doesn't hold up a report. Returns null on any failure so the
+// caller can skip silently.
+async function fetchPhotoBuffer(url) {
+  if (!url) return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const arr = await res.arrayBuffer();
+    return Buffer.from(arr);
+  } catch {
+    return null;
+  }
+}
+
+// Embed up to 3 photos per item in a tidy row. If all fetches fail we
+// fall back to a small "N photos attached" note instead of silence.
+async function embedPhotos(doc, photos) {
+  if (!photos || photos.length === 0) return;
+  const MAX = 3;
+  const tile = 120;
+  const gap = 8;
+  const buffers = await Promise.all(
+    photos.slice(0, MAX).map((p) => fetchPhotoBuffer(p.url)),
+  );
+  const valid = buffers.filter(Boolean);
+  if (valid.length === 0) {
+    doc.fontSize(9).fillColor('#8A8583').text(`${photos.length} photo${photos.length === 1 ? '' : 's'} attached (not embedded)`);
+    doc.fillColor('#4A4543');
+    return;
+  }
+  const startX = doc.x;
+  const startY = doc.y + 4;
+  // Make sure we have room for the photos on this page
+  if (startY + tile > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage();
+  }
+  valid.forEach((buf, idx) => {
+    const x = startX + idx * (tile + gap);
+    try {
+      doc.image(buf, x, startY, { width: tile, height: tile, fit: [tile, tile], align: 'center' });
+    } catch { /* bad image, skip */ }
+  });
+  if (photos.length > MAX) {
+    doc.fontSize(9).fillColor('#8A8583').text(
+      ` +${photos.length - MAX} more photo${photos.length - MAX === 1 ? '' : 's'} not shown`,
+      startX,
+      startY + tile + 4,
+    );
+  }
+  doc.x = startX;
+  doc.y = startY + tile + 10;
+  doc.fillColor('#4A4543');
+}
 
 function inspectionSummary(inspection) {
   const visible = (inspection.items || []).filter((i) => !i.zone?.startsWith('_'));
@@ -1571,29 +1655,90 @@ async function fetchInspectionForPdf(id, orgId) {
   });
 }
 
-// GET /api/inspections/:id/pdf — single inspection; ?full=true for full detail
+// GET /api/inspections/:id/pdf — single non-quarterly inspection PDF.
+// Quarterly inspections should use /quarterly-group/:propertyId/:date/pdf
+// to get the grouped report; if called directly on a quarterly inspection
+// it still renders but without the aggregate summary.
 router.get('/:id/pdf', async (req, res) => {
   try {
     const inspection = await fetchInspectionForPdf(req.params.id, req.user.organizationId);
     if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
 
-    const full = req.query.full === 'true' || req.query.full === '1';
-    const filename = `inspection-${inspection.id}${full ? '-full' : ''}.pdf`;
+    // Redirect QUARTERLY → grouped PDF (all rooms from the same batch).
+    if (inspection.type === 'QUARTERLY' && inspection.property?.id) {
+      const dateKey = new Date(inspection.createdAt).toISOString().slice(0, 10);
+      return res.redirect(307, `/api/inspections/quarterly-group/${inspection.property.id}/${dateKey}/pdf`);
+    }
 
+    const filename = `inspection-${inspection.id}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
     const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
     doc.pipe(res);
-    writeInspectionHeader(doc, inspection);
-    writeInspectionSummary(doc, inspection);
-    if (full) {
-      doc.addPage();
-      writeInspectionHeader(doc, inspection);
-      writeInspectionFullDetail(doc, inspection);
+
+    const s = inspectionSummary(inspection);
+    const label = INSPECTION_TYPE_LABELS[inspection.type] || inspection.type;
+
+    // Header
+    doc.fontSize(22).fillColor('#2C2C2C').text(`${label} Report`);
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#8A8580');
+    doc.text(`${inspection.property?.name || ''}${inspection.property?.address ? ' — ' + inspection.property.address : ''}`);
+    if (inspection.room?.label) doc.text(`Room: ${inspection.room.label}`);
+    if (inspection.inspectorName) doc.text(`Inspector: ${inspection.inspectorName}`);
+    doc.text(`Inspected: ${new Date(inspection.createdAt).toLocaleString('en-US')}`);
+    if (inspection.completedAt) doc.text(`Submitted: ${new Date(inspection.completedAt).toLocaleString('en-US')}`);
+    doc.text(`Status: ${inspection.status}`);
+    doc.text(`Generated: ${new Date().toLocaleString('en-US')}`);
+
+    // Stats
+    doc.moveDown(0.75);
+    doc.fontSize(13).fillColor('#2C2C2C').text('Summary', { underline: true });
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#2C2C2C');
+    doc.text(`Items answered: ${s.answered} / ${s.total}`);
+    doc.text(`Passed: ${s.passed}`);
+    doc.text(`Flagged: ${s.failed}`);
+    if (s.notAnswered > 0) doc.text(`Not answered: ${s.notAnswered}`);
+    doc.text(`Maintenance items: ${s.maintenance.length}`);
+    doc.text(`Lease violations: ${s.violations.length}`);
+
+    if (s.partialReason) {
+      doc.moveDown(0.5);
+      doc.fontSize(11).fillColor('#C4703F').text('Partial submission', { underline: true });
+      doc.fontSize(10).fillColor('#2C2C2C').text(s.partialReason);
     }
+
+    // Flagged items with embedded photos
+    if (s.flagged.length > 0) {
+      doc.moveDown(0.75);
+      doc.fontSize(13).fillColor('#2C2C2C').text('Flagged items', { underline: true });
+      doc.moveDown(0.25);
+      for (const item of s.flagged) {
+        const title = (item.note && item.note.trim()) || item.text;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(title);
+        doc.font('Helvetica').fontSize(10);
+        const meta = [];
+        if (item.zone) meta.push(item.zone);
+        if (item.flagCategory) meta.push(item.flagCategory);
+        if (item.priority) meta.push(item.priority + ' priority');
+        if (item.isMaintenance) meta.push('→ maintenance');
+        if (item.isLeaseViolation) meta.push('→ lease violation');
+        if (meta.length) doc.fillColor('#8A8580').text(meta.join(' · ')).fillColor('#2C2C2C');
+        if (item.note && item.note !== title) doc.text(item.note);
+        if (item.photos?.length) {
+          await embedPhotos(doc, item.photos);
+        }
+        doc.moveDown(0.5);
+      }
+    } else {
+      doc.moveDown(0.75);
+      doc.fontSize(11).fillColor('#3B6D11').text('No issues flagged.');
+    }
+
     doc.moveDown(1);
-    doc.fontSize(8).fillColor('#8A8583').text(`Generated ${new Date().toLocaleString('en-US')} · ID ${inspection.id}`, { align: 'right' });
+    doc.fontSize(8).fillColor('#8A8580').text(`ID ${inspection.id}`, { align: 'right' });
     doc.end();
   } catch (error) {
     console.error('Inspection PDF error:', error);
@@ -1601,13 +1746,19 @@ router.get('/:id/pdf', async (req, res) => {
   }
 });
 
-// GET /api/inspections/quarterly-group/:propertyId/:date/pdf — combined quarterly PDF
+// GET /api/inspections/quarterly-group/:propertyId/:date/pdf — Room Inspection batch PDF
+//
+// Layout:
+//   Page 1: Summary — header + aggregate stats + room-by-room list
+//   Pages 2+: One page per room that has flags/maintenance/violations
+//   Last page: Common Area Quick Check (if any `_QuickCommon` items present)
+//
+// Photos on flagged items are embedded (up to 3 per item) when reachable.
 router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
   try {
     const { propertyId, date } = req.params;
     const dayStart = new Date(date + 'T00:00:00.000Z');
     const dayEnd = new Date(date + 'T23:59:59.999Z');
-    const full = req.query.full === 'true' || req.query.full === '1';
 
     const inspections = await prisma.inspection.findMany({
       where: {
@@ -1637,7 +1788,7 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
     });
 
     const first = inspections[0];
-    const filename = `room-inspection-${propertyId}-${date}${full ? '-full' : ''}.pdf`;
+    const filename = `room-inspection-${propertyId}-${date}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1645,46 +1796,190 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
     const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
     doc.pipe(res);
 
-    // Cover
-    doc.fontSize(22).fillColor('#4A4543').text('Room Inspection Report');
+    // ─── PAGE 1: SUMMARY ─────────────────────────────
+    doc.fontSize(22).fillColor('#2C2C2C').text('Room Inspection Report');
     doc.moveDown(0.25);
-    doc.fontSize(11).fillColor('#8A8583').text(first.property?.name || '');
+    doc.fontSize(11).fillColor('#8A8580');
+    if (first.property?.name) doc.text(first.property.name);
     if (first.property?.address) doc.text(first.property.address);
-    doc.text(`${inspections.length} room${inspections.length === 1 ? '' : 's'} inspected`);
-    doc.text(`Inspected: ${new Date(first.createdAt).toLocaleString('en-US')}`);
+    doc.text(`Date of inspection: ${new Date(first.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
     if (first.inspectorName) doc.text(`Inspector: ${first.inspectorName}`);
+    const submittedAt = inspections
+      .map((i) => i.completedAt)
+      .filter(Boolean)
+      .sort((a, b) => new Date(b) - new Date(a))[0];
+    if (submittedAt) doc.text(`Submitted: ${new Date(submittedAt).toLocaleString('en-US')}`);
+    // Group status — REVIEWED if all reviewed, SUBMITTED if any submitted, else DRAFT
+    const statuses = inspections.map((i) => i.status);
+    let groupStatus = 'DRAFT';
+    if (statuses.every((s) => s === 'REVIEWED')) groupStatus = 'REVIEWED';
+    else if (statuses.some((s) => s === 'SUBMITTED')) groupStatus = 'SUBMITTED';
+    doc.text(`Status: ${groupStatus}`);
     doc.text(`Generated: ${new Date().toLocaleString('en-US')}`);
 
-    // Aggregate summary
-    let totalItems = 0, totalPassed = 0, totalFailed = 0, totalFlagged = 0, totalMaint = 0, totalViol = 0;
-    for (const insp of inspections) {
+    // Aggregate stats
+    const roomSummaries = inspections.map((insp) => {
       const s = inspectionSummary(insp);
-      totalItems += s.total;
-      totalPassed += s.passed;
-      totalFailed += s.failed;
-      totalFlagged += s.flagged.length;
-      totalMaint += s.maintenance.length;
-      totalViol += s.violations.length;
-    }
-    doc.moveDown(0.75);
-    doc.fontSize(13).fillColor('#4A4543').text('Aggregate', { underline: true });
-    doc.fontSize(11).fillColor('#4A4543');
-    doc.moveDown(0.25);
-    doc.text(`Items checked: ${totalItems}`);
-    doc.text(`Passed: ${totalPassed}`);
-    doc.text(`Failed / flagged: ${totalFailed}`);
-    doc.text(`Maintenance to follow up: ${totalMaint}`);
-    doc.text(`Lease violations: ${totalViol}`);
-    doc.text(`Flagged items total: ${totalFlagged}`);
+      const isCompletedMarker = (insp.items || []).some(
+        (i) => i.zone === '_Completed' && i.status === 'Yes',
+      );
+      return { inspection: insp, summary: s, completed: isCompletedMarker };
+    });
+    const roomsInspected = roomSummaries.filter((r) => r.completed || r.summary.answered > 0).length;
+    const roomsSkipped = roomSummaries.filter((r) => !r.completed && r.summary.answered === 0);
+    const totalFlagged = roomSummaries.reduce((a, r) => a + r.summary.flagged.length, 0);
+    const totalMaint = roomSummaries.reduce((a, r) => a + r.summary.maintenance.length, 0);
+    const totalViol = roomSummaries.reduce((a, r) => a + r.summary.violations.length, 0);
 
-    for (const insp of inspections) {
+    doc.moveDown(0.75);
+    doc.fontSize(13).fillColor('#2C2C2C').text('Summary', { underline: true });
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#2C2C2C');
+    doc.text(`Rooms inspected: ${roomsInspected} / ${roomSummaries.length} total`);
+    if (roomsSkipped.length > 0) {
+      doc.fillColor('#C4703F').text(
+        `Rooms unable to be completed: ${roomsSkipped.map((r) => r.inspection.room?.label || '?').join(', ')}`,
+      );
+      doc.fillColor('#2C2C2C');
+    }
+    doc.text(`Flagged items total: ${totalFlagged}`);
+    doc.text(`Maintenance items: ${totalMaint}`);
+    doc.text(`Lease violations: ${totalViol}`);
+
+    // Room-by-room summary list
+    doc.moveDown(0.75);
+    doc.fontSize(13).fillColor('#2C2C2C').text('Room-by-room', { underline: true });
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#2C2C2C');
+    for (const { inspection: insp, summary: s } of roomSummaries) {
+      const roomLabel = insp.room?.label || 'Room';
+      const parts = [];
+      if (s.maintenance.length > 0) parts.push(`Maintenance: ${s.maintenance.length}`);
+      if (s.violations.length > 0) parts.push(`Violations: ${s.violations.length}`);
+      const otherFlagged = s.flagged.filter(
+        (i) => !i.isMaintenance && !i.isLeaseViolation,
+      ).length;
+      if (otherFlagged > 0) parts.push(`Other flags: ${otherFlagged}`);
+      const suffix = parts.length > 0 ? parts.join(', ') : 'All clear';
+      doc.font(parts.length > 0 ? 'Helvetica-Bold' : 'Helvetica');
+      doc.text(`${roomLabel}: ${suffix}`);
+    }
+    doc.font('Helvetica');
+
+    // ─── PAGES 2+: per room with issues ─────────────
+    const roomsWithIssues = roomSummaries.filter(
+      (r) => r.summary.flagged.length > 0,
+    );
+
+    for (const { inspection: insp, summary: s } of roomsWithIssues) {
       doc.addPage();
-      writeInspectionHeader(doc, insp);
-      writeInspectionSummary(doc, insp);
-      if (full) {
-        doc.addPage();
-        writeInspectionHeader(doc, insp);
-        writeInspectionFullDetail(doc, insp);
+      const roomLabel = insp.room?.label || 'Room';
+      doc.fontSize(18).fillColor('#2C2C2C').text(roomLabel);
+      doc.moveDown(0.25);
+      doc.fontSize(11).fillColor('#8A8580')
+        .text(`Items answered: ${s.answered}  |  Passed: ${s.passed}  |  Flagged: ${s.flagged.length}`);
+      doc.text(`Maintenance items: ${s.maintenance.length}`);
+      doc.text(`Lease violations: ${s.violations.length}`);
+
+      // Maintenance items
+      if (s.maintenance.length > 0) {
+        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#C4703F').text('Maintenance');
+        doc.font('Helvetica').fillColor('#2C2C2C');
+        for (const item of s.maintenance) {
+          doc.moveDown(0.25);
+          const title = (item.note && item.note.trim()) || item.text;
+          doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(title);
+          doc.font('Helvetica').fontSize(10);
+          const meta = [];
+          if (item.flagCategory) meta.push(item.flagCategory);
+          if (item.priority) meta.push(item.priority + ' priority');
+          if (meta.length) doc.fillColor('#8A8580').text(meta.join(' · ')).fillColor('#2C2C2C');
+          if (item.note && item.note !== title) doc.text(item.note);
+          if (item.photos?.length) {
+            await embedPhotos(doc, item.photos);
+          }
+        }
+      }
+
+      // Lease violations
+      if (s.violations.length > 0) {
+        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#D85A30').text('Lease violations');
+        doc.font('Helvetica').fillColor('#2C2C2C');
+        for (const item of s.violations) {
+          doc.moveDown(0.25);
+          doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(item.text);
+          doc.font('Helvetica').fontSize(10);
+          if (item.note) doc.text(item.note);
+          if (item.photos?.length) {
+            await embedPhotos(doc, item.photos);
+          }
+        }
+      }
+
+      // Any other flagged items (flagCategory without maintenance/violation)
+      const otherFlagged = s.flagged.filter(
+        (i) => !i.isMaintenance && !i.isLeaseViolation,
+      );
+      if (otherFlagged.length > 0) {
+        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#8A8580').text('Other flagged items');
+        doc.font('Helvetica').fillColor('#2C2C2C');
+        for (const item of otherFlagged) {
+          doc.moveDown(0.25);
+          const title = (item.note && item.note.trim()) || item.text;
+          doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(title);
+          doc.font('Helvetica').fontSize(10);
+          if (item.flagCategory) doc.fillColor('#8A8580').text(item.flagCategory).fillColor('#2C2C2C');
+          if (item.note && item.note !== title) doc.text(item.note);
+          if (item.photos?.length) {
+            await embedPhotos(doc, item.photos);
+          }
+        }
+      }
+    }
+
+    // ─── LAST PAGE: COMMON AREA QUICK CHECK ─────────
+    const quickItems = [];
+    for (const insp of inspections) {
+      for (const it of (insp.items || [])) {
+        if (it.zone?.startsWith('_QuickCommon:')) quickItems.push(it);
+      }
+    }
+    const touchedQuick = quickItems.filter((i) => i.status);
+    if (touchedQuick.length > 0) {
+      doc.addPage();
+      doc.fontSize(18).fillColor('#2C2C2C').text('Common Area Quick Check');
+      doc.moveDown(0.25);
+      doc.fontSize(11).fillColor('#8A8580').text('Shared spaces checked during this inspection.');
+      doc.moveDown(0.5);
+      // Group by kind
+      const groups = {};
+      for (const it of touchedQuick) {
+        const kind = (it.zone.split(':')[1] || 'Other');
+        if (!groups[kind]) groups[kind] = [];
+        groups[kind].push(it);
+      }
+      for (const kind of Object.keys(groups)) {
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#2C2C2C').text(`${kind}s`);
+        doc.font('Helvetica').fontSize(11);
+        for (const it of groups[kind]) {
+          const mark = it.status === 'Pass' ? 'Pass' : 'Fail';
+          const color = it.status === 'Pass' ? '#3B6D11' : '#C0392B';
+          doc.fillColor('#2C2C2C').text(`${it.text}: `, { continued: true });
+          doc.fillColor(color).text(mark);
+          if (it.status === 'Fail' && (it.note || it.flagCategory || it.photos?.length)) {
+            doc.fontSize(10).fillColor('#8A8580');
+            if (it.flagCategory) doc.text(`  ${it.flagCategory}`);
+            if (it.note) doc.fillColor('#2C2C2C').text(`  ${it.note}`);
+            if (it.photos?.length) {
+              await embedPhotos(doc, it.photos);
+            }
+            doc.fontSize(11).fillColor('#2C2C2C');
+          }
+        }
+        doc.moveDown(0.35);
       }
     }
 

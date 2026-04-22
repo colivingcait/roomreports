@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FLAG_CATEGORIES, PRIORITIES } from '../../../shared/index.js';
 import UpgradeModal from '../components/UpgradeModal';
 import { useFeatureGate } from '../hooks/useFeatureGate';
@@ -359,6 +360,75 @@ function MaintenanceReports() {
 
 // ─── Inspection Reports tab ────────────────────────────
 
+const INSPECTION_TYPE_LABELS = {
+  QUARTERLY: 'Room Inspection',
+  COMMON_AREA: 'Common Area',
+  ROOM_TURN: 'Room Turn',
+  MOVE_IN_OUT: 'Move-In',
+  RESIDENT_SELF_CHECK: 'Self-Check',
+  COMMON_AREA_QUICK: 'Common Area Quick',
+};
+
+function dateKeyOf(iso) {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
+// Collapse quarterly rooms into a single row per batch (property + date).
+// Everything else stays as its own row.
+function groupForReports(inspections) {
+  const out = [];
+  const quarterlyBuckets = {};
+  for (const i of inspections) {
+    if (i.status === 'DRAFT') continue; // reports only show submitted/reviewed
+    if (i.type === 'QUARTERLY') {
+      const propId = i.property?.id || i.propertyId || '';
+      const dk = dateKeyOf(i.createdAt);
+      const key = `${propId}|${dk}|${i.status}`;
+      if (!quarterlyBuckets[key]) {
+        quarterlyBuckets[key] = {
+          id: `qgroup:${key}`,
+          isGroup: true,
+          type: 'QUARTERLY',
+          status: i.status,
+          property: i.property,
+          propertyId: propId,
+          createdAt: i.createdAt,
+          dateKey: dk,
+          inspectorName: i.inspectorName,
+          roomCount: 0,
+          flagCount: 0,
+          totalItems: 0,
+        };
+        out.push(quarterlyBuckets[key]);
+      }
+      const bucket = quarterlyBuckets[key];
+      bucket.roomCount += 1;
+      bucket.flagCount += i.flagCount || 0;
+      bucket.totalItems += i._count?.items || 0;
+      // Keep earliest created time so the row's date matches the batch
+      if (new Date(i.createdAt) < new Date(bucket.createdAt)) {
+        bucket.createdAt = i.createdAt;
+      }
+    } else {
+      out.push({
+        id: i.id,
+        isGroup: false,
+        type: i.type,
+        status: i.status,
+        property: i.property,
+        propertyId: i.property?.id,
+        room: i.room,
+        createdAt: i.createdAt,
+        inspectorName: i.inspectorName,
+        roomCount: i.room ? 1 : 0,
+        flagCount: i.flagCount || 0,
+        totalItems: i._count?.items || 0,
+      });
+    }
+  }
+  return out.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 function InspectionReports() {
   const [inspections, setInspections] = useState([]);
   const [properties, setProperties] = useState([]);
@@ -385,26 +455,20 @@ function InspectionReports() {
       .finally(() => setLoading(false));
   }, [filterProperty, filterType, filterStatus]);
 
-  const TYPE_LABELS = {
-    QUARTERLY: 'Room Inspection', COMMON_AREA: 'Common Area',
-    ROOM_TURN: 'Room Turn', MOVE_IN_OUT: 'Move-In / Out', RESIDENT_SELF_CHECK: 'Self-Check',
-    COMMON_AREA_QUICK: 'Common Area Quick',
-  };
-
-  const filtered = inspections.filter((i) => {
-    if (!search) return i.status !== 'DRAFT';
+  const rows = groupForReports(inspections).filter((r) => {
+    if (!search) return true;
     const s = search.toLowerCase();
-    return i.status !== 'DRAFT' && (
-      i.property?.name?.toLowerCase().includes(s) ||
-      i.inspectorName?.toLowerCase().includes(s) ||
-      i.room?.label?.toLowerCase().includes(s)
+    return (
+      r.property?.name?.toLowerCase().includes(s)
+      || r.inspectorName?.toLowerCase().includes(s)
+      || r.room?.label?.toLowerCase().includes(s)
     );
   });
 
   return (
     <>
       <div className="reports-tab-header">
-        <span className="reports-tab-count">{filtered.length} inspection{filtered.length === 1 ? '' : 's'}</span>
+        <span className="reports-tab-count">{rows.length} inspection{rows.length === 1 ? '' : 's'}</span>
       </div>
       <div className="maint-filters" style={{ flexWrap: 'wrap' }}>
         <input
@@ -420,7 +484,7 @@ function InspectionReports() {
         </select>
         <select className="filter-select" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
           <option value="">All Types</option>
-          {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {Object.entries(INSPECTION_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select className="filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="">All Statuses</option>
@@ -431,13 +495,13 @@ function InspectionReports() {
 
       {loading ? <div className="page-loading">Loading...</div> : (
         <div className="insp-history-list">
-          {filtered.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="empty-state"><p>No inspections match these filters.</p></div>
           ) : (
-            filtered.map((i) => (
+            rows.map((r) => (
               <InspectionReportRow
-                key={i.id}
-                item={i}
+                key={r.id}
+                row={r}
                 canPdf={can('fullReportsPDF')}
                 onLockedPdf={() => promptUpgrade({ feature: 'fullReportsPDF' })}
               />
@@ -457,54 +521,55 @@ function InspectionReports() {
   );
 }
 
-function InspectionReportRow({ item, canPdf, onLockedPdf }) {
-  const isQuarterly = item.type === 'QUARTERLY';
-  const dateKey = new Date(item.createdAt).toISOString().slice(0, 10);
+function InspectionReportRow({ row, canPdf, onLockedPdf }) {
+  const navigate = useNavigate();
+  const typeLabel = INSPECTION_TYPE_LABELS[row.type] || row.type;
 
-  const pdfUrl = (full) => isQuarterly
-    ? `/api/inspections/quarterly-group/${item.property?.id || item.propertyId}/${dateKey}/pdf${full ? '?full=true' : ''}`
-    : `/api/inspections/${item.id}/pdf${full ? '?full=true' : ''}`;
+  const pdfUrl = row.isGroup
+    ? `/api/inspections/quarterly-group/${row.propertyId}/${row.dateKey}/pdf`
+    : `/api/inspections/${row.id}/pdf`;
 
-  const openPdf = (e, full) => {
+  const openPdf = (e) => {
     e.stopPropagation();
     if (!canPdf) { onLockedPdf(); return; }
-    window.open(pdfUrl(full), '_blank');
+    window.open(pdfUrl, '_blank');
+  };
+
+  const openReview = () => {
+    if (row.isGroup) {
+      navigate(`/quarterly-review/${row.propertyId}/${row.dateKey}`);
+    } else {
+      navigate(`/inspections/${row.id}/review`);
+    }
   };
 
   return (
-    <div
-      className="insp-history-row"
-      onClick={() => { window.location.href = `/inspections/${item.id}/review`; }}
-    >
+    <div className="insp-history-row" onClick={openReview}>
       <div className="insp-history-left">
-        <span className="dash-type-badge">{item.type.replace(/_/g, ' ')}</span>
+        <span className="dash-type-badge">{typeLabel}</span>
         <div className="insp-history-info">
           <span className="insp-history-prop">
-            {item.property?.name}{item.room ? ` — ${item.room.label}` : ''}
+            {row.property?.name}{!row.isGroup && row.room ? ` — ${row.room.label}` : ''}
           </span>
           <span className="insp-history-inspector">
-            {item.inspectorName || '—'} &middot; {new Date(item.createdAt).toLocaleDateString()}
+            {row.inspectorName || '—'} &middot; {new Date(row.createdAt).toLocaleDateString()}
+            {row.isGroup && (
+              <> &middot; {row.roomCount} room{row.roomCount === 1 ? '' : 's'}</>
+            )}
+            {row.flagCount > 0 && (
+              <> &middot; {row.flagCount} flag{row.flagCount === 1 ? '' : 's'}</>
+            )}
           </span>
         </div>
       </div>
       <div className="insp-history-right">
-        <span className="insp-history-items">
-          {item._count?.items || 0} items
-        </span>
-        <span className="insp-status-badge">{item.status}</span>
+        <span className="insp-status-badge">{row.status}</span>
         <button
-          className={`btn-text-sm ${!canPdf ? 'btn-locked' : ''}`}
-          onClick={(e) => openPdf(e, false)}
-          title={canPdf ? 'Download summary PDF' : 'PDF export requires Growth plan'}
+          className={`btn-secondary-sm ${!canPdf ? 'btn-locked' : ''}`}
+          onClick={openPdf}
+          title={canPdf ? 'Download PDF' : 'PDF export requires Growth plan'}
         >
-          PDF {!canPdf && <LockGlyph />}
-        </button>
-        <button
-          className={`btn-text-sm ${!canPdf ? 'btn-locked' : ''}`}
-          onClick={(e) => openPdf(e, true)}
-          title={canPdf ? 'Download full detail PDF' : 'PDF export requires Growth plan'}
-        >
-          Full PDF {!canPdf && <LockGlyph />}
+          Download PDF{!canPdf && <LockGlyph />}
         </button>
       </div>
     </div>
