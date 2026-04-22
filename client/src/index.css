@@ -8857,6 +8857,25 @@ input[type="text"].inline-edit-input {
   color: var(--ds-primary);
 }
 
+/* ─── Uploaded photos: respect EXIF orientation ─── */
+/* Browsers default to `image-orientation: from-image` per spec, but
+   blanket it here so older Safari builds and any img tag across the app
+   displays photos the way the phone held them. */
+img,
+.photo-thumb img,
+.photo-thumb-sm img,
+.md-photo img,
+.room-photo img,
+.review-photo img,
+.prop-image-preview img,
+.prop-card-thumb img,
+.si-prop-thumb img,
+.qr-common-photo img,
+.sharing-card-qr img,
+.lightbox-image {
+  image-orientation: from-image;
+}
+
 /* ─── Mobile: no horizontal overflow on any page ─── */
 @media (max-width: 768px) {
   html, body, #root { max-width: 100vw; overflow-x: hidden; }

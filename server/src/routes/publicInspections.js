@@ -358,6 +358,7 @@ router.post('/photo', upload.single('photo'), async (req, res) => {
     }
 
     const resized = await sharp(req.file.buffer)
+      .rotate()
       .resize(1920, null, { withoutEnlargement: true })
       .jpeg({ quality: 85 })
       .toBuffer();

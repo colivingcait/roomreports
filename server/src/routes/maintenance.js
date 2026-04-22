@@ -509,6 +509,7 @@ router.post('/:id/photos', photoUpload.single('photo'), async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Maintenance item not found' });
 
     const resized = await sharp(req.file.buffer)
+      .rotate()
       .resize(1920, null, { withoutEnlargement: true })
       .jpeg({ quality: 85 })
       .toBuffer();

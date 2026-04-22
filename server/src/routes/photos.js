@@ -56,8 +56,12 @@ router.post(
         return res.status(404).json({ error: 'Inspection item not found' });
       }
 
-      // Resize image: max 1920px wide, maintain aspect ratio
+      // Normalize EXIF orientation first, then resize. sharp's .rotate()
+      // with no args auto-rotates based on the EXIF Orientation tag, so
+      // iPhone / Android photos land right-side-up regardless of how the
+      // phone held the sensor.
       const resized = await sharp(req.file.buffer)
+        .rotate()
         .resize(1920, null, { withoutEnlargement: true })
         .jpeg({ quality: 85 })
         .toBuffer();

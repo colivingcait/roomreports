@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateChecklist, buildChecklist, ROOM_TYPES } from '../lib/checklist.js';
@@ -1469,7 +1470,15 @@ async function fetchPhotoBuffer(url) {
     clearTimeout(timer);
     if (!res.ok) return null;
     const arr = await res.arrayBuffer();
-    return Buffer.from(arr);
+    const raw = Buffer.from(arr);
+    // Normalize EXIF orientation + re-encode as JPEG so pdfkit doesn't
+    // render sideways photos from older uploads (sharp pipeline was only
+    // recently added on ingest).
+    try {
+      return await sharp(raw).rotate().jpeg({ quality: 85 }).toBuffer();
+    } catch {
+      return raw;
+    }
   } catch {
     return null;
   }
