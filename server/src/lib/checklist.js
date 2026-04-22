@@ -18,82 +18,115 @@ function item(zone, text, options = STATUS_OPTIONS) {
 }
 
 // ─── COMMON_AREA ────────────────────────────────────────
+//
+// Each area is a separate "card" the inspector picks. Items are zoned by
+// `<AreaKey>` so the frontend can group them. Section headings within an
+// area are represented as items with `options: ['_section']` (the
+// frontend renders them as dividers, not as pass/fail rows). Per-area
+// completion is tracked with an `_Completed:<AreaKey>` marker, mirroring
+// the quarterly room flow.
+//
+// AreaKey conventions:
+//   `Kitchen:<label>`     — one per configured kitchen
+//   `Bathroom:<label>`    — one per configured shared bathroom
+//   `Laundry`             — always included
+//   `Living`              — always included
+//   `Exterior`            — always included
+//
+// MISC items are added dynamically by the user during inspection
+// (zone `Misc:<AreaKey>`) — the generator does not pre-create them.
 
 function generateCommonArea(property) {
   const items = [];
   const pf = (zone, text) => item(zone, text, ['Pass', 'Fail']);
+  const section = (zone, text) => ({ zone, text, options: ['_section'], status: '' });
+  const completed = (zone) => ({ zone: `_Completed:${zone}`, text: 'Area completed', options: ['Yes'], status: '' });
 
   // Kitchens (repeat per labeled kitchen)
   for (const kitchen of property.kitchens || []) {
-    const z = kitchen.label || 'Kitchen';
+    const z = `Kitchen:${kitchen.label || 'Kitchen'}`;
     items.push(
+      section(z, 'Surfaces and Cleanliness'),
       pf(z, 'Counters and surfaces clean'),
       pf(z, 'Sink clean and draining properly'),
-      pf(z, 'Stovetop and oven clean'),
-      pf(z, 'Refrigerator clean, temp OK, no expired food'),
-      pf(z, 'Microwave clean and working'),
-      pf(z, 'Disposal working (if applicable)'),
-      pf(z, 'Dishwasher clean and working (if applicable)'),
-      pf(z, 'Cabinets clean'),
       pf(z, 'Floors clean, no damage'),
-      pf(z, 'Trash and recycling taken to curb'),
-      pf(z, 'Light fixtures working'),
+      pf(z, 'Cabinets clean, no damage'),
       pf(z, 'No pest evidence'),
       pf(z, 'No mold or mildew'),
       pf(z, 'No unusual odors'),
+      section(z, 'Appliances'),
+      pf(z, 'Stovetop and oven clean and working'),
+      pf(z, 'Refrigerator clean, temp OK, no expired food'),
+      pf(z, 'Microwave clean and working'),
+      pf(z, 'Dishwasher clean and working (if applicable)'),
+      pf(z, 'Disposal working (if applicable)'),
+      section(z, 'Reset'),
+      pf(z, 'Trash and recycling taken out'),
+      pf(z, 'Light fixtures working'),
       pf(z, 'Supplies stocked (paper towels, dish soap, Clorox wipes)'),
+      completed(z),
     );
   }
 
   // Shared Bathrooms (repeat per labeled bathroom)
   for (const bathroom of property.bathrooms || []) {
-    const z = bathroom.label || 'Shared Bathroom';
+    const z = `Bathroom:${bathroom.label || 'Shared Bathroom'}`;
     items.push(
+      section(z, 'Surfaces and Cleanliness'),
       pf(z, 'Toilet clean, flushing properly, no leaks'),
       pf(z, 'Sink clean and draining properly'),
       pf(z, 'Shower/tub clean, draining, caulk intact'),
-      pf(z, 'Shower curtain or door clean & intact'),
       pf(z, 'Mirror clean'),
-      pf(z, 'Exhaust fan clean & working'),
       pf(z, 'Floors clean, no damage'),
-      pf(z, 'No leaks under sink'),
-      pf(z, 'Light fixtures working'),
-      pf(z, 'Supplies stocked (toilet paper, hand soap)'),
       pf(z, 'No mold or mildew'),
       pf(z, 'No pest evidence'),
       pf(z, 'No unusual odors'),
+      section(z, 'Fixtures'),
+      pf(z, 'Shower curtain or door clean & intact'),
+      pf(z, 'Exhaust fan clean & working'),
+      pf(z, 'Light fixtures working'),
+      pf(z, 'No leaks under sink'),
+      section(z, 'Reset'),
+      pf(z, 'Supplies stocked (toilet paper, hand soap)'),
+      completed(z),
     );
   }
 
-  // Common Areas
+  // Laundry — always included
   items.push(
-    pf('Common Areas', 'Furniture clean and in good condition'),
-    pf('Common Areas', 'Floors clean, no damage'),
-    pf('Common Areas', 'Windows/blinds clean'),
-    pf('Common Areas', 'Light fixtures dusted & working'),
-    pf('Common Areas', 'No clutter or personal items left out'),
-    pf('Common Areas', 'Vents clean and working'),
-    pf('Common Areas', 'Washer and dryer clean and working'),
-    pf('Common Areas', 'Lint trap cleaned, no debris around machines'),
+    pf('Laundry', 'Washer and dryer clean and working'),
+    pf('Laundry', 'Lint trap cleaned, no debris around machines'),
+    pf('Laundry', 'No leaks or water damage'),
+    pf('Laundry', 'Light fixtures working'),
+    pf('Laundry', 'Floor clean'),
+    completed('Laundry'),
   );
 
-  // Exterior
+  // Living / Common Areas — always included
+  items.push(
+    pf('Living', 'Furniture clean and in good condition'),
+    pf('Living', 'Floors clean, no damage'),
+    pf('Living', 'Windows/blinds clean'),
+    pf('Living', 'Light fixtures dusted & working'),
+    pf('Living', 'Vents clean and working'),
+    pf('Living', 'No clutter or personal items left out'),
+    pf('Living', 'Hallways and stairs clear'),
+    completed('Living'),
+  );
+
+  // Exterior — always included
   items.push(
     pf('Exterior', 'Porch/steps clean, no hazards'),
-    pf('Exterior', 'Exterior lighting working (front and back)'),
     pf('Exterior', 'Front door and lock functional'),
     pf('Exterior', 'Back door and lock functional'),
-    pf('Exterior', 'Landscaping maintained'),
+    pf('Exterior', 'Exterior lighting working (front and back)'),
     pf('Exterior', 'Address numbers visible'),
     pf('Exterior', 'Back porch/patio clean, no hazards'),
     pf('Exterior', 'Trash cans/dumpster area clean and organized'),
     pf('Exterior', 'Parking area clear, no debris'),
+    pf('Exterior', 'Landscaping maintained'),
     pf('Exterior', 'No standing water or drainage issues'),
-  );
-
-  // Misc
-  items.push(
-    pf('Misc', 'Misc (catch-all for anything not covered above)'),
+    completed('Exterior'),
   );
 
   return items;
@@ -412,11 +445,12 @@ export const PROPERTY_ONLY_TYPES = ['COMMON_AREA', 'COMMON_AREA_QUICK'];
 // appended from the defaults so the template covers the per-org customizable
 // "common" items without duplicating per-room dynamic ones.
 export async function buildChecklist(prisma, organizationId, type, property, room, options = {}) {
-  // QUARTERLY and COMMON_AREA_QUICK drive the new multi-screen UI, which
-  // requires a specific zone structure (Maintenance, per-feature zones,
-  // Compliance pills, _Completed marker). Bypass any org template for these
-  // and always use the generator so the UI renders correctly.
-  if (type === 'QUARTERLY' || type === 'COMMON_AREA_QUICK') {
+  // QUARTERLY, COMMON_AREA, and COMMON_AREA_QUICK drive multi-screen UIs
+  // that depend on zone structure derived from the property config (per-
+  // kitchen / per-bathroom areas, _Completed:<area> markers, _section
+  // dividers, etc.). Bypass any org template for these and always use the
+  // generator so the UI renders correctly with the latest property config.
+  if (type === 'QUARTERLY' || type === 'COMMON_AREA' || type === 'COMMON_AREA_QUICK') {
     return generateChecklist(type, property, room, options);
   }
 

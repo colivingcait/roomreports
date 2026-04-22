@@ -374,7 +374,9 @@ export default function InspectionFlow() {
   };
 
   const onSubmitClick = () => {
-    const incomplete = items.filter((i) => !i.zone.startsWith('_') && !i.status);
+    const incomplete = items.filter(
+      (i) => !i.zone.startsWith('_') && !i.status && !(Array.isArray(i.options) && i.options.includes('_section')),
+    );
     if (incomplete.length > 0) setShowPartialModal(true);
     else doSubmit(false);
   };
@@ -391,8 +393,10 @@ export default function InspectionFlow() {
   const sendBackItem = items.find((i) => i.zone === '_SendBackReason');
   const sendBackReason = sendBackItem?.note || null;
 
-  // Filter out metadata items from display
-  const visibleItems = items.filter((i) => !i.zone.startsWith('_'));
+  // Filter out metadata items and section dividers from display
+  const visibleItems = items.filter(
+    (i) => !i.zone.startsWith('_') && !(Array.isArray(i.options) && i.options.includes('_section')),
+  );
 
   // Group items by zone (excluding metadata)
   const zones = [];

@@ -10,10 +10,12 @@ import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 
+// Common Area inspections are driven by property config (each kitchen,
+// each shared bathroom, plus always-included Laundry/Living/Exterior), so
+// they don't use the template editor. Room Inspections use the fixed
+// 4-screen flow and are also managed in code.
 const TYPES = [
-  { value: 'COMMON_AREA', label: 'Common Area' },
   { value: 'ROOM_TURN', label: 'Room Turn' },
-  { value: 'QUARTERLY', label: 'Room Inspection' },
   { value: 'RESIDENT_SELF_CHECK', label: 'Self-Check' },
   { value: 'MOVE_IN_OUT', label: 'Move-In' },
 ];
@@ -50,7 +52,7 @@ const EMPTY = { zone: '', text: '', options: 'Pass, Fail, N/A' };
 
 export default function Templates() {
   const navigate = useNavigate();
-  const [type, setType] = useState('COMMON_AREA');
+  const [type, setType] = useState('ROOM_TURN');
   const [template, setTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // item | null

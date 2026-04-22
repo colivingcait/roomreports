@@ -173,7 +173,7 @@ export default function InspectionReview() {
   const partialItem = inspection.items?.find((i) => i.zone === '_PartialReason');
   const partialReason = partialItem?.note || null;
   const incompleteItems = (inspection.items || []).filter(
-    (i) => !i.zone.startsWith('_') && !i.status,
+    (i) => !i.zone.startsWith('_') && !i.status && !(Array.isArray(i.options) && i.options.includes('_section')),
   );
 
   // Only display items with flags or marked for maintenance (filter out metadata zones)

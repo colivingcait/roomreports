@@ -619,8 +619,15 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(400).json({ error: 'Inspection already submitted' });
     }
 
-    // Check that all items have a status set (ignore metadata zones starting with _)
-    const incomplete = inspection.items.filter((i) => !i.status && !i.zone.startsWith('_'));
+    // Check that all items have a status set. Ignore metadata zones
+    // starting with _ and section-divider items (options === ['_section'])
+    // used as headings inside per-area checklists.
+    const incomplete = inspection.items.filter((i) => {
+      if (i.status) return false;
+      if (i.zone?.startsWith('_')) return false;
+      if (Array.isArray(i.options) && i.options.includes('_section')) return false;
+      return true;
+    });
 
     if (incomplete.length > 0 && !partial) {
       return res.status(400).json({
@@ -1546,7 +1553,9 @@ async function embedPhotos(doc, photos) {
 }
 
 function inspectionSummary(inspection) {
-  const visible = (inspection.items || []).filter((i) => !i.zone?.startsWith('_'));
+  const visible = (inspection.items || []).filter(
+    (i) => !i.zone?.startsWith('_') && !(Array.isArray(i.options) && i.options.includes('_section')),
+  );
   const total = visible.length;
   const answered = visible.filter((i) => i.status).length;
   const passed = visible.filter((i) => !BAD_STATUSES.has(i.status) && i.status && i.status !== '').length;
@@ -1674,6 +1683,215 @@ function writeInspectionFullDetail(doc, inspection) {
   }
 }
 
+// ─── Common Area PDF helpers ───────────────────────────
+
+function areaLabelForPdf(key) {
+  if (key.startsWith('Kitchen:')) return key.slice('Kitchen:'.length);
+  if (key.startsWith('Bathroom:')) return key.slice('Bathroom:'.length);
+  if (key === 'Living') return 'Living / Common Areas';
+  return key;
+}
+function areaSubtitleForPdf(key) {
+  if (key.startsWith('Kitchen:')) return 'Kitchen';
+  if (key.startsWith('Bathroom:')) return 'Shared Bathroom';
+  return null;
+}
+
+// Group items by area key. Items with zone === `Misc:<area>` belong to
+// that area. Section items (_section) are dropped from the summary but
+// kept when rendering the per-area detail pages so headings appear.
+function groupItemsByArea(items) {
+  const areas = new Map();
+  const ensure = (key) => {
+    if (!areas.has(key)) {
+      areas.set(key, { key, items: [], misc: [], completed: false });
+    }
+    return areas.get(key);
+  };
+
+  for (const it of items || []) {
+    if (!it.zone) continue;
+    if (it.zone.startsWith('_Completed:')) {
+      const key = it.zone.slice('_Completed:'.length);
+      const a = ensure(key);
+      a.completed = it.status === 'Yes';
+    } else if (it.zone.startsWith('Misc:')) {
+      const key = it.zone.slice('Misc:'.length);
+      ensure(key).misc.push(it);
+    } else if (!it.zone.startsWith('_')) {
+      ensure(it.zone).items.push(it);
+    }
+  }
+  return Array.from(areas.values());
+}
+
+function areaFlagSummary(area) {
+  const real = [...area.items, ...area.misc].filter(
+    (i) => !(Array.isArray(i.options) && i.options.includes('_section')),
+  );
+  const answered = real.filter((i) => i.status).length;
+  const total = real.length;
+  const flagged = real.filter((i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation);
+  const maintenance = real.filter((i) => i.isMaintenance);
+  const violations = real.filter((i) => i.isLeaseViolation);
+  const otherFlagged = flagged.filter((i) => !i.isMaintenance && !i.isLeaseViolation);
+  return { answered, total, flagged, maintenance, violations, otherFlagged };
+}
+
+async function writeCommonAreaPdf(doc, inspection) {
+  const areas = groupItemsByArea(inspection.items || []);
+  const submittedAt = inspection.completedAt || inspection.createdAt;
+
+  // ─── PAGE 1: SUMMARY ─────────────────────────────
+  doc.fontSize(22).fillColor('#2C2C2C').text('Common Area Inspection Report');
+  doc.moveDown(0.25);
+  doc.fontSize(11).fillColor('#8A8580');
+  if (inspection.property?.name) doc.text(inspection.property.name);
+  if (inspection.property?.address) doc.text(inspection.property.address);
+  doc.text(`Date of inspection: ${new Date(submittedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
+  if (inspection.inspectorName) doc.text(`Inspector: ${inspection.inspectorName}`);
+  if (inspection.completedAt) doc.text(`Submitted: ${new Date(inspection.completedAt).toLocaleString('en-US')}`);
+  doc.text(`Status: ${inspection.status}`);
+  doc.text(`Generated: ${new Date().toLocaleString('en-US')}`);
+
+  const partialItem = (inspection.items || []).find((i) => i.zone === '_PartialReason');
+  if (partialItem?.note) {
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#C4703F').text('Partial submission', { underline: true });
+    doc.fontSize(10).fillColor('#2C2C2C').text(partialItem.note);
+  }
+
+  // Aggregate stats
+  const areaSummaries = areas.map((a) => ({ area: a, summary: areaFlagSummary(a) }));
+  const totalFlagged = areaSummaries.reduce((n, r) => n + r.summary.flagged.length, 0);
+  const totalMaint = areaSummaries.reduce((n, r) => n + r.summary.maintenance.length, 0);
+  const totalViol = areaSummaries.reduce((n, r) => n + r.summary.violations.length, 0);
+  const areasCompleted = areaSummaries.filter(
+    (r) => r.area.completed || r.summary.answered > 0,
+  ).length;
+  const areasSkipped = areaSummaries.filter(
+    (r) => !r.area.completed && r.summary.answered === 0,
+  );
+
+  doc.moveDown(0.75);
+  doc.fontSize(13).fillColor('#2C2C2C').text('Summary', { underline: true });
+  doc.moveDown(0.25);
+  doc.fontSize(11).fillColor('#2C2C2C');
+  doc.text(`Areas inspected: ${areasCompleted} / ${areaSummaries.length} total`);
+  if (areasSkipped.length > 0) {
+    doc.fillColor('#C4703F').text(
+      `Areas unable to be completed: ${areasSkipped.map((r) => areaLabelForPdf(r.area.key)).join(', ')}`,
+    );
+    doc.fillColor('#2C2C2C');
+  }
+  doc.text(`Flagged items total: ${totalFlagged}`);
+  doc.text(`Maintenance items: ${totalMaint}`);
+  doc.text(`Lease violations: ${totalViol}`);
+
+  // Area-by-area summary list
+  doc.moveDown(0.75);
+  doc.fontSize(13).fillColor('#2C2C2C').text('Area-by-area', { underline: true });
+  doc.moveDown(0.25);
+  doc.fontSize(11).fillColor('#2C2C2C');
+  for (const { area, summary: s } of areaSummaries) {
+    const label = areaLabelForPdf(area.key);
+    const parts = [];
+    if (s.maintenance.length > 0) parts.push(`Maintenance: ${s.maintenance.length}`);
+    if (s.violations.length > 0) parts.push(`Violations: ${s.violations.length}`);
+    if (s.otherFlagged.length > 0) parts.push(`Other flags: ${s.otherFlagged.length}`);
+
+    const isSkipped = s.answered === 0 && !area.completed;
+    const isPartial = s.answered > 0 && s.answered < s.total && !area.completed;
+    let statePrefix = '';
+    if (isSkipped) statePrefix = 'Skipped';
+    else if (isPartial) statePrefix = `Partial (${s.answered}/${s.total})`;
+
+    let suffix;
+    if (statePrefix && parts.length > 0) suffix = `${statePrefix} — ${parts.join(', ')}`;
+    else if (statePrefix) suffix = statePrefix;
+    else if (parts.length > 0) suffix = parts.join(', ');
+    else suffix = 'All clear';
+
+    const bold = parts.length > 0 || isSkipped || isPartial;
+    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
+    doc.text(`${label}: ${suffix}`);
+  }
+  doc.font('Helvetica');
+
+  // ─── PAGES 2+: per area with issues ─────────────
+  const areasWithIssues = areaSummaries.filter((r) => r.summary.flagged.length > 0);
+
+  for (const { area, summary: s } of areasWithIssues) {
+    doc.addPage();
+    const label = areaLabelForPdf(area.key);
+    const sub = areaSubtitleForPdf(area.key);
+    doc.fontSize(18).fillColor('#2C2C2C').text(label);
+    if (sub) {
+      doc.fontSize(11).fillColor('#8A8580').text(sub);
+    }
+    doc.moveDown(0.25);
+    doc.fontSize(11).fillColor('#8A8580')
+      .text(`Items answered: ${s.answered}/${s.total}  |  Flagged: ${s.flagged.length}`);
+    doc.text(`Maintenance items: ${s.maintenance.length}`);
+    doc.text(`Lease violations: ${s.violations.length}`);
+
+    if (s.maintenance.length > 0) {
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#C4703F').text('Maintenance');
+      doc.font('Helvetica').fillColor('#2C2C2C');
+      for (const item of s.maintenance) {
+        doc.moveDown(0.25);
+        const title = (item.note && item.note.trim()) || item.text;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(title);
+        doc.font('Helvetica').fontSize(10);
+        const meta = [];
+        if (item.flagCategory) meta.push(item.flagCategory);
+        if (item.priority) meta.push(item.priority + ' priority');
+        if (meta.length) doc.fillColor('#8A8580').text(meta.join(' · ')).fillColor('#2C2C2C');
+        if (item.note && item.note !== title) doc.text(item.note);
+        if (item.photos?.length) {
+          await embedPhotos(doc, item.photos);
+        }
+      }
+    }
+
+    if (s.violations.length > 0) {
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#D85A30').text('Lease violations');
+      doc.font('Helvetica').fillColor('#2C2C2C');
+      for (const item of s.violations) {
+        doc.moveDown(0.25);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(item.text);
+        doc.font('Helvetica').fontSize(10);
+        if (item.note) doc.text(item.note);
+        if (item.photos?.length) {
+          await embedPhotos(doc, item.photos);
+        }
+      }
+    }
+
+    if (s.otherFlagged.length > 0) {
+      doc.moveDown(0.5);
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#8A8580').text('Other flagged items');
+      doc.font('Helvetica').fillColor('#2C2C2C');
+      for (const item of s.otherFlagged) {
+        doc.moveDown(0.25);
+        const title = (item.note && item.note.trim()) || item.text;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#2C2C2C').text(title);
+        doc.font('Helvetica').fontSize(10);
+        if (item.flagCategory) doc.fillColor('#8A8580').text(item.flagCategory).fillColor('#2C2C2C');
+        if (item.note && item.note !== title) doc.text(item.note);
+        if (item.photos?.length) {
+          await embedPhotos(doc, item.photos);
+        }
+      }
+    }
+  }
+
+  doc.moveDown(1);
+  doc.fontSize(8).fillColor('#8A8580').text(`ID ${inspection.id}`, { align: 'right' });
+}
+
 async function fetchInspectionForPdf(id, orgId) {
   return prisma.inspection.findFirst({
     where: { id, organizationId: orgId, deletedAt: null },
@@ -1710,6 +1928,14 @@ router.get('/:id/pdf', async (req, res) => {
 
     const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
     doc.pipe(res);
+
+    // COMMON_AREA uses an area-grouped layout: page 1 summary with per-area
+    // status, pages 2+ per area with issues.
+    if (inspection.type === 'COMMON_AREA') {
+      await writeCommonAreaPdf(doc, inspection);
+      doc.end();
+      return;
+    }
 
     const s = inspectionSummary(inspection);
     const label = INSPECTION_TYPE_LABELS[inspection.type] || inspection.type;
