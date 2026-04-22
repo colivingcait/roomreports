@@ -825,10 +825,16 @@ export default function QuarterlyFlow() {
     });
   };
 
+  // A room is "incomplete for submission" if any of its visible checklist
+  // items still have no status — regardless of whether the user tapped
+  // "Done with Room" (which only flips the `_Completed` marker). The
+  // backend enforces the same rule, so we always match it here.
+  const roomHasUnanswered = (items) => visibleItems(items).some((i) => !i.status);
+
   const getIncompleteRooms = () => {
     if (!data) return [];
     return data.inspections
-      .filter((insp) => insp.status === 'DRAFT' && !isRoomComplete(insp.items))
+      .filter((insp) => insp.status === 'DRAFT' && roomHasUnanswered(insp.items))
       .map((insp) => ({ id: insp.roomId, label: insp.roomLabel, inspectionId: insp.id }));
   };
 
@@ -843,7 +849,12 @@ export default function QuarterlyFlow() {
     try {
       for (const insp of data.inspections) {
         if (insp.status !== 'DRAFT') continue;
-        const body = partial && !isRoomComplete(insp.items) ? { partial: true, partialReason } : {};
+        // Per-inspection decision: if this specific room has unanswered
+        // items, send partial + reason; if every item is answered, submit
+        // normally (even if the batch overall has other incomplete rooms).
+        const body = roomHasUnanswered(insp.items)
+          ? { partial: true, partialReason }
+          : {};
         await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
       }
 
@@ -923,7 +934,7 @@ export default function QuarterlyFlow() {
         <div className="modal-form">
           <p className="partial-intro">
             The following {incompleteRooms.length === 1 ? 'room is' : `${incompleteRooms.length} rooms are`} incomplete.
-            Tell us why so the property manager can follow up.
+            Add a reason to submit.
           </p>
           <ul className="partial-room-list">
             {incompleteRooms.map((r) => <li key={r.id}><strong>{r.label}</strong></li>)}
