@@ -1869,8 +1869,25 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
         (i) => !i.isMaintenance && !i.isLeaseViolation,
       ).length;
       if (otherFlagged > 0) parts.push(`Other flags: ${otherFlagged}`);
-      const suffix = parts.length > 0 ? parts.join(', ') : 'All clear';
-      doc.font(parts.length > 0 ? 'Helvetica-Bold' : 'Helvetica');
+
+      const isSkipped = s.answered === 0;
+      const isPartial = s.answered > 0 && s.answered < s.total;
+      let statePrefix = '';
+      if (isSkipped) statePrefix = 'Skipped';
+      else if (isPartial) statePrefix = `Partial (${s.answered}/${s.total})`;
+
+      let suffix;
+      if (statePrefix && parts.length > 0) {
+        suffix = `${statePrefix} — ${parts.join(', ')}`;
+      } else if (statePrefix) {
+        suffix = statePrefix;
+      } else if (parts.length > 0) {
+        suffix = parts.join(', ');
+      } else {
+        suffix = 'All clear';
+      }
+      const bold = parts.length > 0 || isSkipped || isPartial;
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
       doc.text(`${roomLabel}: ${suffix}`);
     }
     doc.font('Helvetica');

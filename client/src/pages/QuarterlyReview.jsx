@@ -178,7 +178,12 @@ export default function QuarterlyReview() {
       <div className="qr-room-list">
         {data.rooms.map((room) => {
           const isExpanded = expandedRoom === room.roomId;
-          const isSkipped = room.completedItems < room.totalItems;
+          // Three states: fully complete, partial (some but not all), or
+          // truly skipped (zero items answered). Partial rooms still
+          // deserve a flag count badge alongside — the inspector
+          // captured real issues before stopping.
+          const isSkipped = room.completedItems === 0;
+          const isPartial = room.completedItems > 0 && room.completedItems < room.totalItems;
 
           return (
             <Fragment key={room.roomId}>
@@ -199,11 +204,18 @@ export default function QuarterlyReview() {
                   </div>
                 </div>
                 <div className="qr-room-row-right">
-                  {isSkipped ? (
+                  {isSkipped && (
                     <span className="qr-room-badge qr-room-badge-skipped">Skipped</span>
-                  ) : room.flagCount > 0 ? (
-                    <span className="qr-room-badge qr-room-badge-flagged">{room.flagCount} flag{room.flagCount !== 1 ? 's' : ''}</span>
-                  ) : (
+                  )}
+                  {isPartial && (
+                    <span className="qr-room-badge qr-room-badge-partial">Partial</span>
+                  )}
+                  {room.flagCount > 0 && (
+                    <span className="qr-room-badge qr-room-badge-flagged">
+                      {room.flagCount} flag{room.flagCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {!isSkipped && !isPartial && room.flagCount === 0 && (
                     <span className="qr-room-badge qr-room-badge-clean">&#10003; Clean</span>
                   )}
                 </div>

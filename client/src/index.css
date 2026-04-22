@@ -7406,6 +7406,22 @@ button.review-photo-thumb {
   border: 1px solid #D4D0CE;
 }
 
+.qr-room-badge-partial {
+  background: #FAEEDA;
+  color: #854F0B;
+  border: 1px solid #E6C38A;
+}
+
+/* When multiple badges stack (Partial + flag count, for example) give
+   them a little breathing room. */
+.qr-room-row-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .qr-room-expanded {
   background: #FDFCFB;
   border: 1px solid #E8E4E1;
