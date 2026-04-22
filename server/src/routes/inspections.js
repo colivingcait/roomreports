@@ -769,7 +769,13 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
 
     const rooms = inspections.map((insp) => {
       const visible = insp.items.filter((i) => !i.zone.startsWith('_'));
-      const flags = visible.filter((i) => i.flagCategory).length;
+      // An item counts as flagged if it has a category OR is flagged as
+      // maintenance OR recorded as a lease violation. Compliance pills
+      // store isLeaseViolation=true with no flagCategory, so the old
+      // "flagCategory only" rule missed them.
+      const flags = visible.filter(
+        (i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation,
+      ).length;
       const maint = visible.filter((i) => i.isMaintenance).length;
       const answered = visible.filter((i) => i.status).length;
       totalFlags += flags;
