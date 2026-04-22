@@ -122,14 +122,11 @@ router.get('/', async (req, res) => {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    // Archive policy: drop RESOLVED items older than 7d from the default board view
-    if (!includeArchived && !status) {
-      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      where.OR = [
-        { status: { not: 'RESOLVED' } },
-        { resolvedAt: { gte: cutoff } },
-        { resolvedAt: null },
-      ];
+    // Archive policy: explicit archivedAt flag is authoritative.
+    // Items with archivedAt set are hidden from the board unless
+    // includeArchived=true. Reports still query without this filter.
+    if (!includeArchived) {
+      where.archivedAt = null;
     }
 
     const items = await prisma.maintenanceItem.findMany({
@@ -145,12 +142,7 @@ router.get('/', async (req, res) => {
       ...(propertyId ? { propertyId } : {}),
     };
     if (!includeArchived) {
-      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      countWhere.OR = [
-        { status: { not: 'RESOLVED' } },
-        { resolvedAt: { gte: cutoff } },
-        { resolvedAt: null },
-      ];
+      countWhere.archivedAt = null;
     }
     const counts = await prisma.maintenanceItem.groupBy({
       by: ['status'],
@@ -411,6 +403,42 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.json({ item: shapeItem(updated) });
   } catch (error) {
     console.error('Update maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/archive — archive / unarchive ─
+
+router.post('/:id/archive', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const item = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!item) return res.status(404).json({ error: 'Maintenance item not found' });
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: item.id },
+      data: { archivedAt: new Date() },
+    });
+    return res.json({ item: updated });
+  } catch (error) {
+    console.error('Archive maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/:id/unarchive', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const item = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!item) return res.status(404).json({ error: 'Maintenance item not found' });
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: item.id },
+      data: { archivedAt: null },
+    });
+    return res.json({ item: updated });
+  } catch (error) {
+    console.error('Unarchive maintenance error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

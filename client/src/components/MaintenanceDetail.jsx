@@ -52,6 +52,22 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
   const fileInputRef = useRef();
   const [attachmentLabel, setAttachmentLabel] = useState('quote');
   const [uploading, setUploading] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  const toggleArchive = async () => {
+    if (!data?.item) return;
+    setArchiving(true);
+    try {
+      const isArchived = !!data.item.archivedAt;
+      await api(
+        `/api/maintenance/${data.item.id}/${isArchived ? 'unarchive' : 'archive'}`,
+        { method: 'POST', body: JSON.stringify({}) },
+      );
+      onUpdated?.();
+      if (!isArchived) onClose?.();
+    } catch { /* ignore */ }
+    finally { setArchiving(false); }
+  };
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -269,6 +285,8 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                     type="number"
                     step="0.01"
                     className="maint-input"
+                    autoComplete="off"
+                    name="maintenance-estimated-cost-no-autofill"
                     value={draft.estimatedCost}
                     placeholder="0.00"
                     onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })}
@@ -284,6 +302,8 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                     type="number"
                     step="0.01"
                     className="maint-input"
+                    autoComplete="off"
+                    name="maintenance-actual-cost-no-autofill"
                     value={draft.actualCost}
                     placeholder="0.00"
                     onChange={(e) => setDraft({ ...draft, actualCost: e.target.value })}
@@ -320,6 +340,8 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                     <input
                       type={showEntryCode ? 'text' : 'password'}
                       className="maint-input"
+                      autoComplete="new-password"
+                      name="maintenance-entry-code-no-autofill"
                       value={draft.entryCode}
                       placeholder="e.g. 4520#"
                       onChange={(e) => setDraft({ ...draft, entryCode: e.target.value })}
@@ -443,6 +465,24 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                 </ul>
               </section>
             )}
+
+            <section className="md-section md-section-archive">
+              {data.item?.archivedAt && (
+                <p className="md-dim" style={{ marginBottom: '0.5rem' }}>
+                  Archived {fmtDateTime(data.item.archivedAt)} — still included in reports.
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn-secondary-sm"
+                onClick={toggleArchive}
+                disabled={archiving}
+              >
+                {archiving
+                  ? (data.item?.archivedAt ? 'Unarchiving…' : 'Archiving…')
+                  : (data.item?.archivedAt ? 'Unarchive' : 'Archive ticket')}
+              </button>
+            </section>
           </div>
         )}
       </aside>

@@ -1,6 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
+import Modal from '../components/Modal';
+
+const WIDGET_STORE_KEY = 'roomreport:dashboard-widgets';
+const DEFAULT_WIDGETS = {
+  pendingReview: true,
+  maintenanceMonth: true,
+  propertyHealth: true,
+  needsAttention: true,
+  recentActivity: true,
+};
+const WIDGET_LABELS = {
+  pendingReview: 'Pending Review',
+  maintenanceMonth: 'Maintenance This Month',
+  propertyHealth: 'Property Health',
+  needsAttention: 'Needs Attention',
+  recentActivity: 'Recent Activity',
+};
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -38,6 +55,33 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
   const [notification, setNotification] = useState(location.state?.notification || '');
+  const [showWidgetSettings, setShowWidgetSettings] = useState(false);
+  const [widgets, setWidgets] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(WIDGET_STORE_KEY) || 'null');
+      return stored ? { ...DEFAULT_WIDGETS, ...stored } : DEFAULT_WIDGETS;
+    } catch {
+      return DEFAULT_WIDGETS;
+    }
+  });
+
+  // Only honor the toggles on desktop — on mobile everything shows stacked.
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
+  );
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth >= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const toggleWidget = (key) => {
+    const next = { ...widgets, [key]: !widgets[key] };
+    setWidgets(next);
+    try { localStorage.setItem(WIDGET_STORE_KEY, JSON.stringify(next)); }
+    catch { /* ignore */ }
+  };
+  const isWidgetOn = (key) => (isDesktop ? widgets[key] !== false : true);
 
   useEffect(() => {
     fetch('/api/dashboard', { credentials: 'include' })
@@ -111,7 +155,22 @@ export default function Dashboard() {
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">{todayLabel}</p>
         </div>
-        <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
+        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
+          {isDesktop && (
+            <button
+              className="btn-secondary-sm db-widget-gear"
+              onClick={() => setShowWidgetSettings(true)}
+              title="Customize widgets"
+              aria-label="Customize widgets"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {notification && <div className="notification-bar">{notification}</div>}
@@ -141,6 +200,7 @@ export default function Dashboard() {
       <div className="db-grid">
 
         {/* ── TOP LEFT: PENDING REVIEW ── */}
+        {isWidgetOn('pendingReview') && (
         <div className="db-card">
           <div className="db-card-head">
             <div className="db-card-title db-terracotta">
@@ -192,8 +252,10 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        )}
 
         {/* ── TOP RIGHT: MAINTENANCE THIS MONTH ── */}
+        {isWidgetOn('maintenanceMonth') && (
         <div className="db-card">
           <div className="db-card-head">
             <div className="db-card-title db-sage">MAINTENANCE THIS MONTH</div>
@@ -220,8 +282,10 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        )}
 
         {/* ── BOTTOM LEFT: PROPERTY HEALTH ── */}
+        {isWidgetOn('propertyHealth') && (
         <div className="db-card">
           <div className="db-card-head">
             <div className="db-card-title db-sage">PROPERTY HEALTH</div>
@@ -253,8 +317,10 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        )}
 
         {/* ── BOTTOM RIGHT: NEEDS ATTENTION ── */}
+        {isWidgetOn('needsAttention') && (
         <div className="db-card">
           <div className="db-card-head">
             <div className="db-card-title db-terracotta">NEEDS ATTENTION</div>
@@ -284,10 +350,12 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        )}
 
       </div>
 
       {/* ── Recent Inspection Activity (Submitted + Reviewed) ── */}
+      {isWidgetOn('recentActivity') && (
       <div className="db-card db-card-wide">
         <div className="db-card-head">
           <div className="db-card-title db-sage">RECENT INSPECTION ACTIVITY</div>
@@ -332,8 +400,37 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      )}
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />
+
+      <Modal
+        open={showWidgetSettings}
+        onClose={() => setShowWidgetSettings(false)}
+        title="Customize dashboard widgets"
+      >
+        <div className="modal-form">
+          <p className="empty-text" style={{ marginTop: 0 }}>
+            Toggle widgets on or off. Your preferences are saved on this device.
+            Mobile always shows all widgets stacked.
+          </p>
+          <div className="widget-toggle-list">
+            {Object.keys(WIDGET_LABELS).map((key) => (
+              <label key={key} className="widget-toggle-row">
+                <span>{WIDGET_LABELS[key]}</span>
+                <input
+                  type="checkbox"
+                  checked={widgets[key] !== false}
+                  onChange={() => toggleWidget(key)}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="modal-actions">
+            <button className="btn-primary" onClick={() => setShowWidgetSettings(false)}>Done</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

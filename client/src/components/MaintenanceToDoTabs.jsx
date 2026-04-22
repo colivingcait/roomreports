@@ -8,15 +8,12 @@ export default function MaintenanceToDoTabs() {
   const tabs = [
     { value: 'maintenance', label: 'Maintenance', path: '/maintenance' },
     { value: 'todo', label: 'To-Do', path: '/todo' },
-    { value: 'all', label: 'All', path: '/all' },
   ];
   const active = pathname.startsWith('/maintenance')
     ? 'maintenance'
     : pathname.startsWith('/todo')
       ? 'todo'
-      : pathname.startsWith('/all')
-        ? 'all'
-        : null;
+      : null;
 
   return (
     <div className="view-toggle" style={{ marginBottom: '0.5rem' }}>

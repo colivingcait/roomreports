@@ -44,6 +44,22 @@ export default function PropertyOverview() {
   const [showFurniture, setShowFurniture] = useState(false);
   const [turnoverTarget, setTurnoverTarget] = useState(null);
   const [turningOver, setTurningOver] = useState(false);
+  const [maintItems, setMaintItems] = useState([]);
+  const [violations, setViolations] = useState([]);
+  const [maintFilter, setMaintFilter] = useState('active'); // active | all
+  const [violationFilter, setViolationFilter] = useState('active'); // active | all
+
+  useEffect(() => {
+    // Fetch the full maintenance + violations lists for this property.
+    fetch(`/api/maintenance?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMaintItems(d.items || []))
+      .catch(() => {});
+    fetch(`/api/violations?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setViolations(d.violations || []))
+      .catch(() => {});
+  }, [id]);
 
   const handleTurnoverConfirm = async () => {
     if (!turnoverTarget) return;
@@ -116,163 +132,77 @@ export default function PropertyOverview() {
         </div>
       </div>
 
-      {/* ─── ROOM GRID ─── */}
+      {/* ─── ROOM ACCORDION LIST ─── */}
       <section className="po-section">
         <h2 className="po-section-title">Rooms</h2>
-        <div className="po-room-grid">
+        <div className="po-room-list">
           {roomCards.map((room) => {
             const isExpanded = expandedRoomId === room.id;
-            const roomMaint = maintenanceByRoom[room.id]?.items || [];
-            const roomInspections = recentInspections.filter((i) => i.roomId === room.id).slice(0, 5);
+            const open = room.openMaintenanceCount || 0;
+            const viol = room.activeViolationCount || 0;
+            const tone = (open > 0 && viol > 0) ? 'red' : (open > 0 || viol > 0) ? 'yellow' : 'green';
             return (
               <Fragment key={room.id}>
                 <div
-                  className={`po-room-card ${isExpanded ? 'expanded' : ''}`}
-                  onClick={() => {
-                    setExpandedRoomId(isExpanded ? null : room.id);
-                    setShowFurniture(false);
-                  }}
+                  className={`po-room-row po-room-row-${tone} ${isExpanded ? 'expanded' : ''}`}
+                  onClick={() => { setExpandedRoomId(isExpanded ? null : room.id); setShowFurniture(false); }}
                 >
-                  <div className="po-room-health-bar" style={{ background: healthBarColor(room.openMaintenanceCount) }} />
-                  <div className="po-room-body">
-                    <div className="po-room-header">
+                  <div className="po-room-row-main">
+                    <div className="po-room-row-title">
                       <h3 className="po-room-label">{room.label}</h3>
-                      <div className="po-room-header-right">
-                        {room.activeViolationCount >= 3 && (
-                          <span
-                            className="po-room-escalation"
-                            title={`${room.activeViolationCount} active violations — problem resident?`}
-                          >
-                            &#9888; {room.activeViolationCount}
-                          </span>
-                        )}
-                        <button
-                          className="po-room-action-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTurnoverTarget(room);
-                          }}
-                          title="Turn room for new resident"
-                        >
-                          &#8634;
-                        </button>
-                        <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
-                      </div>
-                    </div>
-                    <div className="po-room-meta">
-                      {room.openMaintenanceCount > 0 ? (
-                        <span className="po-room-issues" style={{ color: '#C4703F' }}>
-                          {room.openMaintenanceCount} open issue{room.openMaintenanceCount !== 1 ? 's' : ''}
+                      <button
+                        className="btn-secondary-sm"
+                        onClick={(e) => { e.stopPropagation(); setTurnoverTarget(room); }}
+                        title="Turn room for new resident"
+                      >
+                        Turn Room
+                      </button>
+                      {viol >= 3 && (
+                        <span className="po-room-escalation" title={`${viol} active violations`}>
+                          &#9888; {viol}
                         </span>
-                      ) : (
-                        <span style={{ color: '#6B8F71' }}>No issues</span>
-                      )}
-                      <span className="dot" />
-                      <span>
-                        {room.lastInspection
-                          ? `${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
-                          : 'Never inspected'}
-                      </span>
-                      {room.lastTurnoverAt && (
-                        <>
-                          <span className="dot" />
-                          <span>Turned {timeAgo(room.lastTurnoverAt)}</span>
-                        </>
                       )}
                     </div>
-                    {room.features?.length > 0 && (
-                      <div className="po-room-features">
-                        {room.features.map((f) => (
-                          <span key={f} className="po-feature-tag">{f}</span>
-                        ))}
-                      </div>
-                    )}
+                  </div>
+                  <div className="po-room-row-right">
+                    <span className={`po-count-badge po-count-badge-maint ${open === 0 ? 'po-count-empty' : ''}`} title="Open maintenance">
+                      {open} <span className="po-count-label">open</span>
+                    </span>
+                    <span className={`po-count-badge po-count-badge-viol ${viol === 0 ? 'po-count-empty' : ''}`} title="Active violations">
+                      {viol} <span className="po-count-label">viol</span>
+                    </span>
+                    <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
                   </div>
                 </div>
 
                 {isExpanded && (
                   <div className="po-room-expanded">
                     <div className="po-room-expanded-grid">
-                      {/* Open Maintenance */}
-                      <div className="po-room-expanded-section">
-                        <h4 className="po-expanded-title">Open Maintenance</h4>
-                        {roomMaint.length === 0 ? (
-                          <div className="po-expanded-empty">{'\u2713'} No open maintenance</div>
-                        ) : (
-                          <div className="po-expanded-list">
-                            {roomMaint.map((m) => (
-                              <div
-                                key={m.id}
-                                className="po-expanded-row"
-                                onClick={() => navigate('/maintenance')}
-                              >
-                                <div className="po-expanded-row-main">
-                                  <span className="po-expanded-desc">{m.description}</span>
-                                  {m.assignedTo && (
-                                    <span className="po-expanded-assigned">{m.assignedTo}</span>
-                                  )}
-                                </div>
-                                <div className="po-expanded-row-badges">
-                                  <span className="review-cat-badge">{m.flagCategory}</span>
-                                  <span
-                                    className="insp-status-badge"
-                                    style={{
-                                      color: MAINT_STATUS_COLORS[m.status],
-                                      borderColor: MAINT_STATUS_COLORS[m.status],
-                                    }}
-                                  >
-                                    {MAINT_STATUS_LABELS[m.status]}
-                                  </span>
-                                </div>
-                              </div>
+                      <div>
+                        <div className="po-dim">
+                          {room.lastInspection
+                            ? `Last inspected: ${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
+                            : 'Never inspected'}
+                          {room.lastTurnoverAt && (
+                            <> &middot; Turned {timeAgo(room.lastTurnoverAt)}</>
+                          )}
+                        </div>
+                        {room.features?.length > 0 && (
+                          <div className="po-room-features" style={{ marginTop: '0.5rem' }}>
+                            {room.features.map((f) => (
+                              <span key={f} className="po-feature-tag">{f}</span>
                             ))}
                           </div>
                         )}
-                      </div>
-
-                      {/* Recent Inspections */}
-                      <div className="po-room-expanded-section">
-                        <h4 className="po-expanded-title">Recent Inspections</h4>
-                        {roomInspections.length === 0 ? (
-                          <div className="po-expanded-empty">No inspections yet</div>
-                        ) : (
-                          <div className="po-expanded-list">
-                            {roomInspections.map((insp) => (
-                              <div
-                                key={insp.id}
-                                className="po-expanded-row"
-                                onClick={() => navigate(
-                                  insp.status === 'DRAFT'
-                                    ? `/inspections/${insp.id}`
-                                    : `/inspections/${insp.id}/review`,
-                                )}
-                              >
-                                <div className="po-expanded-row-main">
-                                  <span className="dash-type-badge">{TYPE_LABELS[insp.type] || insp.type}</span>
-                                  <span className="po-expanded-inspector">
-                                    {insp.inspectorName} &middot; {timeAgo(insp.createdAt)}
-                                  </span>
-                                </div>
-                                {insp.flagCount > 0 && (
-                                  <span className="pending-flag-count">&#9873; {insp.flagCount}</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
+                        {room.furniture?.length > 0 && (
+                          <button
+                            className="po-furniture-toggle"
+                            onClick={(e) => { e.stopPropagation(); setShowFurniture(!showFurniture); }}
+                          >
+                            {showFurniture ? '▾' : '▸'} Furniture ({room.furniture.length})
+                          </button>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Room Details: Furniture toggle */}
-                    {room.furniture?.length > 0 && (
-                      <div className="po-room-expanded-section" style={{ marginTop: '1rem' }}>
-                        <button
-                          className="po-furniture-toggle"
-                          onClick={() => setShowFurniture(!showFurniture)}
-                        >
-                          {showFurniture ? '\u25BE' : '\u25B8'} Furniture ({room.furniture.length})
-                        </button>
-                        {showFurniture && (
+                        {showFurniture && room.furniture?.length > 0 && (
                           <div className="po-furniture-list">
                             {room.furniture.map((f) => (
                               <span key={f} className="po-feature-tag">{f}</span>
@@ -280,13 +210,144 @@ export default function PropertyOverview() {
                           </div>
                         )}
                       </div>
-                    )}
+                      <div className="po-room-quick-links">
+                        <button
+                          className="btn-text-sm"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/maintenance?propertyId=${id}&roomId=${room.id}`); }}
+                        >
+                          View {open} ticket{open === 1 ? '' : 's'} &rarr;
+                        </button>
+                        <button
+                          className="btn-text-sm"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/reports?tab=violations&propertyId=${id}&roomId=${room.id}`); }}
+                        >
+                          View {viol} violation{viol === 1 ? '' : 's'} &rarr;
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </Fragment>
             );
           })}
         </div>
+      </section>
+
+      {/* ─── ALL MAINTENANCE TICKETS ─── */}
+      <section className="po-section">
+        <div className="po-section-head">
+          <h2 className="po-section-title">All Maintenance Tickets</h2>
+          <select className="filter-select" value={maintFilter} onChange={(e) => setMaintFilter(e.target.value)}>
+            <option value="active">Active only</option>
+            <option value="all">All (incl. archived)</option>
+          </select>
+        </div>
+        {(() => {
+          const rows = (maintItems || []).filter((m) => (
+            maintFilter === 'all' ? true : (!m.archivedAt && m.status !== 'RESOLVED')
+          ));
+          if (rows.length === 0) return <p className="empty-text">No maintenance tickets.</p>;
+          return (
+            <div className="po-flat-list">
+              {rows.slice(0, 20).map((m) => (
+                <div key={m.id} className="po-flat-row" onClick={() => navigate('/maintenance')}>
+                  <div className="po-flat-row-main">
+                    <span className="po-flat-desc">{m.description}</span>
+                    <span className="po-dim">
+                      {m.room?.label || 'Common'} &middot; {m.flagCategory}
+                      {m.archivedAt && <> &middot; archived</>}
+                    </span>
+                  </div>
+                  <span
+                    className="insp-status-badge"
+                    style={{ color: MAINT_STATUS_COLORS[m.status], borderColor: MAINT_STATUS_COLORS[m.status] }}
+                  >
+                    {MAINT_STATUS_LABELS[m.status] || m.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </section>
+
+      {/* ─── ALL LEASE VIOLATIONS ─── */}
+      <section className="po-section">
+        <div className="po-section-head">
+          <h2 className="po-section-title">All Lease Violations</h2>
+          <select className="filter-select" value={violationFilter} onChange={(e) => setViolationFilter(e.target.value)}>
+            <option value="active">Active only</option>
+            <option value="all">All (incl. resolved/archived)</option>
+          </select>
+        </div>
+        {(() => {
+          const rows = (violations || []).filter((v) => (
+            violationFilter === 'all' ? true : (!v.archivedAt && !v.resolvedAt)
+          ));
+          if (rows.length === 0) return <p className="empty-text">No violations.</p>;
+          return (
+            <div className="po-flat-list">
+              {rows.slice(0, 20).map((v) => (
+                <div key={v.id} className="po-flat-row">
+                  <div className="po-flat-row-main">
+                    <span className="po-flat-desc">{v.category || 'Violation'}</span>
+                    <span className="po-dim">
+                      {v.room?.label || 'Property'} &middot; {timeAgo(v.createdAt)}
+                      {v.resolvedAt && <> &middot; resolved</>}
+                      {v.archivedAt && <> &middot; archived</>}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </section>
+
+      {/* ─── RECENT INSPECTIONS (grouped by type) ─── */}
+      <section className="po-section">
+        <h2 className="po-section-title">Recent Inspections</h2>
+        {(() => {
+          const groups = {};
+          for (const insp of (recentInspections || [])) {
+            const k = insp.type;
+            if (!groups[k]) groups[k] = [];
+            groups[k].push(insp);
+          }
+          const keys = Object.keys(groups);
+          if (keys.length === 0) return <p className="empty-text">No inspections yet.</p>;
+          return (
+            <div className="po-inspection-groups">
+              {keys.map((k) => (
+                <div key={k} className="po-inspection-group">
+                  <h4 className="po-inspection-group-title">{TYPE_LABELS[k] || k}</h4>
+                  <div className="po-flat-list">
+                    {groups[k].slice(0, 5).map((insp) => (
+                      <div
+                        key={insp.id}
+                        className="po-flat-row"
+                        onClick={() => navigate(
+                          insp.status === 'DRAFT' ? `/inspections/${insp.id}` : `/inspections/${insp.id}/review`,
+                        )}
+                      >
+                        <div className="po-flat-row-main">
+                          <span className="po-flat-desc">{insp.inspectorName || 'Inspector'}</span>
+                          <span className="po-dim">
+                            {new Date(insp.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {' · '}{insp.status}
+                          </span>
+                        </div>
+                        {insp.flagCount > 0 && (
+                          <span className="pending-flag-count">&#9873; {insp.flagCount}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </section>
 
       <div className="po-split">

@@ -4,14 +4,15 @@ import Modal from '../components/Modal';
 import UpgradeModal from '../components/UpgradeModal';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 
-const TILE_HUES = ['#6B8F71', '#C4703F', '#8A2B6D', '#2B5F8A', '#BA7517'];
-function tileHueFor(id) {
-  const seed = (id || '').charCodeAt(0) || 0;
-  return TILE_HUES[seed % TILE_HUES.length];
-}
 function initialsOf(name) {
   if (!name) return '?';
   return name.split(/\s+/).map((s) => s[0]).filter(Boolean).join('').toUpperCase().slice(0, 2);
+}
+
+function healthTone(open, viol) {
+  if (open >= 3 || viol >= 3) return 'red';
+  if (open > 0 || viol > 0) return 'yellow';
+  return 'green';
 }
 
 const api = (path, opts = {}) =>
@@ -183,13 +184,14 @@ export default function PropertyHealth() {
             const last = p.health?.lastInspection;
             const roomCount = p._count?.rooms || 0;
             const attention = needsAttention(p);
+            const tone = healthTone(open, viol);
             const subtitle = last
               ? `${roomCount} room${roomCount === 1 ? '' : 's'} · Inspected ${timeAgo(last.date)}`
               : `${roomCount} room${roomCount === 1 ? '' : 's'} · Never inspected`;
             return (
               <button
                 key={p.id}
-                className={`prop-card ${attention ? 'prop-card-attention' : ''}`}
+                className={`prop-card prop-card-tone-${tone} ${attention ? 'prop-card-attention' : ''}`}
                 onClick={() => navigate(`/properties/${p.id}/overview`)}
               >
                 {attention && <span className="prop-card-pill">Needs attention</span>}
@@ -199,10 +201,7 @@ export default function PropertyHealth() {
                       <img src={p.imageUrl} alt="" />
                     </div>
                   ) : (
-                    <div
-                      className="prop-card-thumb prop-card-thumb-initials"
-                      style={{ background: tileHueFor(p.id) }}
-                    >
+                    <div className="prop-card-thumb prop-card-thumb-initials">
                       {initialsOf(p.name)}
                     </div>
                   )}
@@ -215,20 +214,26 @@ export default function PropertyHealth() {
                   {open === 0 && viol === 0 ? (
                     <span className="prop-status">
                       <span className="prop-status-dot prop-status-dot-good" />
-                      All clear
+                      <span className="prop-status-text">All clear</span>
                     </span>
                   ) : (
                     <>
                       {open > 0 && (
-                        <span className="prop-status">
+                        <span className="prop-status prop-status-big">
                           <span className="prop-status-dot prop-status-dot-open" />
-                          {open} open
+                          <span className="prop-status-num">{open}</span>
+                          <span className="prop-status-label">
+                            open
+                          </span>
                         </span>
                       )}
                       {viol > 0 && (
-                        <span className="prop-status">
+                        <span className="prop-status prop-status-big">
                           <span className="prop-status-dot prop-status-dot-violation" />
-                          {viol} violation{viol === 1 ? '' : 's'}
+                          <span className="prop-status-num">{viol}</span>
+                          <span className="prop-status-label">
+                            violation{viol === 1 ? '' : 's'}
+                          </span>
                         </span>
                       )}
                     </>

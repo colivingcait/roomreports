@@ -40,11 +40,11 @@ function shortDate(d) {
 
 // ─── Draggable card ─────────────────────────────────────
 
-function KanbanCard({ item, onOpenDetail, selected, onToggleSelect, selectMode }) {
+function KanbanCard({ item, onOpenDetail, selected, onToggleSelect, selectMode, dragEnabled }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
     data: { item },
-    disabled: selectMode,
+    disabled: selectMode || !dragEnabled,
   });
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -167,6 +167,16 @@ export default function Maintenance() {
 
   // Drag state
   const [activeId, setActiveId] = useState(null);
+
+  // Drag-and-drop only on desktop. Tapping scrolls jumpy cards on mobile.
+  const [dragEnabled, setDragEnabled] = useState(
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
+  );
+  useEffect(() => {
+    const onResize = () => setDragEnabled(window.innerWidth >= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -365,6 +375,7 @@ export default function Maintenance() {
                     selected={cardProps.selected(item.id)}
                     onToggleSelect={cardProps.onToggleSelect}
                     selectMode={cardProps.selectMode}
+                    dragEnabled={dragEnabled}
                   />
                 ))}
               </KanbanColumn>
