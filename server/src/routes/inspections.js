@@ -1464,6 +1464,21 @@ const INSPECTION_TYPE_LABELS = {
 
 const BAD_STATUSES = new Set(['Fail', 'Poor', 'Dirty', 'No', 'Missing', 'Damaged', 'Heavily Damaged']);
 
+// Build a human-readable PDF filename in the form
+//   <House>_<Type of Inspection>_<YYYY-MM-DD>.pdf
+// Strips filesystem-unfriendly characters but keeps spaces intact
+// (the Content-Disposition header quotes the filename).
+function pdfFilename(propertyName, typeLabel, dateIso) {
+  const cleanPart = (s) => String(s || '')
+    .replace(/[\\/:*?"<>|\r\n]/g, '')
+    .replace(/_+/g, ' ') // underscores are our separators; collapse any stray ones
+    .trim() || 'Untitled';
+  const date = dateIso
+    ? new Date(dateIso).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+  return `${cleanPart(propertyName)}_${cleanPart(typeLabel)}_${date}.pdf`;
+}
+
 // Fetch a photo URL as a Buffer, with a short timeout so a single slow
 // image doesn't hold up a report. Returns null on any failure so the
 // caller can skip silently.
@@ -1685,7 +1700,11 @@ router.get('/:id/pdf', async (req, res) => {
       return res.redirect(307, `/api/inspections/quarterly-group/${inspection.property.id}/${dateKey}/pdf`);
     }
 
-    const filename = `inspection-${inspection.id}.pdf`;
+    const filename = pdfFilename(
+      inspection.property?.name,
+      INSPECTION_TYPE_LABELS[inspection.type] || inspection.type,
+      inspection.completedAt || inspection.createdAt,
+    );
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
@@ -1803,7 +1822,7 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
     });
 
     const first = inspections[0];
-    const filename = `room-inspection-${propertyId}-${date}.pdf`;
+    const filename = pdfFilename(first.property?.name, 'Room Inspection', date);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
