@@ -8834,6 +8834,29 @@ input[type="text"].inline-edit-input {
   text-transform: none;
 }
 
+/* ─── Offline banner — subtle online state ────────── */
+/* Appended AFTER the original .offline-banner block so these rules win.
+   Offline (a real problem) keeps the prominent styling. Online + syncing
+   or pending compresses to an inline status note so it doesn't read as
+   a giant green bar across the top of the app. */
+.offline-banner.online {
+  display: inline-flex;
+  width: auto;
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--ds-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  margin: 0 0 0.5rem;
+  justify-content: flex-start;
+}
+.offline-banner.online .offline-retry,
+.offline-banner.online .sync-check {
+  color: var(--ds-primary);
+}
+
 /* ─── Mobile: no horizontal overflow on any page ─── */
 @media (max-width: 768px) {
   html, body, #root { max-width: 100vw; overflow-x: hidden; }
