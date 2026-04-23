@@ -38,6 +38,12 @@ enum MaintenanceStatus {
   ASSIGNED
   IN_PROGRESS
   RESOLVED
+  DEFERRED
+}
+
+enum DeferType {
+  ROOM_TURN
+  DATE
 }
 
 enum TaskStatus {
@@ -363,6 +369,14 @@ model MaintenanceItem {
   trackingToken     String?           @unique
   reporterUnsubscribed Boolean        @default(false)
   lastOverdueNotifiedAt DateTime?
+  deferType         DeferType?
+  deferUntil        DateTime?
+  deferReason       String?
+  deferredAt        DateTime?
+  deferredById      String?
+  deferredByName    String?
+  reactivatedAt     DateTime?
+  reactivatedReason String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   resolvedAt        DateTime?
@@ -386,6 +400,7 @@ model MaintenanceItem {
   @@index([assignedVendorId])
   @@index([assignedUserId])
   @@index([trackingToken])
+  @@index([deferUntil])
   @@map("maintenance_items")
 }
 

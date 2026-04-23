@@ -2414,15 +2414,23 @@ async function sendInspectionSubmittedNotification({
 
   const link = `/inspections/${inspection.id}/review`;
 
+  const isRoomTurn = inspection.type === 'ROOM_TURN';
+  const title = isRoomTurn
+    ? `Room Turn inspection submitted — ${roomLabel || propertyName}`
+    : `New inspection submitted — ${propertyName}`;
+  const message = isRoomTurn
+    ? `Room Turn inspection submitted for ${roomLabel || propertyName} — review and resolve when ready to list.`
+    : `${typeLabel} by ${inspector}. ${flaggedItems.length} flag(s), ${maintenanceItems.length} maintenance, ${violations.length} violations.`;
+
   await notifyMany({
     userIds: ids,
     organizationId: inspection.organizationId,
     type: 'INSPECTION_SUBMITTED',
-    title: `New inspection submitted — ${propertyName}`,
-    message: `${typeLabel} by ${inspector}. ${flaggedItems.length} flag(s), ${maintenanceItems.length} maintenance, ${violations.length} violations.`,
+    title,
+    message,
     link,
     email: {
-      subject: `New inspection submitted — ${propertyName}`,
+      subject: title,
       ctaLabel: 'Review inspection',
       ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}${link}`,
       bodyHtml: `

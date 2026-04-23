@@ -106,7 +106,8 @@ router.get('/', async (req, res) => {
     const {
       propertyId, status, flagCategory, priority, assignedTo,
       assignedUserId, assignedVendorId,
-      startDate, endDate, includeArchived, search,
+      startDate, endDate, includeArchived, includeDeferred,
+      deferredOnly, search,
     } = req.query;
 
     const scope = await propertyIdScope(req.user);
@@ -136,6 +137,17 @@ router.get('/', async (req, res) => {
     // includeArchived=true. Reports still query without this filter.
     if (!includeArchived) {
       where.archivedAt = null;
+    }
+
+    // Deferred tickets live off the active kanban board. Callers that
+    // need them pass `includeDeferred=true` (the "Show deferred" toggle
+    // on the maintenance page) or `deferredOnly=true` (the Deferred
+    // section + property overview). `status=DEFERRED` as a filter also
+    // forces deferred results regardless of the toggle.
+    if (deferredOnly === 'true') {
+      where.status = 'DEFERRED';
+    } else if (status !== 'DEFERRED' && includeDeferred !== 'true' && !status) {
+      where.status = { not: 'DEFERRED' };
     }
 
     const items = await prisma.maintenanceItem.findMany({
@@ -863,6 +875,108 @@ router.post('/batch-pdf', async (req, res) => {
   } catch (error) {
     console.error('Batch PDF error:', error);
     if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/defer ────────────────────
+// Push a ticket off the active board until either the next room turn
+// or a specific calendar date. Records who deferred, why, and logs an
+// event so the timeline reads cleanly.
+
+router.post('/:id/defer', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { type, reason, untilDate } = req.body || {};
+    if (!['ROOM_TURN', 'DATE'].includes(type)) {
+      return res.status(400).json({ error: 'type must be ROOM_TURN or DATE' });
+    }
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ error: 'reason is required' });
+    }
+    let parsedDate = null;
+    if (type === 'DATE') {
+      if (!untilDate) return res.status(400).json({ error: 'untilDate is required for type=DATE' });
+      parsedDate = new Date(untilDate);
+      if (Number.isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: 'untilDate is not a valid date' });
+      }
+      // Use the start of that day in UTC so the daily job reactivates it
+      // when the calendar date arrives regardless of TZ drift.
+      parsedDate = new Date(Date.UTC(
+        parsedDate.getUTCFullYear(),
+        parsedDate.getUTCMonth(),
+        parsedDate.getUTCDate(),
+      ));
+    }
+
+    const existing = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ error: 'Maintenance item not found' });
+    if (existing.status === 'DEFERRED') {
+      return res.status(400).json({ error: 'Ticket is already deferred' });
+    }
+    if (existing.status === 'RESOLVED') {
+      return res.status(400).json({ error: 'Cannot defer a resolved ticket' });
+    }
+
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: existing.id },
+      data: {
+        status: 'DEFERRED',
+        deferType: type,
+        deferUntil: type === 'DATE' ? parsedDate : null,
+        deferReason: String(reason).trim(),
+        deferredAt: new Date(),
+        deferredById: req.user.id,
+        deferredByName: req.user.name,
+        reactivatedAt: null,
+        reactivatedReason: null,
+      },
+      include: MAINTENANCE_INCLUDE,
+    });
+
+    const humanTarget = type === 'ROOM_TURN'
+      ? 'room turn'
+      : `until ${parsedDate.toISOString().slice(0, 10)}`;
+    await logEvent(existing.id, req.user, 'deferred', existing.status, 'DEFERRED', `${humanTarget}: ${String(reason).trim()}`);
+
+    return res.json({ item: shapeItem(updated) });
+  } catch (error) {
+    console.error('Defer maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/reactivate ───────────────
+// Manual reactivation of a deferred ticket — flips it back to OPEN,
+// clears the defer metadata, logs why (auto-filled if the caller omits).
+
+router.post('/:id/reactivate', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const existing = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!existing) return res.status(404).json({ error: 'Maintenance item not found' });
+    if (existing.status !== 'DEFERRED') {
+      return res.status(400).json({ error: 'Ticket is not deferred' });
+    }
+
+    const note = `Reactivated from deferred — manual on ${new Date().toISOString().slice(0, 10)}`;
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: existing.id },
+      data: {
+        status: 'OPEN',
+        reactivatedAt: new Date(),
+        reactivatedReason: note,
+      },
+      include: MAINTENANCE_INCLUDE,
+    });
+
+    await logEvent(existing.id, req.user, 'reactivated', 'DEFERRED', 'OPEN', note);
+    return res.json({ item: shapeItem(updated) });
+  } catch (error) {
+    console.error('Reactivate maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

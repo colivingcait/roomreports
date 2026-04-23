@@ -82,9 +82,17 @@ router.get('/', async (req, res) => {
     }
 
     // ─── Maintenance Overview ─── Stats + recent items
+    // Deferred tickets are intentionally excluded from dashboard counts
+    // and property health — they shouldn't push the open maintenance
+    // metric up while they're parked off the board.
     const maintenanceCounts = await prisma.maintenanceItem.groupBy({
       by: ['status'],
-      where: { organizationId: orgId, deletedAt: null, ...scope },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { not: 'DEFERRED' },
+        ...scope,
+      },
       _count: true,
     });
 

@@ -19,6 +19,7 @@ const MINUTE_MS = 60 * 1000;
 
 let ranOverdueOnDay = null;   // 'YYYY-MM-DD' string
 let ranDigestOnWeek = null;   // 'YYYY-WW' string
+let ranDeferredOnDay = null;  // 'YYYY-MM-DD' string
 
 function todayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -195,6 +196,78 @@ async function runWeeklyDigest() {
   }
 }
 
+// ─── Date-deferred reactivation ─────────────────────────
+// Any DEFERRED ticket whose deferUntil is today or earlier gets flipped
+// back to OPEN at the start of the next day. We notify PMs/Owners per
+// ticket ("X for Y has been reactivated from deferred status.").
+
+async function runDeferredReactivateJob() {
+  const now = new Date();
+  const due = await prisma.maintenanceItem.findMany({
+    where: {
+      status: 'DEFERRED',
+      deferType: 'DATE',
+      deferUntil: { lte: now },
+      deletedAt: null,
+    },
+    include: {
+      property: { select: { name: true } },
+      room: { select: { label: true } },
+    },
+  });
+  if (due.length === 0) return;
+
+  // Flip them all to OPEN in one shot.
+  const reactivateNote = `Reactivated from deferred — date ${now.toISOString().slice(0, 10)}`;
+  await prisma.maintenanceItem.updateMany({
+    where: { id: { in: due.map((d) => d.id) } },
+    data: {
+      status: 'OPEN',
+      reactivatedAt: now,
+      reactivatedReason: reactivateNote,
+    },
+  });
+  await prisma.maintenanceEvent.createMany({
+    data: due.map((d) => ({
+      maintenanceItemId: d.id,
+      type: 'reactivated',
+      fromValue: 'DEFERRED',
+      toValue: 'OPEN',
+      note: reactivateNote,
+    })),
+  });
+
+  // Group by org → one batch of notifications per org.
+  const byOrg = new Map();
+  for (const item of due) {
+    if (!byOrg.has(item.organizationId)) byOrg.set(item.organizationId, []);
+    byOrg.get(item.organizationId).push(item);
+  }
+
+  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  for (const [orgId, items] of byOrg) {
+    const ids = await pmAndOwnerIds(orgId);
+    if (ids.length === 0) continue;
+    for (const item of items) {
+      const loc = [item.property?.name, item.room?.label].filter(Boolean).join(' · ');
+      await notifyMany({
+        userIds: ids,
+        organizationId: orgId,
+        type: 'MAINTENANCE_STATUS_CHANGED',
+        title: `Reactivated from deferred — ${item.description.slice(0, 60)}`,
+        message: `${item.description} for ${loc} has been reactivated from deferred status.`,
+        link: `/maintenance?open=${item.id}`,
+        email: {
+          subject: `Reactivated from deferred — ${item.description.slice(0, 60)}`,
+          ctaLabel: 'Open ticket',
+          ctaHref: `${origin}/maintenance?open=${item.id}`,
+          bodyHtml: `<p style="margin:0 0 12px;"><strong>${esc(item.description)}</strong> for <strong>${esc(loc)}</strong> has been reactivated from deferred status.</p>`,
+        },
+      });
+    }
+  }
+}
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -217,6 +290,14 @@ async function tick() {
     try { await runOverdueJob(); } catch (e) { console.error('overdue job error:', e); }
   }
 
+  // Date-deferred tickets: early every UTC day (but after midnight). We
+  // check at 01:00 UTC so tickets whose deferUntil is "today" come back
+  // on-time. Guard via ranDeferredOnDay.
+  if (hour >= 1 && ranDeferredOnDay !== dk) {
+    ranDeferredOnDay = dk;
+    try { await runDeferredReactivateJob(); } catch (e) { console.error('deferred reactivate error:', e); }
+  }
+
   // Weekly digest: Monday mornings after 13:00 UTC.
   if (now.getUTCDay() === 1 && hour >= 13) {
     const wk = weekKey(now);
@@ -234,4 +315,4 @@ export function startScheduledJobs() {
 }
 
 // Exported for tests / manual triggering.
-export const _internal = { runOverdueJob, runWeeklyDigest };
+export const _internal = { runOverdueJob, runWeeklyDigest, runDeferredReactivateJob };

@@ -141,6 +141,69 @@ function KanbanColumn({ status, items, children }) {
 
 // ─── Main page ──────────────────────────────────────────
 
+function DeferredGroupedList({ items, onOpen }) {
+  // Group by property → room so the list reads like a table of contents.
+  const groups = useMemo(() => {
+    const byProp = new Map();
+    for (const item of items) {
+      const pk = item.property?.id || 'unknown';
+      if (!byProp.has(pk)) byProp.set(pk, { name: item.property?.name || 'Unknown property', rooms: new Map() });
+      const propGroup = byProp.get(pk);
+      const rk = item.room?.id || 'none';
+      if (!propGroup.rooms.has(rk)) {
+        propGroup.rooms.set(rk, { label: item.room?.label || 'No room', items: [] });
+      }
+      propGroup.rooms.get(rk).items.push(item);
+    }
+    return Array.from(byProp.values());
+  }, [items]);
+
+  return (
+    <div className="maint-deferred-list">
+      {groups.map((g, gi) => (
+        <div key={gi} className="maint-deferred-group">
+          <div className="maint-deferred-property">{g.name}</div>
+          {Array.from(g.rooms.values()).map((r, ri) => (
+            <div key={ri} className="maint-deferred-room-block">
+              <div className="maint-deferred-room">{r.label}</div>
+              <div className="maint-deferred-items">
+                {r.items.map((it) => (
+                  <button
+                    key={it.id}
+                    type="button"
+                    className="maint-deferred-row"
+                    onClick={() => onOpen(it.id)}
+                  >
+                    <div className="maint-deferred-row-main">
+                      <div className="maint-deferred-row-title">{it.description}</div>
+                      <div className="maint-deferred-row-sub">
+                        {it.flagCategory || 'General'}
+                        {it.deferType === 'ROOM_TURN'
+                          ? ' · Until room turn'
+                          : it.deferUntil
+                            ? ` · Until ${new Date(it.deferUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                            : ''}
+                        {' · Deferred '}
+                        {it.deferredAt ? new Date(it.deferredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                        {' · Flagged '}
+                        {it.createdAt ? new Date(it.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                      </div>
+                      {it.deferReason && (
+                        <div className="maint-deferred-row-reason">“{it.deferReason}”</div>
+                      )}
+                    </div>
+                    <span className="invite-badge invite-badge-pending">Deferred</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Maintenance() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -154,6 +217,8 @@ export default function Maintenance() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [showDeferred, setShowDeferred] = useState(false);
+  const [deferredItems, setDeferredItems] = useState([]);
   const [sortBy, setSortBy] = useState('recent'); // recent | priority
   const [search, setSearch] = useState('');
 
@@ -206,6 +271,19 @@ export default function Maintenance() {
   }, [filterProperty, filterStatus, filterCategory, filterPriority, includeArchived, search]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  // Deferred list — separate fetch so the toggle is cheap and the
+  // kanban query stays focused on active tickets.
+  const fetchDeferred = useCallback(async () => {
+    if (!showDeferred) { setDeferredItems([]); return; }
+    const params = new URLSearchParams({ deferredOnly: 'true' });
+    if (filterProperty) params.set('propertyId', filterProperty);
+    try {
+      const data = await api(`/api/maintenance?${params}`);
+      setDeferredItems(data.items || []);
+    } catch { /* ignore */ }
+  }, [showDeferred, filterProperty]);
+  useEffect(() => { fetchDeferred(); }, [fetchDeferred]);
 
   useEffect(() => {
     fetch('/api/properties', { credentials: 'include' })
@@ -358,6 +436,13 @@ export default function Maintenance() {
         >
           {includeArchived ? '✓ Include archived' : 'Include archived'}
         </button>
+        <button
+          className={`filter-toggle ${showDeferred ? 'active' : ''}`}
+          onClick={() => setShowDeferred((v) => !v)}
+          title="Show deferred tickets below the board"
+        >
+          {showDeferred ? '✓ Show deferred' : 'Show deferred'}
+        </button>
       </div>
 
       {/* Board */}
@@ -407,6 +492,23 @@ export default function Maintenance() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {showDeferred && (
+        <section className="maint-deferred-section">
+          <h2 className="maint-deferred-heading">
+            Deferred
+            <span className="maint-deferred-count">{deferredItems.length}</span>
+          </h2>
+          {deferredItems.length === 0 ? (
+            <p className="maint-deferred-empty">No deferred tickets.</p>
+          ) : (
+            <DeferredGroupedList
+              items={deferredItems}
+              onOpen={(id) => setDetailId(id)}
+            />
+          )}
+        </section>
+      )}
 
       {detailId && (
         <MaintenanceDetail

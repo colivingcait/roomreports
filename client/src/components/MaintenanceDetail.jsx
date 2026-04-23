@@ -9,8 +9,13 @@ import {
 } from '../../../shared/index.js';
 import AssigneePicker from './AssigneePicker';
 
-const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
+const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', DEFERRED: 'Deferred' };
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
+
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -53,6 +58,62 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
   const [attachmentLabel, setAttachmentLabel] = useState('quote');
   const [uploading, setUploading] = useState(false);
   const [archiving, setArchiving] = useState(false);
+
+  // Defer UI state
+  const [showDefer, setShowDefer] = useState(false);
+  const [deferMode, setDeferMode] = useState('ROOM_TURN');
+  const [deferDate, setDeferDate] = useState('');
+  const [deferReason, setDeferReason] = useState('');
+  const [defering, setDefering] = useState(false);
+  const [deferError, setDeferError] = useState('');
+  const [reactivating, setReactivating] = useState(false);
+
+  const deferTicket = async () => {
+    if (!data?.item) return;
+    if (!deferReason.trim()) {
+      setDeferError('Reason is required.');
+      return;
+    }
+    if (deferMode === 'DATE' && !deferDate) {
+      setDeferError('Pick a date to defer until.');
+      return;
+    }
+    setDefering(true);
+    setDeferError('');
+    try {
+      await api(`/api/maintenance/${data.item.id}/defer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: deferMode,
+          reason: deferReason.trim(),
+          untilDate: deferMode === 'DATE' ? deferDate : null,
+        }),
+      });
+      onUpdated?.();
+      setShowDefer(false);
+      setDeferReason('');
+      setDeferDate('');
+      setDeferMode('ROOM_TURN');
+      onClose?.();
+    } catch (err) {
+      setDeferError(err.message || 'Failed to defer');
+    } finally {
+      setDefering(false);
+    }
+  };
+
+  const reactivateTicket = async () => {
+    if (!data?.item) return;
+    setReactivating(true);
+    try {
+      await api(`/api/maintenance/${data.item.id}/reactivate`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      onUpdated?.();
+    } catch { /* ignore */ }
+    finally { setReactivating(false); }
+  };
 
   const toggleArchive = async () => {
     if (!data?.item) return;
@@ -187,14 +248,17 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
             </div>
 
             <div className="md-badges">
-              {/* Status */}
-              <select
-                className="md-status"
-                value={draft.status}
-                onChange={(e) => { setDraft({ ...draft, status: e.target.value }); save({ status: e.target.value }); }}
-              >
-                {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-              </select>
+              {data.item.status === 'DEFERRED' ? (
+                <span className="md-status md-status-deferred">Deferred</span>
+              ) : (
+                <select
+                  className="md-status"
+                  value={draft.status}
+                  onChange={(e) => { setDraft({ ...draft, status: e.target.value }); save({ status: e.target.value }); }}
+                >
+                  {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                </select>
+              )}
               {/* Priority */}
               <select
                 className="md-priority"
@@ -217,6 +281,47 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+
+            {/* Deferred banner + reactivate */}
+            {data.item.status === 'DEFERRED' && (
+              <div className="md-defer-banner">
+                <div className="md-defer-banner-body">
+                  <div className="md-defer-banner-title">
+                    {data.item.deferType === 'ROOM_TURN'
+                      ? 'Deferred until room turn'
+                      : `Deferred until ${fmtDate(data.item.deferUntil)}`}
+                  </div>
+                  {data.item.deferReason && (
+                    <div className="md-defer-banner-reason">“{data.item.deferReason}”</div>
+                  )}
+                  {data.item.deferredByName && (
+                    <div className="md-defer-banner-meta">
+                      Deferred by {data.item.deferredByName} on {fmtDate(data.item.deferredAt)}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="btn-secondary-sm"
+                  onClick={reactivateTicket}
+                  disabled={reactivating}
+                >
+                  {reactivating ? 'Reactivating...' : 'Reactivate'}
+                </button>
+              </div>
+            )}
+
+            {/* Defer action (not available when already resolved or deferred) */}
+            {data.item.status !== 'DEFERRED' && data.item.status !== 'RESOLVED' && (
+              <div className="md-defer-actions">
+                <button
+                  type="button"
+                  className="btn-secondary-sm md-defer-btn"
+                  onClick={() => { setShowDefer(true); setDeferError(''); }}
+                >
+                  Defer
+                </button>
+              </div>
+            )}
 
             {/* Source / metadata */}
             <section className="md-section">
@@ -488,6 +593,82 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
       </aside>
 
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />}
+
+      {showDefer && (
+        <div className="modal-backdrop" onClick={() => !defering && setShowDefer(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Defer ticket</h2>
+              <button className="modal-close" onClick={() => setShowDefer(false)} aria-label="Close">&times;</button>
+            </div>
+            <div className="modal-form">
+              <div className="defer-mode-toggle">
+                <button
+                  type="button"
+                  className={`defer-mode-btn ${deferMode === 'ROOM_TURN' ? 'active' : ''}`}
+                  onClick={() => setDeferMode('ROOM_TURN')}
+                >
+                  <div className="defer-mode-title">Defer to room turn</div>
+                  <div className="defer-mode-desc">Comes back when you press Turn Room.</div>
+                </button>
+                <button
+                  type="button"
+                  className={`defer-mode-btn ${deferMode === 'DATE' ? 'active' : ''}`}
+                  onClick={() => setDeferMode('DATE')}
+                >
+                  <div className="defer-mode-title">Defer to date</div>
+                  <div className="defer-mode-desc">Auto-reactivates on the date you pick.</div>
+                </button>
+              </div>
+
+              {deferMode === 'DATE' && (
+                <label>
+                  Reactivate on
+                  <input
+                    type="date"
+                    className="maint-input"
+                    value={deferDate}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setDeferDate(e.target.value)}
+                  />
+                </label>
+              )}
+
+              <label>
+                Why is this being deferred?
+                <textarea
+                  className="detail-textarea"
+                  rows={3}
+                  placeholder="e.g. Seasonal — heater not needed until fall"
+                  value={deferReason}
+                  onChange={(e) => setDeferReason(e.target.value)}
+                />
+              </label>
+
+              {deferError && <div className="auth-error">{deferError}</div>}
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowDefer(false)}
+                  disabled={defering}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={deferTicket}
+                  disabled={defering}
+                >
+                  {defering ? 'Deferring...' : 'Defer ticket'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

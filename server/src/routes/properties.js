@@ -665,23 +665,113 @@ router.put('/:id/rooms/:roomId', requireRole('OWNER', 'PM'), async (req, res) =>
   }
 });
 
+async function loadTurnoverContext(propertyId, roomId, organizationId) {
+  const property = await findOrgProperty(propertyId, organizationId);
+  if (!property) return { error: 'Property not found', status: 404 };
+  const room = await prisma.room.findFirst({
+    where: { id: roomId, propertyId: property.id, deletedAt: null },
+  });
+  if (!room) return { error: 'Room not found', status: 404 };
+
+  const [deferredItems, activeViolations, cleaners] = await Promise.all([
+    prisma.maintenanceItem.findMany({
+      where: {
+        roomId: room.id,
+        organizationId,
+        deletedAt: null,
+        status: 'DEFERRED',
+        deferType: 'ROOM_TURN',
+      },
+      orderBy: { deferredAt: 'asc' },
+    }),
+    prisma.leaseViolation.findMany({
+      where: {
+        roomId: room.id,
+        organizationId,
+        deletedAt: null,
+        archivedAt: null,
+        resolvedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.propertyAssignment.findMany({
+      where: { propertyId: property.id, user: { role: 'CLEANER', deletedAt: null } },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    }),
+  ]);
+
+  return { property, room, deferredItems, activeViolations, cleaners };
+}
+
+// GET /api/properties/:id/rooms/:roomId/turnover-plan
+// Preview of what Turn Room will do. Lets the PM see the full picture
+// before the confirmation button actually fires.
+router.get('/:id/rooms/:roomId/turnover-plan', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const ctx = await loadTurnoverContext(req.params.id, req.params.roomId, req.user.organizationId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    return res.json({
+      property: { id: ctx.property.id, name: ctx.property.name },
+      room: { id: ctx.room.id, label: ctx.room.label },
+      deferredItems: ctx.deferredItems.map((d) => ({
+        id: d.id, description: d.description, flagCategory: d.flagCategory, deferReason: d.deferReason,
+      })),
+      activeViolations: ctx.activeViolations.map((v) => ({
+        id: v.id, description: v.description, category: v.category,
+      })),
+      cleaners: ctx.cleaners.map((a) => ({
+        id: a.user.id, name: a.user.name,
+      })),
+    });
+  } catch (error) {
+    console.error('turnover plan error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/properties/:id/rooms/:roomId/turnover
-// Archives all active lease violations for this room (they stay visible in
-// history but don't count toward active tallies or health) and stamps the
-// room's lastTurnoverAt. Full historical record preserved.
+// Executes the turn: reactivate deferred (room-turn) items, archive
+// active violations, create a Room Turn maintenance ticket, notify the
+// assigned cleaner. Stamps the room's lastTurnoverAt so history pages
+// know when the divider belongs.
 router.post('/:id/rooms/:roomId/turnover', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
-    const property = await findOrgProperty(req.params.id, req.user.organizationId);
-    if (!property) return res.status(404).json({ error: 'Property not found' });
-
-    const room = await prisma.room.findFirst({
-      where: { id: req.params.roomId, propertyId: property.id, deletedAt: null },
-    });
-    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const ctx = await loadTurnoverContext(req.params.id, req.params.roomId, req.user.organizationId);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    const { property, room, deferredItems, activeViolations, cleaners } = ctx;
 
     const turnoverAt = new Date();
+    const primaryCleaner = cleaners[0]?.user || null;
+
     const result = await prisma.$transaction(async (tx) => {
-      const archived = await tx.leaseViolation.updateMany({
+      // 1. Reactivate room-turn-deferred maintenance tickets.
+      const reactivateNote = `Reactivated from deferred — room turn ${turnoverAt.toISOString().slice(0, 10)}`;
+      if (deferredItems.length > 0) {
+        await tx.maintenanceItem.updateMany({
+          where: { id: { in: deferredItems.map((d) => d.id) } },
+          data: {
+            status: 'OPEN',
+            reactivatedAt: turnoverAt,
+            reactivatedReason: reactivateNote,
+          },
+        });
+        // Event log rows so the timeline shows this on each ticket.
+        await tx.maintenanceEvent.createMany({
+          data: deferredItems.map((d) => ({
+            maintenanceItemId: d.id,
+            type: 'reactivated',
+            fromValue: 'DEFERRED',
+            toValue: 'OPEN',
+            note: reactivateNote,
+            byUserId: req.user.id,
+            byUserName: req.user.name,
+          })),
+        });
+      }
+
+      // 2. Archive active lease violations.
+      const archivedViolations = await tx.leaseViolation.updateMany({
         where: {
           roomId: room.id,
           organizationId: req.user.organizationId,
@@ -690,46 +780,115 @@ router.post('/:id/rooms/:roomId/turnover', requireRole('OWNER', 'PM'), async (re
         },
         data: { archivedAt: turnoverAt, archivedReason: 'Room turnover' },
       });
+
+      // 3. Create the Room Turn ticket, assigned High to the primary cleaner.
+      const roomTurnTicket = await tx.maintenanceItem.create({
+        data: {
+          organizationId: req.user.organizationId,
+          propertyId: property.id,
+          roomId: room.id,
+          description: `Room Turn — ${room.label}`,
+          zone: 'Room Turn',
+          flagCategory: 'Cleaning',
+          priority: 'High',
+          status: primaryCleaner ? 'ASSIGNED' : 'OPEN',
+          assignedUserId: primaryCleaner?.id || null,
+          assignedTo: primaryCleaner?.name || null,
+          note: `Room turn initiated on ${turnoverAt.toISOString().slice(0, 10)}. Complete room turn inspection when cleaning is done.`,
+          reportedById: req.user.id,
+          reportedByName: req.user.name,
+          reportedByRole: req.user.role,
+        },
+      });
+      await tx.maintenanceEvent.create({
+        data: {
+          maintenanceItemId: roomTurnTicket.id,
+          type: 'created',
+          toValue: roomTurnTicket.status,
+          note: 'Created by Turn Room',
+          byUserId: req.user.id,
+          byUserName: req.user.name,
+        },
+      });
+
+      // 4. Stamp room turnover timestamp.
       const updatedRoom = await tx.room.update({
         where: { id: room.id },
         data: { lastTurnoverAt: turnoverAt },
       });
-      return { violationsArchived: archived.count, room: updatedRoom };
+
+      return {
+        violationsArchived: archivedViolations.count,
+        reactivatedCount: deferredItems.length,
+        room: updatedRoom,
+        roomTurnTicketId: roomTurnTicket.id,
+      };
     });
 
+    // ── Notifications (best-effort, don't block response) ─────────
     try {
-      const cleaners = await prisma.propertyAssignment.findMany({
-        where: { propertyId: property.id, user: { role: 'CLEANER', deletedAt: null } },
-        select: { userId: true },
-      });
-      if (cleaners.length > 0) {
-        const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+      const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+      const pmIds = (await prisma.user.findMany({
+        where: { organizationId: req.user.organizationId, role: { in: ['OWNER', 'PM'] }, deletedAt: null },
+        select: { id: true },
+      })).map((u) => u.id);
+
+      // Reactivated count to PMs
+      if (result.reactivatedCount > 0 && pmIds.length > 0) {
         await notifyMany({
-          userIds: cleaners.map((c) => c.userId),
+          userIds: pmIds,
+          organizationId: req.user.organizationId,
+          type: 'MAINTENANCE_STATUS_CHANGED',
+          title: `${result.reactivatedCount} deferred item${result.reactivatedCount === 1 ? '' : 's'} reactivated — ${room.label}`,
+          message: `${room.label} at ${property.name} was turned. Deferred maintenance is back on the board.`,
+          link: '/maintenance',
+          email: {
+            subject: `Deferred maintenance reactivated — ${room.label}`,
+            ctaLabel: 'Open maintenance board',
+            ctaHref: `${origin}/maintenance`,
+            bodyHtml: `
+              <p style="margin:0 0 12px;">${result.reactivatedCount} deferred maintenance item${result.reactivatedCount === 1 ? '' : 's'} reactivated for <strong>${esc(room.label)}</strong> at ${esc(property.name)}.</p>
+              <ul style="margin:0 0 12px;padding-left:20px;">${deferredItems.map((d) => `<li>${esc(d.description)}</li>`).join('')}</ul>
+            `,
+          },
+        });
+      }
+
+      // Cleaner ping (ROOM_TURN_NEEDED reused — fits the semantics)
+      if (cleaners.length > 0) {
+        await notifyMany({
+          userIds: cleaners.map((c) => c.user.id),
           organizationId: req.user.organizationId,
           type: 'ROOM_TURN_NEEDED',
-          title: `Room turn needed — ${property.name} / ${room.label}`,
-          message: `${property.name} ${room.label} is ready to be turned.`,
-          link: `/dashboard`,
+          title: `Room turn — ${property.name} / ${room.label}`,
+          message: `${property.name} ${room.label} is ready for a room turn.`,
+          link: `/maintenance?open=${result.roomTurnTicketId}`,
           email: {
-            subject: `Room turn needed — ${property.name} / ${room.label}`,
-            ctaLabel: 'Open dashboard',
-            ctaHref: `${origin}/dashboard`,
+            subject: `Room turn — ${property.name} / ${room.label}`,
+            ctaLabel: 'Open ticket',
+            ctaHref: `${origin}/maintenance?open=${result.roomTurnTicketId}`,
             bodyHtml: `
-              <p style="margin:0 0 12px;">A room needs to be turned at <strong>${esc(property.name)}</strong>.</p>
+              <p style="margin:0 0 12px;">${esc(property.name)} — <strong>${esc(room.label)}</strong> is ready for a room turn.</p>
               ${summaryList([
                 ['Property', property.name],
                 ['Room', room.label],
+                ['Ticket', 'Room Turn'],
+                ['Priority', 'High'],
               ])}
             `,
           },
         });
       }
     } catch (e) {
-      console.error('room turnover notification error:', e);
+      console.error('turnover notification error:', e);
     }
 
-    return res.json(result);
+    return res.json({
+      room: result.room,
+      violationsArchived: result.violationsArchived,
+      reactivatedCount: result.reactivatedCount,
+      roomTurnTicketId: result.roomTurnTicketId,
+    });
   } catch (error) {
     console.error('Room turnover error:', error);
     return res.status(500).json({ error: 'Internal server error' });
