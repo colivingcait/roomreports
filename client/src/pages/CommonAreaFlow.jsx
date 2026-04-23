@@ -424,6 +424,12 @@ function CommonAreaMultiScreen({ inspection, initialItems }) {
   const [partialReason, setPartialReason] = useState('');
   const { saveItem, saveStatus } = useAutoSave(inspection.id);
 
+  // Reset scroll on any grid ↔ area transition (no URL change to trigger
+  // React Router's scroll reset).
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeArea]);
+
   // Expose browser back button as "leave area" when inside an area.
   useEffect(() => {
     if (!activeArea) return;
