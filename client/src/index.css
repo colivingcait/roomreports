@@ -2292,6 +2292,22 @@ body {
   color: #8A8583;
   white-space: nowrap;
 }
+@media (max-width: 520px) {
+  /* Phones: let all tabs share the row instead of scrolling off the
+     right edge. Tabs shrink label size + padding so "Lease Violations"
+     still reads. */
+  .reports-tabs {
+    overflow-x: visible;
+    gap: 0;
+  }
+  .reports-tab {
+    flex: 1 1 0;
+    padding: 0.625rem 0.25rem;
+    font-size: 0.75rem;
+    min-width: 0;
+    text-align: center;
+  }
+}
 .reports-tab.active {
   color: #6B8F71;
   border-bottom-color: #6B8F71;
