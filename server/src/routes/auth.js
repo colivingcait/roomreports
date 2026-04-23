@@ -7,6 +7,7 @@ import { google } from '../lib/oauth.js';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { verifyPropertyInvite } from '../lib/propertyInvite.js';
+import { notify, esc } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -258,6 +259,14 @@ router.post('/signup', async (req, res) => {
     const sessionCookie = lucia.createSessionCookie(session.id);
     res.setHeader('Set-Cookie', sessionCookie.serialize());
 
+    if (teamInvite) {
+      try {
+        await notifyInviteAccepted(teamInvite, user);
+      } catch (e) {
+        console.error('invite accepted notification error:', e);
+      }
+    }
+
     return res.status(201).json({
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
@@ -266,6 +275,25 @@ router.post('/signup', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+async function notifyInviteAccepted(invite, newUser) {
+  if (!invite?.invitedById) return;
+  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  await notify({
+    userId: invite.invitedById,
+    organizationId: invite.organizationId,
+    type: 'TEAM_INVITE_ACCEPTED',
+    title: `${newUser.name} accepted your invite`,
+    message: `${newUser.name} <${newUser.email}> just joined as ${newUser.role}.`,
+    link: '/team',
+    email: {
+      subject: `${newUser.name} accepted your RoomReport invite`,
+      ctaLabel: 'View team',
+      ctaHref: `${origin}/team`,
+      bodyHtml: `<p style="margin:0 0 12px;"><strong>${esc(newUser.name)}</strong> (${esc(newUser.email)}) just created their account and joined as <strong>${esc(newUser.role)}</strong>.</p>`,
+    },
+  });
+}
 
 // ─── POST /api/auth/login ───────────────────────────────
 // Validates email/password, returns session.
@@ -499,6 +527,7 @@ router.get('/google/callback', async (req, res) => {
         });
         return created;
       });
+      try { await notifyInviteAccepted(teamInvite, user); } catch (e) { console.error(e); }
     } else {
       // New user via Google — create org + user
       const userId = generateIdFromEntropySize(10);

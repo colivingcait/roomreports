@@ -7,6 +7,15 @@ import { uploadFile } from '../lib/storage.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { propertyIdScope } from '../lib/scope.js';
 import { PRIORITIES, ATTACHMENT_LABELS } from '../../../shared/index.js';
+import {
+  notify,
+  notifyMany,
+  pmAndOwnerIds,
+  summaryList,
+  esc,
+  residentEmailShell,
+} from '../lib/notifications.js';
+import { sendEmail } from '../lib/email.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -412,6 +421,18 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     }
     await Promise.all(events);
 
+    try {
+      await runPMUpdateNotifications({ existing, updated, body: req.body, actor: req.user });
+    } catch (e) {
+      console.error('pm update notification error:', e);
+    }
+
+    try {
+      await sendResidentStatusEmail({ existing, updated });
+    } catch (e) {
+      console.error('resident status email error:', e);
+    }
+
     return res.json({ item: shapeItem(updated) });
   } catch (error) {
     console.error('Update maintenance error:', error);
@@ -561,6 +582,28 @@ router.patch('/:id/progress', async (req, res) => {
       await logEvent(existing.id, req.user, 'note', existing.note, data.note);
     }
 
+    // Handyperson-triggered status changes notify PMs/Owners per spec.
+    // PM-triggered status changes (via PUT) are intentionally silent.
+    if (req.user.role === 'HANDYPERSON' && data.status && data.status !== existing.status) {
+      try {
+        await sendHandypersonStatusChangeNotification({
+          existing,
+          updated,
+          actor: req.user,
+          note: data.note,
+        });
+      } catch (e) {
+        console.error('handyperson status notification error:', e);
+      }
+    }
+
+    // Resident "Your ticket is in progress / resolved" email, if opted in.
+    try {
+      await sendResidentStatusEmail({ existing, updated });
+    } catch (e) {
+      console.error('resident status email error:', e);
+    }
+
     return res.json({ item: shapeItem(updated) });
   } catch (error) {
     console.error('Progress update error:', error);
@@ -594,6 +637,13 @@ router.post('/:id/photos', photoUpload.single('photo'), async (req, res) => {
     const photo = await prisma.photo.create({
       data: { url, key, maintenanceItemId: item.id },
     });
+
+    try {
+      await notifyPMPhotoAdded({ item, actor: req.user });
+    } catch (e) {
+      console.error('pm photo notification error:', e);
+    }
+
     return res.status(201).json({ photo });
   } catch (error) {
     console.error('Maintenance photo upload error:', error);
@@ -815,5 +865,203 @@ router.post('/batch-pdf', async (req, res) => {
     if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ─── Notification helpers ──────────────────────────────
+
+function originFromEnv() {
+  return (process.env.APP_URL || '').replace(/\/$/, '');
+}
+
+async function sendHandypersonStatusChangeNotification({ existing, updated, actor, note }) {
+  const ids = await pmAndOwnerIds(existing.organizationId);
+  if (ids.length === 0) return;
+
+  const locationStr = [updated.property?.name, updated.room?.label].filter(Boolean).join(' · ');
+  const costs = [];
+  if (updated.estimatedCost != null) costs.push(`Estimated: $${Number(updated.estimatedCost).toFixed(2)}`);
+  if (updated.actualCost != null) costs.push(`Actual: $${Number(updated.actualCost).toFixed(2)}`);
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">${esc(actor.name)} (Handyperson) updated a ticket:</p>
+    ${summaryList([
+      ['Ticket', updated.description],
+      ['Location', locationStr],
+      ['Status', `${existing.status} → ${updated.status}`],
+      ['Note', note || '—'],
+      ['Cost', costs.join(' · ') || '—'],
+    ])}
+  `;
+
+  const link = `/maintenance?open=${updated.id}`;
+  await notifyMany({
+    userIds: ids,
+    organizationId: existing.organizationId,
+    type: 'MAINTENANCE_STATUS_CHANGED',
+    title: `Ticket ${updated.status.toLowerCase()} — ${updated.description.slice(0, 60)}`,
+    message: `${actor.name} moved "${updated.description}" to ${updated.status}${note ? `: ${note}` : ''}`,
+    link,
+    email: {
+      subject: `${updated.property?.name || 'Ticket'} — ${existing.status} → ${updated.status}`,
+      ctaLabel: 'Open ticket',
+      ctaHref: `${originFromEnv()}${link}`,
+      bodyHtml,
+    },
+  });
+}
+
+async function runPMUpdateNotifications({ existing, updated, body, actor }) {
+  if (!updated.assignedUserId) return;
+  if (!['OWNER', 'PM'].includes(actor.role)) return;
+
+  const assignee = await prisma.user.findUnique({
+    where: { id: updated.assignedUserId },
+    select: { id: true, role: true, organizationId: true },
+  });
+  if (!assignee || assignee.role !== 'HANDYPERSON') return;
+
+  const locationStr = [updated.property?.name, updated.room?.label].filter(Boolean).join(' · ');
+  const link = `/maintenance?open=${updated.id}`;
+
+  // New assignment: the ticket wasn't assigned to them before.
+  if (body.assignedUserId !== undefined && updated.assignedUserId !== existing.assignedUserId) {
+    await notify({
+      userId: assignee.id,
+      organizationId: assignee.organizationId,
+      type: 'MAINTENANCE_ASSIGNED',
+      title: `New ticket assigned — ${updated.property?.name || ''}`,
+      message: `${updated.description}${updated.priority ? ` · ${updated.priority}` : ''}`,
+      link,
+      email: {
+        subject: `New ticket assigned — ${updated.property?.name || ''}`,
+        ctaLabel: 'Open ticket',
+        ctaHref: `${originFromEnv()}${link}`,
+        bodyHtml: `
+          <p style="margin:0 0 12px;">${esc(actor.name)} just assigned you a new ticket.</p>
+          ${summaryList([
+            ['Property', updated.property?.name],
+            ['Task', updated.description],
+            ['Location', locationStr],
+            ['Priority', updated.priority || '—'],
+          ])}
+        `,
+      },
+    });
+  }
+
+  // Priority change
+  if (body.priority !== undefined && body.priority !== existing.priority) {
+    await notify({
+      userId: assignee.id,
+      organizationId: assignee.organizationId,
+      type: 'MAINTENANCE_PRIORITY_CHANGED',
+      title: `Ticket priority changed — ${updated.description.slice(0, 60)}`,
+      message: `Priority is now ${updated.priority || 'unset'}.`,
+      link,
+      email: {
+        subject: `Ticket priority changed — ${updated.description.slice(0, 60)}`,
+        ctaLabel: 'Open ticket',
+        ctaHref: `${originFromEnv()}${link}`,
+        bodyHtml: `
+          <p style="margin:0 0 12px;">${esc(actor.name)} changed the priority on a ticket assigned to you.</p>
+          ${summaryList([
+            ['Ticket', updated.description],
+            ['Location', locationStr],
+            ['Priority', `${existing.priority || '—'} → ${updated.priority || '—'}`],
+          ])}
+        `,
+      },
+    });
+  }
+
+  // Note update
+  if (body.note !== undefined && body.note !== existing.note && body.note) {
+    await notify({
+      userId: assignee.id,
+      organizationId: assignee.organizationId,
+      type: 'MAINTENANCE_PM_UPDATE',
+      title: `New note on your ticket — ${updated.description.slice(0, 60)}`,
+      message: body.note,
+      link,
+      email: {
+        subject: `New note on your ticket — ${updated.description.slice(0, 60)}`,
+        ctaLabel: 'Open ticket',
+        ctaHref: `${originFromEnv()}${link}`,
+        bodyHtml: `
+          <p style="margin:0 0 12px;">${esc(actor.name)} left a note on your ticket.</p>
+          <p style="margin:0 0 12px;padding:12px;background:#F5F2EF;border-radius:6px;">${esc(body.note)}</p>
+          ${summaryList([
+            ['Ticket', updated.description],
+            ['Location', locationStr],
+          ])}
+        `,
+      },
+    });
+  }
+}
+
+export async function notifyPMPhotoAdded({ item, actor }) {
+  if (!item.assignedUserId) return;
+  if (!['OWNER', 'PM'].includes(actor.role)) return;
+  const assignee = await prisma.user.findUnique({
+    where: { id: item.assignedUserId },
+    select: { id: true, role: true, organizationId: true },
+  });
+  if (!assignee || assignee.role !== 'HANDYPERSON') return;
+  const link = `/maintenance?open=${item.id}`;
+  await notify({
+    userId: assignee.id,
+    organizationId: assignee.organizationId,
+    type: 'MAINTENANCE_PM_UPDATE',
+    title: `New photo on your ticket — ${item.description.slice(0, 60)}`,
+    message: `${actor.name} attached a photo to your ticket.`,
+    link,
+    email: {
+      subject: `New photo on your ticket — ${item.description.slice(0, 60)}`,
+      ctaLabel: 'Open ticket',
+      ctaHref: `${originFromEnv()}${link}`,
+      bodyHtml: `<p style="margin:0 0 12px;">${esc(actor.name)} attached a new photo to your ticket "<strong>${esc(item.description)}</strong>".</p>`,
+    },
+  });
+}
+
+async function sendResidentStatusEmail({ existing, updated }) {
+  if (!existing.reporterEmail || !existing.reporterNotifyOptIn || existing.reporterUnsubscribed) {
+    return;
+  }
+  if (updated.status === existing.status) return;
+
+  const trackingUrl = `${originFromEnv()}/track/${existing.trackingToken}`;
+  const unsubUrl = `${trackingUrl}?unsubscribe=1`;
+
+  let subject;
+  let title;
+  let bodyHtml;
+  if (updated.status === 'IN_PROGRESS') {
+    subject = 'Your maintenance report is being worked on';
+    title = 'Your maintenance report is being worked on';
+    bodyHtml = `<p style="margin:0 0 12px;">${esc(updated.description)} at ${esc(updated.property?.name || 'your property')} is now being addressed.</p>`;
+  } else if (updated.status === 'RESOLVED') {
+    subject = 'Your maintenance report has been resolved';
+    title = 'Your maintenance report has been resolved';
+    bodyHtml = `<p style="margin:0 0 12px;">${esc(updated.description)} at ${esc(updated.property?.name || 'your property')} has been resolved. If you're still experiencing issues, you can submit a new report.</p>`;
+  } else {
+    return;
+  }
+
+  const html = residentEmailShell({
+    title,
+    bodyHtml,
+    ctaLabel: 'Track your report',
+    ctaHref: trackingUrl,
+    unsubscribeHref: unsubUrl,
+  });
+
+  await sendEmail({
+    to: existing.reporterEmail,
+    subject,
+    html,
+    text: `${title}\n\n${updated.description} at ${updated.property?.name || 'your property'}.\nTrack: ${trackingUrl}`,
+  });
+}
 
 export default router;

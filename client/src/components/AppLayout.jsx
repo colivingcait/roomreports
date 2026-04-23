@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import SearchBar from './SearchBar';
 import OfflineBanner from './OfflineBanner';
 import NewMaintenance from './NewMaintenance';
+import NotificationBell from './NotificationBell';
 import { ROLE_LABELS } from '../../../shared/index.js';
 
 const COLLAPSE_KEY = 'roomreport:sidebar-collapsed';
@@ -96,13 +97,16 @@ export default function AppLayout() {
     <div className={`shell ${collapsed ? 'shell-collapsed' : ''}`}>
       <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="sidebar-top">
-          <div
-            className="sidebar-brand"
-            onClick={() => navigate('/dashboard')}
-            title="Dashboard"
-          >
-            <span className="sidebar-brand-text">RoomReport</span>
-            {!collapsed && isBeta && <span className="beta-badge">Beta</span>}
+          <div className="sidebar-brand-row">
+            <div
+              className="sidebar-brand"
+              onClick={() => navigate('/dashboard')}
+              title="Dashboard"
+            >
+              <span className="sidebar-brand-text">RoomReport</span>
+              {!collapsed && isBeta && <span className="beta-badge">Beta</span>}
+            </div>
+            {!collapsed && <NotificationBell />}
           </div>
 
           {!collapsed && showSearchAffordance && (
@@ -181,6 +185,7 @@ export default function AppLayout() {
           {isBeta && <span className="beta-badge">Beta</span>}
         </span>
         <div className="mobile-header-actions">
+          <NotificationBell compact />
           {showSearchAffordance && (
             <button className="mobile-header-btn" onClick={() => setShowSearch(true)}>
               {icons.search}

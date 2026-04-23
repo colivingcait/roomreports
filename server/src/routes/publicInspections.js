@@ -3,8 +3,21 @@ import multer from 'multer';
 import sharp from 'sharp';
 import prisma from '../lib/prisma.js';
 import { uploadFile } from '../lib/storage.js';
+import {
+  notifyMany,
+  pmAndOwnerIds,
+  newTrackingToken,
+  residentEmailShell,
+  summaryList,
+  esc,
+} from '../lib/notifications.js';
+import { sendEmail } from '../lib/email.js';
 
 const router = Router();
+
+function appOrigin() {
+  return (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -174,7 +187,7 @@ router.get('/property/:slug', async (req, res) => {
 
 async function createResidentInspection(type, resolved, body, res) {
   const { property } = resolved;
-  const { residentName, roomId, items } = body;
+  const { residentName, roomId, items, residentEmail, residentNotifyOptIn } = body;
 
   if (!residentName || !roomId || !Array.isArray(items)) {
     return res.status(400).json({ error: 'residentName, roomId, and items are required' });
@@ -191,6 +204,9 @@ async function createResidentInspection(type, resolved, body, res) {
   });
   if (!owner) return res.status(500).json({ error: 'No owner found for this organization' });
 
+  const cleanEmail = residentEmail && String(residentEmail).trim().toLowerCase();
+  const wantsCopy = !!(cleanEmail && residentNotifyOptIn !== false);
+
   const inspection = await prisma.inspection.create({
     data: {
       type,
@@ -202,6 +218,8 @@ async function createResidentInspection(type, resolved, body, res) {
       inspectorRole: 'RESIDENT',
       organizationId: property.organization.id,
       completedAt: new Date(),
+      residentEmail: cleanEmail || null,
+      residentNotifyOptIn: wantsCopy,
       items: {
         create: items.map((item) => ({
           zone: item.zone || 'General',
@@ -214,11 +232,78 @@ async function createResidentInspection(type, resolved, body, res) {
         })),
       },
     },
+    include: { items: true },
   });
 
-  console.log(`[NOTIFICATION] ${type} submitted for ${property.name} / ${room.label} by ${residentName}`);
+  if (wantsCopy) {
+    try {
+      await sendResidentInspectionCopy({
+        type,
+        inspection,
+        propertyName: property.name,
+        roomLabel: room.label,
+        toEmail: cleanEmail,
+      });
+    } catch (e) {
+      console.error('resident inspection confirmation error:', e);
+    }
+  }
 
   return res.status(201).json({ inspectionId: inspection.id });
+}
+
+async function sendResidentInspectionCopy({ type, inspection, propertyName, roomLabel, toEmail }) {
+  const isMoveIn = type === 'MOVE_IN_OUT';
+  const subject = isMoveIn
+    ? `Your move-in inspection for ${propertyName} has been submitted`
+    : `Your self-check for ${propertyName} has been submitted`;
+
+  const photoCount = await prisma.photo.count({
+    where: { inspectionItem: { inspectionId: inspection.id } },
+  });
+
+  const flagged = inspection.items.filter((i) => i.flagCategory);
+  const answers = inspection.items
+    .filter((i) => !i.zone?.startsWith('_') && !(Array.isArray(i.options) && i.options.includes('_section')))
+    .slice(0, 25);
+
+  const answersList = answers.length
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Your checklist answers</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.6;">
+         ${answers
+           .map((a) => `<li>${esc(a.text)}: ${esc(a.status || '—')}${a.note ? ` — ${esc(a.note)}` : ''}</li>`)
+           .join('')}
+       </ul>`
+    : '';
+
+  const flagList = flagged.length
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Issues flagged</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.6;">
+         ${flagged.map((f) => `<li>${esc(f.text)} — ${esc(f.flagCategory || 'General')}${f.note ? `: ${esc(f.note)}` : ''}</li>`).join('')}
+       </ul>`
+    : '';
+
+  const bodyHtml = `
+    <p style="margin:0 0 12px;">Thanks — your ${isMoveIn ? 'move-in inspection' : 'self-check'} for <strong>${esc(propertyName)}</strong> — ${esc(roomLabel)} has been submitted.</p>
+    ${summaryList([
+      ['Photos taken', photoCount],
+      ['Checklist items', answers.length],
+      ['Issues flagged', flagged.length],
+    ])}
+    ${answersList}
+    ${flagList}
+    <p style="margin:16px 0 0;color:#4A4543;">${isMoveIn
+      ? 'Keep this email for your records.'
+      : 'Your property manager has been notified of any reported issues.'}</p>
+  `;
+
+  const html = residentEmailShell({ title: subject, bodyHtml });
+  await sendEmail({
+    to: toEmail,
+    subject,
+    html,
+    text: `${subject}\n\nThanks for submitting your inspection at ${propertyName} — ${roomLabel}.`,
+  });
 }
 
 // ─── POST /api/public/movein/:slug ──
@@ -258,6 +343,9 @@ router.post('/report/:slug', async (req, res) => {
       flagCategory,
       note,
       reporterName,
+      reporterEmail,
+      reporterNotifyOptIn,
+      priority,
     } = req.body || {};
 
     if (!propertyId || !description?.trim()) {
@@ -278,8 +366,10 @@ router.post('/report/:slug', async (req, res) => {
     });
     if (!owner) return res.status(500).json({ error: 'No owner found for this organization' });
 
-    // Create a synthetic inspection + inspection item so the maintenance item
-    // satisfies the existing schema (maintenance items require an inspection item).
+    const cleanEmail = reporterEmail && String(reporterEmail).trim().toLowerCase();
+    const wantsUpdates = !!(cleanEmail && reporterNotifyOptIn !== false);
+    const trackingToken = newTrackingToken();
+
     const result = await prisma.$transaction(async (tx) => {
       const inspection = await tx.inspection.create({
         data: {
@@ -292,6 +382,8 @@ router.post('/report/:slug', async (req, res) => {
           inspectorRole: 'RESIDENT',
           organizationId: property.organization.id,
           completedAt: new Date(),
+          residentEmail: cleanEmail || null,
+          residentNotifyOptIn: wantsUpdates,
         },
       });
       const item = await tx.inspectionItem.create({
@@ -316,22 +408,81 @@ router.post('/report/:slug', async (req, res) => {
           description: description.trim(),
           zone: 'Reported Issue',
           flagCategory: flagCategory || 'General',
+          priority: priority || null,
           note: note || null,
           reportedByName: reporterName || 'Resident',
           reportedByRole: 'RESIDENT',
+          reporterEmail: cleanEmail || null,
+          reporterNotifyOptIn: wantsUpdates,
+          trackingToken,
         },
       });
       return { maintenance };
     });
 
-    console.log(
-      `[NOTIFICATION] Maintenance report for ${property.name} by ${reporterName || 'Resident'}: ${description.trim()}`
-    );
+    const trackingUrl = `${appOrigin()}/track/${trackingToken}`;
+
+    // Fire-and-forget: PM/Owner notification + resident confirmation.
+    try {
+      const pmIds = await pmAndOwnerIds(property.organization.id);
+      await notifyMany({
+        userIds: pmIds,
+        organizationId: property.organization.id,
+        type: 'MAINTENANCE_RESIDENT_REPORTED',
+        title: `New resident report — ${property.name}`,
+        message: `${reporterName || 'Resident'}: ${description.trim()}`,
+        link: `/maintenance?open=${result.maintenance.id}`,
+        email: {
+          subject: `New resident report — ${property.name}`,
+          ctaLabel: 'Open ticket',
+          ctaHref: `${appOrigin()}/maintenance?open=${result.maintenance.id}`,
+          bodyHtml: `
+            <p style="margin:0 0 12px;">${esc(reporterName || 'A resident')} just submitted a maintenance report.</p>
+            ${summaryList([
+              ['Resident', reporterName || 'Resident'],
+              ['Property', property.name],
+              ['Room', property.rooms?.find((r) => r.id === roomId)?.label || '—'],
+              ['Category', flagCategory || 'General'],
+              ['Priority', priority || '—'],
+              ['Description', description.trim()],
+              ['Note', note || '—'],
+            ])}
+          `,
+        },
+      });
+    } catch (e) {
+      console.error('resident report PM notification error:', e);
+    }
+
+    if (wantsUpdates) {
+      try {
+        const html = residentEmailShell({
+          title: 'We received your maintenance report',
+          bodyHtml: `
+            <p style="margin:0 0 12px;">Your report for <strong>${esc(description.trim())}</strong> at <strong>${esc(property.name)}</strong> has been submitted.</p>
+            <p style="margin:0 0 12px;">Your property manager has been notified. You can check the status of your report at any time using the tracking link below.</p>
+          `,
+          ctaLabel: 'Track your report',
+          ctaHref: trackingUrl,
+          unsubscribeHref: `${trackingUrl}?unsubscribe=1`,
+        });
+        await sendEmail({
+          to: cleanEmail,
+          subject: 'We received your maintenance report',
+          html,
+          text: `Thanks — we received your report for "${description.trim()}" at ${property.name}. Track it at ${trackingUrl}`,
+        });
+      } catch (e) {
+        console.error('resident confirmation email error:', e);
+      }
+    }
 
     return res.status(201).json({
       maintenanceItemId: result.maintenance.id,
       organizationId: property.organization.id,
       propertyId: property.id,
+      trackingToken,
+      trackingUrl,
     });
   } catch (error) {
     console.error('Public report error:', error);

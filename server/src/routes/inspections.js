@@ -5,6 +5,7 @@ import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateChecklist, buildChecklist, ROOM_TYPES } from '../lib/checklist.js';
 import { suggestPriority, PRIORITIES } from '../../../shared/index.js';
+import { notify, notifyMany, pmAndOwnerIds, summaryList, esc } from '../lib/notifications.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -682,15 +683,15 @@ router.post('/:id/submit', async (req, res) => {
     const propertyName = inspection.property?.name || 'Unknown';
     const roomLabel = inspection.room?.label || '';
 
-    if (flaggedItems.length > 0) {
-      console.log(
-        `[NOTIFICATION] Inspection ${inspection.id} submitted for ${propertyName}${roomLabel ? ` / ${roomLabel}` : ''}` +
-        ` — ${flaggedItems.length} flagged item(s), awaiting PM review`,
-      );
-    } else if (inspection.type === 'ROOM_TURN') {
-      console.log(
-        `[NOTIFICATION] Room Ready: ${propertyName} / ${roomLabel} — Room turn passed with no flags`,
-      );
+    try {
+      await sendInspectionSubmittedNotification({
+        inspection,
+        flaggedItems,
+        propertyName,
+        roomLabel,
+      });
+    } catch (e) {
+      console.error('inspection submit notification error:', e);
     }
 
     return res.json({
@@ -1258,6 +1259,15 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
       });
       return { inspection: updated, ...counts };
     });
+
+    try {
+      await sendInspectionApprovedNotification({
+        inspection,
+        feedback: null,
+      });
+    } catch (e) {
+      console.error('inspection approve notification error:', e);
+    }
 
     return res.json({
       inspection: result.inspection,
@@ -2335,4 +2345,131 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
   }
 });
 
+// ─── Notification helpers ──────────────────────────────
+
+async function sendInspectionSubmittedNotification({
+  inspection,
+  flaggedItems,
+  propertyName,
+  roomLabel,
+}) {
+  const maintenanceItems = await prisma.maintenanceItem.findMany({
+    where: { inspectionId: inspection.id, deletedAt: null },
+    select: { id: true, description: true, flagCategory: true, priority: true },
+  });
+  const violations = await prisma.leaseViolation.findMany({
+    where: { inspectionId: inspection.id, deletedAt: null },
+    select: { id: true, description: true, category: true },
+  });
+
+  const ids = await pmAndOwnerIds(inspection.organizationId);
+  if (ids.length === 0) return;
+
+  const typeLabel = INSPECTION_TYPE_LABELS[inspection.type] || inspection.type;
+  const inspector = inspection.inspectorName || 'Inspector';
+  const locationStr = [propertyName, roomLabel].filter(Boolean).join(' · ');
+
+  const summary = summaryList([
+    ['Property', propertyName],
+    ['Room', roomLabel || '—'],
+    ['Inspection type', typeLabel],
+    ['Inspector', `${inspector} (${inspection.inspectorRole || 'TEAM'})`],
+    ['Flagged items', flaggedItems.length],
+    ['Maintenance created', maintenanceItems.length],
+    ['Lease violations', violations.length],
+  ]);
+
+  const flagListHtml = flaggedItems.length
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Flagged items</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.5;">
+         ${flaggedItems
+           .slice(0, 12)
+           .map(
+             (i) =>
+               `<li>${esc(i.text)}${i.flagCategory ? ` — ${esc(i.flagCategory)}` : ''}${i.note ? `: ${esc(i.note)}` : ''}</li>`,
+           )
+           .join('')}
+       </ul>`
+    : '';
+
+  const maintListHtml = maintenanceItems.length
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Maintenance items created</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.5;">
+         ${maintenanceItems
+           .slice(0, 12)
+           .map(
+             (m) =>
+               `<li>${esc(m.description)}${m.priority ? ` — ${esc(m.priority)}` : ''}</li>`,
+           )
+           .join('')}
+       </ul>`
+    : '';
+
+  const violListHtml = violations.length
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Lease violations</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.5;">
+         ${violations.map((v) => `<li>${esc(v.description)}${v.category ? ` — ${esc(v.category)}` : ''}</li>`).join('')}
+       </ul>`
+    : '';
+
+  const link = `/inspections/${inspection.id}/review`;
+
+  await notifyMany({
+    userIds: ids,
+    organizationId: inspection.organizationId,
+    type: 'INSPECTION_SUBMITTED',
+    title: `New inspection submitted — ${propertyName}`,
+    message: `${typeLabel} by ${inspector}. ${flaggedItems.length} flag(s), ${maintenanceItems.length} maintenance, ${violations.length} violations.`,
+    link,
+    email: {
+      subject: `New inspection submitted — ${propertyName}`,
+      ctaLabel: 'Review inspection',
+      ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}${link}`,
+      bodyHtml: `
+        <p style="margin:0 0 12px;">${esc(inspector)} just submitted a ${esc(typeLabel)} at ${esc(locationStr)}.</p>
+        ${summary}
+        ${flagListHtml}
+        ${maintListHtml}
+        ${violListHtml}
+      `,
+    },
+  });
+}
+
+async function sendInspectionApprovedNotification({ inspection, feedback }) {
+  if (!inspection.inspectorId) return;
+  const inspector = await prisma.user.findUnique({
+    where: { id: inspection.inspectorId },
+    select: { id: true, role: true, email: true, organizationId: true },
+  });
+  // Only cleaners get the approval notification (per spec).
+  if (!inspector || inspector.role !== 'CLEANER') return;
+  const property = await prisma.property.findUnique({
+    where: { id: inspection.propertyId },
+    select: { name: true },
+  });
+  const propertyName = property?.name || 'property';
+  const link = `/dashboard`;
+  await notify({
+    userId: inspector.id,
+    organizationId: inspector.organizationId,
+    type: 'INSPECTION_APPROVED',
+    title: `Your inspection was reviewed — ${propertyName}`,
+    message: feedback
+      ? `Reviewed with feedback: ${feedback}`
+      : `Your submitted inspection at ${propertyName} has been reviewed.`,
+    link,
+    email: {
+      subject: `Your inspection was reviewed — ${propertyName}`,
+      ctaLabel: 'Open dashboard',
+      ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}${link}`,
+      bodyHtml: `
+        <p style="margin:0 0 12px;">Your recent inspection at <strong>${esc(propertyName)}</strong> has been reviewed by a manager.</p>
+        ${feedback ? `<p style="margin:0 0 12px;padding:12px;background:#F5F2EF;border-radius:6px;">${esc(feedback)}</p>` : ''}
+      `,
+    },
+  });
+}
+
+export { sendInspectionApprovedNotification };
 export default router;

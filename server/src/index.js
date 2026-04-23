@@ -19,6 +19,9 @@ import reportsRoutes from './routes/reports.js';
 import templateRoutes from './routes/templates.js';
 import publicInspectionRoutes from './routes/publicInspections.js';
 import organizationRoutes from './routes/organization.js';
+import notificationRoutes from './routes/notifications.js';
+import publicMaintenanceRoutes from './routes/publicMaintenance.js';
+import { startScheduledJobs } from './lib/scheduledJobs.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +50,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/public', publicInspectionRoutes);
+app.use('/api/public', publicMaintenanceRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/inspections', inspectionRoutes);
@@ -66,4 +71,5 @@ app.use('/api/organization', organizationRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  startScheduledJobs();
 });

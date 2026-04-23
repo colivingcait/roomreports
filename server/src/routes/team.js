@@ -6,6 +6,7 @@ import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { planLimit, wouldExceed } from '../../../shared/features.js';
 import { sendEmail } from '../lib/email.js';
+import { notify } from '../lib/notifications.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -373,11 +374,44 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
     }
 
     if (propertyIds !== undefined) {
+      const previous = await prisma.propertyAssignment.findMany({
+        where: { userId: user.id },
+        select: { propertyId: true },
+      });
+      const previousIds = new Set(previous.map((p) => p.propertyId));
       await prisma.propertyAssignment.deleteMany({ where: { userId: user.id } });
       if (propertyIds.length > 0) {
         await prisma.propertyAssignment.createMany({
           data: propertyIds.map((pid) => ({ userId: user.id, propertyId: pid })),
         });
+      }
+      // Notify the user about newly-added properties (CLEANER / HANDYPERSON).
+      const newlyAdded = propertyIds.filter((pid) => !previousIds.has(pid));
+      if (newlyAdded.length > 0 && ['CLEANER', 'HANDYPERSON'].includes(user.role)) {
+        try {
+          const props = await prisma.property.findMany({
+            where: { id: { in: newlyAdded } },
+            select: { id: true, name: true },
+          });
+          const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+          await notify({
+            userId: user.id,
+            organizationId: req.user.organizationId,
+            type: 'PROPERTY_ASSIGNED',
+            title: `You've been assigned to ${props.length} propert${props.length === 1 ? 'y' : 'ies'}`,
+            message: props.map((p) => p.name).join(', '),
+            link: '/dashboard',
+            email: {
+              subject: `New property assignment${props.length > 1 ? 's' : ''}`,
+              ctaLabel: 'Open dashboard',
+              ctaHref: `${origin}/dashboard`,
+              bodyHtml: `<p style="margin:0 0 12px;">You've been added to the following propert${props.length === 1 ? 'y' : 'ies'}:</p>
+                <ul style="margin:0 0 12px;padding-left:20px;">${props.map((p) => `<li>${p.name}</li>`).join('')}</ul>`,
+            },
+          });
+        } catch (e) {
+          console.error('property assigned notification error:', e);
+        }
       }
     }
 

@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { signPropertyInvite } from '../lib/propertyInvite.js';
 import { propertyScope } from '../lib/scope.js';
 import { computeHealth } from '../lib/healthGrade.js';
+import { notifyMany, summaryList, esc } from '../lib/notifications.js';
 import { planLimit, wouldExceed } from '../../../shared/features.js';
 import { uploadFile, deleteFile } from '../lib/storage.js';
 
@@ -695,6 +696,38 @@ router.post('/:id/rooms/:roomId/turnover', requireRole('OWNER', 'PM'), async (re
       });
       return { violationsArchived: archived.count, room: updatedRoom };
     });
+
+    try {
+      const cleaners = await prisma.propertyAssignment.findMany({
+        where: { propertyId: property.id, user: { role: 'CLEANER', deletedAt: null } },
+        select: { userId: true },
+      });
+      if (cleaners.length > 0) {
+        const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+        await notifyMany({
+          userIds: cleaners.map((c) => c.userId),
+          organizationId: req.user.organizationId,
+          type: 'ROOM_TURN_NEEDED',
+          title: `Room turn needed — ${property.name} / ${room.label}`,
+          message: `${property.name} ${room.label} is ready to be turned.`,
+          link: `/dashboard`,
+          email: {
+            subject: `Room turn needed — ${property.name} / ${room.label}`,
+            ctaLabel: 'Open dashboard',
+            ctaHref: `${origin}/dashboard`,
+            bodyHtml: `
+              <p style="margin:0 0 12px;">A room needs to be turned at <strong>${esc(property.name)}</strong>.</p>
+              ${summaryList([
+                ['Property', property.name],
+                ['Room', room.label],
+              ])}
+            `,
+          },
+        });
+      }
+    } catch (e) {
+      console.error('room turnover notification error:', e);
+    }
 
     return res.json(result);
   } catch (error) {

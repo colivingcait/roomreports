@@ -182,6 +182,8 @@ export default function PublicInspection() {
 
   // Landing state
   const [residentName, setResidentName] = useState('');
+  const [residentEmail, setResidentEmail] = useState('');
+  const [residentNotifyOptIn, setResidentNotifyOptIn] = useState(true);
   const [roomId, setRoomId] = useState('');
   const [started, setStarted] = useState(false);
 
@@ -310,9 +312,11 @@ export default function PublicInspection() {
         });
       }
 
+      const emailOut = residentEmail.trim() || null;
+      const optIn = !!(emailOut && residentNotifyOptIn);
       const body = orgMode
-        ? { residentName, roomId, propertyId: property.propertyId, items }
-        : { residentName, roomId, items };
+        ? { residentName, residentEmail: emailOut, residentNotifyOptIn: optIn, roomId, propertyId: property.propertyId, items }
+        : { residentName, residentEmail: emailOut, residentNotifyOptIn: optIn, roomId, items };
       const res = await fetch(`/api/public/${endpoint}/${slug}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -429,6 +433,27 @@ export default function PublicInspection() {
               className="pub-input"
             />
           </label>
+
+          <label className="pub-field">
+            Email <span className="form-optional">(optional — we&apos;ll email you a copy)</span>
+            <input
+              type="email"
+              value={residentEmail}
+              onChange={(e) => setResidentEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="pub-input"
+            />
+          </label>
+          {residentEmail.trim() && (
+            <label className="checkbox-row" style={{ marginTop: '-0.25rem', marginBottom: '0.75rem' }}>
+              <input
+                type="checkbox"
+                checked={residentNotifyOptIn}
+                onChange={(e) => setResidentNotifyOptIn(e.target.checked)}
+              />
+              <span>Email me a copy of my submission</span>
+            </label>
+          )}
 
           <label className="pub-field">
             Select your room

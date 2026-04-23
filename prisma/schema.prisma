@@ -58,6 +58,10 @@ enum InvitationStatus {
   REVOKED
 }
 
+// Notification "type" is stored as a free-form string (see the catalog
+// in shared/notifications.js). Each type is styled/iconed on the
+// client and gated per-user for email delivery via NotificationPreference.
+
 // ─── Organization ───────────────────────────────────────
 
 model Organization {
@@ -77,6 +81,7 @@ model Organization {
   maintenanceItems MaintenanceItem[]
   invitations Invitation[]
   vendors     Vendor[]
+  notifications Notification[]
 
   @@map("organizations")
 }
@@ -102,6 +107,8 @@ model User {
   propertyAssignments PropertyAssignment[]
   sentInvitations     Invitation[]         @relation("InvitedByUser")
   assignedMaintenance MaintenanceItem[]    @relation("AssignedUser")
+  notifications       Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@index([organizationId])
   @@map("users")
@@ -263,6 +270,8 @@ model Inspection {
   editedAt       DateTime?
   editCount      Int              @default(0)
   deletedAt      DateTime?
+  residentEmail  String?
+  residentNotifyOptIn Boolean     @default(false)
 
   property         Property          @relation(fields: [propertyId], references: [id])
   room             Room?             @relation(fields: [roomId], references: [id])
@@ -349,6 +358,11 @@ model MaintenanceItem {
   reportedById      String?
   reportedByName    String?
   reportedByRole    String?
+  reporterEmail     String?
+  reporterNotifyOptIn Boolean         @default(false)
+  trackingToken     String?           @unique
+  reporterUnsubscribed Boolean        @default(false)
+  lastOverdueNotifiedAt DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   resolvedAt        DateTime?
@@ -371,6 +385,7 @@ model MaintenanceItem {
   @@index([status])
   @@index([assignedVendorId])
   @@index([assignedUserId])
+  @@index([trackingToken])
   @@map("maintenance_items")
 }
 
@@ -594,4 +609,44 @@ model Photo {
   @@index([inspectionItemId])
   @@index([maintenanceItemId])
   @@map("photos")
+}
+
+// ─── Notification ───────────────────────────────────────
+
+model Notification {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  type           String
+  title          String
+  message        String
+  link           String?
+  read           Boolean  @default(false)
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([userId, read, createdAt])
+  @@index([organizationId])
+  @@map("notifications")
+}
+
+// ─── NotificationPreference ─────────────────────────────
+// One row per (user, type). Missing rows fall back to the per-type
+// default in shared/notifications.js.
+
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  email     Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("notification_preferences")
 }

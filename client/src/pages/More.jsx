@@ -5,6 +5,7 @@ import { useFeatureGate } from '../hooks/useFeatureGate';
 
 const ITEMS = [
   { label: 'Team', path: '/team', desc: 'Members, invitations, roles' },
+  { label: 'Notifications', path: '/notifications/settings', desc: 'Email alerts and in-app bell' },
   { label: 'Vendors', path: '/vendors', desc: 'Vendor directory', feature: 'vendors' },
   { label: 'Templates', path: '/templates', desc: 'Customize inspection checklists', feature: 'customTemplates' },
   { label: 'Sharing', path: '/sharing', desc: 'Resident QR links (move-in, self-check, report)' },

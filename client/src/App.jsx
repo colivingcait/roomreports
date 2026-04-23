@@ -40,6 +40,9 @@ import JoinSlug from './pages/JoinSlug';
 import PublicInspection from './pages/PublicInspection';
 import PublicReport from './pages/PublicReport';
 import Flyer from './pages/Flyer';
+import Notifications from './pages/Notifications';
+import NotificationSettings from './pages/NotificationSettings';
+import Track from './pages/Track';
 
 function DefaultRedirect() {
   const { user } = useAuth();
@@ -63,6 +66,7 @@ function App() {
           <Route path="/selfcheck/:slug" element={<PublicInspection />} />
           <Route path="/report/:slug" element={<PublicReport />} />
           <Route path="/flyer/:slug/:kind" element={<Flyer />} />
+          <Route path="/track/:token" element={<Track />} />
 
           {/* Auth pages — redirect to home if already logged in */}
           <Route element={<AuthLayout />}>
@@ -76,6 +80,8 @@ function App() {
               {/* Dashboard — every logged-in role gets *some* dashboard */}
               <Route element={<RoleRoute allow={ALL_STAFF} />}>
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/notifications/settings" element={<NotificationSettings />} />
               </Route>
 
               {/* Maintenance board — Owner / PM / Handyperson (not Cleaner) */}

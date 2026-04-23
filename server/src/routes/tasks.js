@@ -3,6 +3,7 @@ import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { propertyIdScope } from '../lib/scope.js';
 import { PRIORITIES } from '../../../shared/index.js';
+import { notify, summaryList, esc } from '../lib/notifications.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -162,6 +163,15 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
       },
     });
     const [hydrated] = await hydrateTasks([task], req.user.organizationId);
+
+    if (resolvedUserId) {
+      try {
+        await notifyTaskAssigned({ task: hydrated, actor: req.user });
+      } catch (e) {
+        console.error('task assign notification error:', e);
+      }
+    }
+
     return res.status(201).json({ task: hydrated });
   } catch (error) {
     console.error('Create task error:', error);
@@ -262,5 +272,33 @@ router.delete('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+async function notifyTaskAssigned({ task, actor }) {
+  if (!task.assignedUserId) return;
+  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  await notify({
+    userId: task.assignedUserId,
+    organizationId: task.organizationId,
+    type: 'TASK_ASSIGNED',
+    title: `Task assigned — ${task.title}`,
+    message: `${actor.name} assigned you "${task.title}"${task.priority ? ` (${task.priority})` : ''}.`,
+    link: '/tasks',
+    email: {
+      subject: `Task assigned — ${task.title}`,
+      ctaLabel: 'Open tasks',
+      ctaHref: `${origin}/tasks`,
+      bodyHtml: `
+        <p style="margin:0 0 12px;">${esc(actor.name)} just assigned you a task.</p>
+        ${summaryList([
+          ['Task', task.title],
+          ['Property', task.property?.name || '—'],
+          ['Priority', task.priority || '—'],
+          ['Due', task.dueAt ? new Date(task.dueAt).toLocaleDateString() : '—'],
+          ['Description', task.description || '—'],
+        ])}
+      `,
+    },
+  });
+}
 
 export default router;

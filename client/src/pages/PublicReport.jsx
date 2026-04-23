@@ -15,12 +15,15 @@ export default function PublicReport() {
   const [property, setProperty] = useState(null);
 
   const [reporterName, setReporterName] = useState('');
+  const [reporterEmail, setReporterEmail] = useState('');
+  const [notifyOptIn, setNotifyOptIn] = useState(true);
   const [roomId, setRoomId] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('General');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [trackingUrl, setTrackingUrl] = useState('');
   const [photos, setPhotos] = useState([]); // { file, previewUrl }
   const fileRef = useRef();
 
@@ -89,10 +92,13 @@ export default function PublicReport() {
           flagCategory: category,
           note: note || null,
           reporterName,
+          reporterEmail: reporterEmail.trim() || null,
+          reporterNotifyOptIn: !!(reporterEmail.trim() && notifyOptIn),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      if (data.trackingUrl) setTrackingUrl(data.trackingUrl);
 
       // Upload photos linked to the maintenance item — best-effort.
       // Failures here don't invalidate the report.
@@ -123,6 +129,17 @@ export default function PublicReport() {
         <div className="pub-done-card">
           <div className="pub-done-emoji">{'\u{1F527}'}</div>
           <h1>Report received</h1>
+          {trackingUrl && (
+            <>
+              <div style={{ marginTop: '1rem' }}>You can track the status of your report here:</div>
+              <div className="invite-url-box" style={{ marginTop: '0.5rem' }}>
+                <code>{trackingUrl}</code>
+              </div>
+              <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#8A8583' }}>
+                Bookmark this link — we&apos;ll also email it to you if you provided an email.
+              </p>
+            </>
+          )}
           <p>Thanks — your maintenance team has been notified. {'\u2713'}</p>
         </div>
       </div>
@@ -188,6 +205,26 @@ export default function PublicReport() {
               required
             />
           </label>
+          <label className="pub-field">
+            Email <span className="form-optional">(optional — we&apos;ll send you status updates)</span>
+            <input
+              type="email"
+              value={reporterEmail}
+              onChange={(e) => setReporterEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="pub-input"
+            />
+          </label>
+          {reporterEmail.trim() && (
+            <label className="checkbox-row" style={{ marginTop: '-0.25rem' }}>
+              <input
+                type="checkbox"
+                checked={notifyOptIn}
+                onChange={(e) => setNotifyOptIn(e.target.checked)}
+              />
+              <span>Send me updates on this report</span>
+            </label>
+          )}
           <label className="pub-field">
             Room <span className="form-optional">(optional)</span>
             <select value={roomId} onChange={(e) => setRoomId(e.target.value)} className="pub-select">
