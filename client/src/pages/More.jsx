@@ -3,13 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import UpgradeModal from '../components/UpgradeModal';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 
-const items = [
+const ITEMS = [
   { label: 'Team', path: '/team', desc: 'Members, invitations, roles' },
   { label: 'Vendors', path: '/vendors', desc: 'Vendor directory', feature: 'vendors' },
   { label: 'Templates', path: '/templates', desc: 'Customize inspection checklists', feature: 'customTemplates' },
   { label: 'Sharing', path: '/sharing', desc: 'Resident QR links (move-in, self-check, report)' },
-  { label: 'Billing', path: '/billing', desc: 'Subscription & invoices' },
-  { label: 'Settings', path: '/settings', desc: 'Organization settings' },
+  { label: 'Billing', path: '/billing', desc: 'Subscription & invoices', ownerOnly: true },
+  { label: 'Settings', path: '/settings', desc: 'Organization settings', ownerOnly: true },
   { label: 'Suggest a Feature', path: '/suggest', desc: 'Send us product feedback' },
 ];
 
@@ -24,8 +24,10 @@ function LockIcon() {
 
 export default function More() {
   const navigate = useNavigate();
-  const { user, organization, logout } = useAuth();
+  const { user, organization, logout, effectiveRole } = useAuth();
   const { can, isBeta, gate, promptUpgrade, dismiss } = useFeatureGate();
+
+  const items = ITEMS.filter((it) => !it.ownerOnly || effectiveRole === 'OWNER');
 
   return (
     <div className="page-container">

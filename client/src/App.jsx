@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthLayout from './components/AuthLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import RoleRoute from './components/RoleRoute';
 import AppLayout from './components/AppLayout';
 import ResidentLayout from './components/ResidentLayout';
 import Login from './pages/Login';
@@ -46,6 +47,11 @@ function DefaultRedirect() {
   return <Navigate to={to} replace />;
 }
 
+const ALL_STAFF = ['OWNER', 'PM', 'CLEANER', 'HANDYPERSON'];
+const OWNER_PM = ['OWNER', 'PM'];
+const OWNER_ONLY = ['OWNER'];
+const WITH_MAINTENANCE = ['OWNER', 'PM', 'HANDYPERSON'];
+
 function App() {
   return (
     <BrowserRouter>
@@ -64,42 +70,59 @@ function App() {
             <Route path="/signup" element={<Signup />} />
           </Route>
 
-          {/* Protected pages with full nav layout (PM/Owner/Cleaner) */}
+          {/* Protected pages with full nav layout */}
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/properties" element={<PropertyHealth />} />
-              <Route path="/properties/manage" element={<Properties />} />
-              <Route path="/properties/:id" element={<PropertyDetail />} />
-              <Route path="/properties/:id/overview" element={<PropertyOverview />} />
-              <Route path="/inspections" element={<Inspections />} />
-              <Route path="/inspections/:id/review" element={<InspectionReview />} />
-              <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
-              <Route path="/maintenance" element={<Maintenance />} />
-              <Route path="/more" element={<More />} />
-              <Route path="/team" element={<Team />} />
-              <Route path="/vendors" element={<Vendors />} />
-              <Route path="/sharing" element={<Sharing />} />
-              <Route path="/billing" element={<Billing />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/suggest" element={<Suggest />} />
-              <Route path="/todo" element={<Tasks />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/all" element={<MaintenanceToDoAll />} />
-              <Route path="/calendar" element={<Calendar />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/violations" element={<Violations />} />
-              <Route path="/health" element={<PropertyHealth />} />
-              <Route path="/templates" element={<Templates />} />
-              <Route path="/vendors/:id" element={<VendorProfile />} />
+              {/* Dashboard — every logged-in role gets *some* dashboard */}
+              <Route element={<RoleRoute allow={ALL_STAFF} />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+              </Route>
+
+              {/* Maintenance board — Owner / PM / Handyperson (not Cleaner) */}
+              <Route element={<RoleRoute allow={WITH_MAINTENANCE} />}>
+                <Route path="/maintenance" element={<Maintenance />} />
+              </Route>
+
+              {/* Inspection review surfaces — Owner / PM only */}
+              <Route element={<RoleRoute allow={OWNER_PM} />}>
+                <Route path="/properties" element={<PropertyHealth />} />
+                <Route path="/properties/manage" element={<Properties />} />
+                <Route path="/properties/:id" element={<PropertyDetail />} />
+                <Route path="/properties/:id/overview" element={<PropertyOverview />} />
+                <Route path="/inspections" element={<Inspections />} />
+                <Route path="/inspections/:id/review" element={<InspectionReview />} />
+                <Route path="/quarterly-review/:propertyId/:date" element={<QuarterlyReview />} />
+                <Route path="/more" element={<More />} />
+                <Route path="/team" element={<Team />} />
+                <Route path="/vendors" element={<Vendors />} />
+                <Route path="/sharing" element={<Sharing />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/suggest" element={<Suggest />} />
+                <Route path="/todo" element={<Tasks />} />
+                <Route path="/tasks" element={<Tasks />} />
+                <Route path="/all" element={<MaintenanceToDoAll />} />
+                <Route path="/calendar" element={<Calendar />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/violations" element={<Violations />} />
+                <Route path="/health" element={<PropertyHealth />} />
+                <Route path="/templates" element={<Templates />} />
+                <Route path="/vendors/:id" element={<VendorProfile />} />
+              </Route>
+
+              {/* Billing / org-level surfaces — Owner only */}
+              <Route element={<RoleRoute allow={OWNER_ONLY} />}>
+                <Route path="/billing" element={<Billing />} />
+              </Route>
             </Route>
 
-            {/* Full-screen inspection flows (no nav) */}
-            <Route path="/inspections/:id" element={<InspectionFlow />} />
-            <Route path="/quarterly/:propertyId" element={<QuarterlyFlow />} />
-            <Route path="/quarterly/:propertyId/:roomId" element={<QuarterlyFlow />} />
-            <Route path="/common-area/:inspectionId" element={<CommonAreaFlow />} />
-            <Route path="/room-turn/:inspectionId" element={<CommonAreaFlow />} />
+            {/* Full-screen inspection flows (no nav) — Cleaners also run these */}
+            <Route element={<RoleRoute allow={ALL_STAFF} />}>
+              <Route path="/inspections/:id" element={<InspectionFlow />} />
+              <Route path="/quarterly/:propertyId" element={<QuarterlyFlow />} />
+              <Route path="/quarterly/:propertyId/:roomId" element={<QuarterlyFlow />} />
+              <Route path="/common-area/:inspectionId" element={<CommonAreaFlow />} />
+              <Route path="/room-turn/:inspectionId" element={<CommonAreaFlow />} />
+            </Route>
 
             {/* Resident experience — minimal layout */}
             <Route element={<ResidentLayout />}>

@@ -55,6 +55,43 @@ router.get('/join/:slug', async (req, res) => {
   }
 });
 
+// ─── GET /api/auth/invite/:token — team invite info (public) ──
+// Returns name/email/role/org info for the invite token so the signup
+// page can pre-fill the form. Surfaces EXPIRED / ACCEPTED / REVOKED
+// states so the frontend can render the right messaging.
+
+router.get('/invite/:token', async (req, res) => {
+  try {
+    const invite = await prisma.invitation.findUnique({
+      where: { token: req.params.token },
+      include: {
+        organization: { select: { name: true } },
+        invitedBy: { select: { name: true } },
+      },
+    });
+    if (!invite) return res.status(404).json({ error: 'Invalid invitation link' });
+
+    let status = 'PENDING';
+    if (invite.acceptedAt) status = 'ACCEPTED';
+    else if (invite.revokedAt) status = 'REVOKED';
+    else if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) status = 'EXPIRED';
+
+    return res.json({
+      email: invite.email,
+      name: invite.name,
+      role: invite.role,
+      customRole: invite.customRole,
+      organizationName: invite.organization?.name,
+      inviterName: invite.invitedBy?.name,
+      status,
+      expiresAt: invite.expiresAt,
+    });
+  } catch (error) {
+    console.error('Invite info error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/auth/property-invite/:token — public endpoint ──
 // Returns property/org info so the signup page knows who's being invited
 
@@ -87,7 +124,7 @@ router.get('/property-invite/:token', async (req, res) => {
 //   -d '{"email":"owner@example.com","password":"password123","name":"Jane Doe","organizationName":"Acme Coliving"}'
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, name, organizationName, propertyInviteToken } = req.body;
+    const { email, password, name, organizationName, propertyInviteToken, teamInviteToken } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'email, password, and name are required' });
@@ -104,7 +141,6 @@ router.post('/signup', async (req, res) => {
       if (!inviteInfo) {
         return res.status(400).json({ error: 'Invalid or expired invitation link' });
       }
-      // Verify property still exists
       const property = await prisma.property.findFirst({
         where: {
           id: inviteInfo.propertyId,
@@ -117,8 +153,31 @@ router.post('/signup', async (req, res) => {
       }
     }
 
-    // New org signup requires organizationName (non-resident)
-    if (!inviteInfo && !organizationName) {
+    // Team member signup via email invite
+    let teamInvite = null;
+    if (teamInviteToken) {
+      teamInvite = await prisma.invitation.findUnique({
+        where: { token: teamInviteToken },
+      });
+      if (!teamInvite) {
+        return res.status(400).json({ error: 'Invalid invitation link' });
+      }
+      if (teamInvite.acceptedAt) {
+        return res.status(400).json({ error: 'Invitation has already been accepted' });
+      }
+      if (teamInvite.revokedAt) {
+        return res.status(400).json({ error: 'Invitation has been revoked' });
+      }
+      if (teamInvite.expiresAt && new Date(teamInvite.expiresAt) < new Date()) {
+        return res.status(400).json({ error: 'Invitation has expired' });
+      }
+      if (teamInvite.email.toLowerCase() !== String(email).toLowerCase()) {
+        return res.status(400).json({ error: 'Email does not match the invitation' });
+      }
+    }
+
+    // New org signup requires organizationName (non-invite)
+    if (!inviteInfo && !teamInvite && !organizationName) {
       return res.status(400).json({ error: 'organizationName is required' });
     }
 
@@ -137,8 +196,32 @@ router.post('/signup', async (req, res) => {
     const userId = generateIdFromEntropySize(10);
 
     const user = await prisma.$transaction(async (tx) => {
+      if (teamInvite) {
+        const created = await tx.user.create({
+          data: {
+            id: userId,
+            email,
+            name,
+            hashedPassword,
+            role: teamInvite.role,
+            customRole: teamInvite.customRole,
+            organizationId: teamInvite.organizationId,
+          },
+        });
+        const propIds = Array.isArray(teamInvite.propertyIds) ? teamInvite.propertyIds : [];
+        if (propIds.length > 0) {
+          await tx.propertyAssignment.createMany({
+            data: propIds.map((pid) => ({ userId: created.id, propertyId: pid })),
+          });
+        }
+        await tx.invitation.update({
+          where: { id: teamInvite.id },
+          data: { acceptedAt: new Date(), status: 'ACCEPTED' },
+        });
+        return created;
+      }
+
       if (inviteInfo) {
-        // Resident signup: join existing organization as RESIDENT
         const created = await tx.user.create({
           data: {
             id: userId,
@@ -149,7 +232,6 @@ router.post('/signup', async (req, res) => {
             organizationId: inviteInfo.organizationId,
           },
         });
-        // Assign to property
         await tx.propertyAssignment.create({
           data: { userId: created.id, propertyId: inviteInfo.propertyId },
         });
@@ -302,26 +384,27 @@ router.get('/me', requireAuth, async (req, res) => {
 // Redirects to Google OAuth consent screen.
 //
 // curl -v http://localhost:3000/api/auth/google
-router.get('/google', async (_req, res) => {
+router.get('/google', async (req, res) => {
   try {
     const state = generateState();
     const codeVerifier = generateCodeVerifier();
     const url = google.createAuthorizationURL(state, codeVerifier, ['openid', 'profile', 'email']);
 
-    res.cookie('google_oauth_state', state, {
+    const cookieOpts = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 10 * 1000, // 10 minutes
       sameSite: 'lax',
       path: '/',
-    });
-    res.cookie('google_code_verifier', codeVerifier, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 10 * 1000,
-      sameSite: 'lax',
-      path: '/',
-    });
+    };
+    res.cookie('google_oauth_state', state, cookieOpts);
+    res.cookie('google_code_verifier', codeVerifier, cookieOpts);
+
+    // If the signup flow passed an invite token, stash it so the
+    // callback can attach the new/existing user to the right org/role.
+    if (req.query.invite) {
+      res.cookie('team_invite_token', String(req.query.invite), cookieOpts);
+    }
 
     return res.redirect(url.toString());
   } catch (error) {
@@ -363,6 +446,24 @@ router.get('/google/callback', async (req, res) => {
       },
     });
 
+    // Pick up a pending team-invite token from the cookie (set on /google)
+    const teamInviteTokenCookie = req.cookies.team_invite_token;
+    let teamInvite = null;
+    if (teamInviteTokenCookie) {
+      teamInvite = await prisma.invitation.findUnique({
+        where: { token: teamInviteTokenCookie },
+      });
+      if (teamInvite) {
+        const tooOld = teamInvite.expiresAt && new Date(teamInvite.expiresAt) < new Date();
+        if (teamInvite.acceptedAt || teamInvite.revokedAt || tooOld) {
+          teamInvite = null;
+        } else if (teamInvite.email.toLowerCase() !== String(googleUser.email).toLowerCase()) {
+          teamInvite = null;
+        }
+      }
+      res.clearCookie('team_invite_token');
+    }
+
     if (user) {
       // Link Google account if not already linked
       if (!user.googleId) {
@@ -371,6 +472,33 @@ router.get('/google/callback', async (req, res) => {
           data: { googleId: googleUser.sub },
         });
       }
+    } else if (teamInvite) {
+      // New user accepting a team invite: join the inviter's org
+      const userId = generateIdFromEntropySize(10);
+      user = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            id: userId,
+            email: googleUser.email,
+            name: googleUser.name || googleUser.email,
+            googleId: googleUser.sub,
+            role: teamInvite.role,
+            customRole: teamInvite.customRole,
+            organizationId: teamInvite.organizationId,
+          },
+        });
+        const propIds = Array.isArray(teamInvite.propertyIds) ? teamInvite.propertyIds : [];
+        if (propIds.length > 0) {
+          await tx.propertyAssignment.createMany({
+            data: propIds.map((pid) => ({ userId: created.id, propertyId: pid })),
+          });
+        }
+        await tx.invitation.update({
+          where: { id: teamInvite.id },
+          data: { acceptedAt: new Date(), status: 'ACCEPTED' },
+        });
+        return created;
+      });
     } else {
       // New user via Google — create org + user
       const userId = generateIdFromEntropySize(10);

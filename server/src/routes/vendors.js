@@ -5,6 +5,10 @@ import { FLAG_CATEGORIES } from '../../../shared/index.js';
 
 const router = Router();
 router.use(requireAuth);
+// Vendor directory is Owner/PM only — cleaners and handypeople never see
+// vendor management. Enforced at the router level so every endpoint
+// below inherits the restriction.
+router.use(requireRole('OWNER', 'PM'));
 
 const VENDOR_INCLUDE = {};
 

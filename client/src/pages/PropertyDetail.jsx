@@ -524,7 +524,7 @@ export default function PropertyDetail() {
           ) : (
             <>
               <QRCodeSVG
-                value={`${window.location.origin}/signup?invite=${qrToken}`}
+                value={`${window.location.origin}/signup?token=${qrToken}`}
                 size={200}
                 level="M"
                 fgColor="#4A4543"

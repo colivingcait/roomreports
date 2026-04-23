@@ -52,6 +52,12 @@ enum Plan {
   OPERATOR
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 // ─── Organization ───────────────────────────────────────
 
 model Organization {
@@ -117,17 +123,23 @@ model Session {
 // ─── Invitation ─────────────────────────────────────────
 
 model Invitation {
-  id             String   @id @default(cuid())
+  id             String           @id @default(cuid())
   email          String
+  name           String?
   role           Role
-  token          String   @unique
+  customRole     String?
+  token          String           @unique
   organizationId String
   propertyId     String?
+  propertyIds    String[]         @default([])
   roomId         String?
   invitedById    String
-  createdAt      DateTime @default(now())
+  status         InvitationStatus @default(PENDING)
+  createdAt      DateTime         @default(now())
   expiresAt      DateTime
   acceptedAt     DateTime?
+  revokedAt      DateTime?
+  lastSentAt     DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id])
   property     Property?    @relation(fields: [propertyId], references: [id])
@@ -136,6 +148,7 @@ model Invitation {
 
   @@index([organizationId])
   @@index([token])
+  @@index([email])
   @@map("invitations")
 }
 

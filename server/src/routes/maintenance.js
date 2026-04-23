@@ -227,7 +227,7 @@ router.get('/:id', async (req, res) => {
 // ─── POST /api/maintenance — create manually (not from an inspection) ──
 // Body: { propertyId, roomId?, description, flagCategory?, priority?, note?, zone? }
 
-router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const {
       propertyId, roomId,
@@ -239,6 +239,18 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
     }
     if (priority && !PRIORITIES.includes(priority)) {
       return res.status(400).json({ error: `priority must be one of ${PRIORITIES.join(', ')}` });
+    }
+
+    // Any authenticated team member can file an issue report, but
+    // cleaners / handypeople / other scoped roles must be assigned to
+    // the property they're reporting on. Owner and PM bypass.
+    if (!['OWNER', 'PM'].includes(req.user.role)) {
+      const assignment = await prisma.propertyAssignment.findFirst({
+        where: { userId: req.user.id, propertyId },
+      });
+      if (!assignment) {
+        return res.status(403).json({ error: 'Not assigned to this property' });
+      }
     }
 
     const property = await prisma.property.findFirst({
@@ -490,6 +502,68 @@ router.put('/:id/reopen', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.json({ item: shapeItem(updated) });
   } catch (error) {
     console.error('Reopen maintenance error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PATCH /api/maintenance/:id/progress ────────────────
+// Handyperson-friendly status update: they can move a ticket to
+// IN_PROGRESS / RESOLVED and add notes, without getting the full PUT
+// surface (which covers assignments, costs, priority, etc.).
+
+router.patch('/:id/progress', async (req, res) => {
+  try {
+    const existing = await prisma.maintenanceItem.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!existing) return res.status(404).json({ error: 'Maintenance item not found' });
+
+    // OWNER / PM go through PUT; scoped roles need property assignment.
+    if (!['OWNER', 'PM'].includes(req.user.role)) {
+      const assignment = await prisma.propertyAssignment.findFirst({
+        where: { userId: req.user.id, propertyId: existing.propertyId },
+      });
+      if (!assignment) {
+        return res.status(403).json({ error: 'Not assigned to this property' });
+      }
+    }
+
+    const { status, note } = req.body || {};
+    const allowed = ['IN_PROGRESS', 'RESOLVED'];
+    const data = {};
+    if (status !== undefined) {
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ error: `status must be one of ${allowed.join(', ')}` });
+      }
+      data.status = status;
+      if (status === 'RESOLVED') data.resolvedAt = new Date();
+    }
+    if (note !== undefined) data.note = String(note).trim() || null;
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: existing.id },
+      data,
+      include: MAINTENANCE_INCLUDE,
+    });
+
+    if (data.status && data.status !== existing.status) {
+      await logEvent(existing.id, req.user, 'status', existing.status, data.status);
+    }
+    if (data.note !== undefined && data.note !== existing.note) {
+      await logEvent(existing.id, req.user, 'note', existing.note, data.note);
+    }
+
+    return res.json({ item: shapeItem(updated) });
+  } catch (error) {
+    console.error('Progress update error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

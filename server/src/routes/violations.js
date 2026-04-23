@@ -38,8 +38,11 @@ async function hydrateViolations(violations, orgId) {
 }
 
 // ─── GET /api/violations ────────────────────────────────
+// Owner/PM only — the violations log is a management surface.
+// Cleaners still flag violations during inspections, but they don't
+// read the log.
 
-router.get('/', async (req, res) => {
+router.get('/', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
     const { propertyId, roomId, active, includeArchived } = req.query;
     const scope = await propertyIdScope(req.user);

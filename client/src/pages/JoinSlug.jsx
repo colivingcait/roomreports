@@ -11,7 +11,7 @@ export default function JoinSlug() {
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Not found');
-        navigate(`/signup?invite=${data.token}`, { replace: true });
+        navigate(`/signup?token=${data.token}`, { replace: true });
       })
       .catch((err) => setError(err.message));
   }, [slug, navigate]);

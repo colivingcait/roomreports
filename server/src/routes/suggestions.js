@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { sendEmail } from '../lib/email.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -35,9 +36,11 @@ router.post('/', async (req, res) => {
     });
 
     if (owner) {
-      console.log(
-        `[EMAIL] To: ${owner.email} — New feature suggestion from ${req.user.name} <${req.user.email}>: ${text}`
-      );
+      await sendEmail({
+        to: owner.email,
+        subject: 'New feature suggestion on RoomReport',
+        text: `New feature suggestion from ${req.user.name} <${req.user.email}>: ${text}`,
+      });
     }
 
     return res.status(201).json({ suggestion: created });

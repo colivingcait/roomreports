@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 import Modal from '../components/Modal';
+import { useAuth } from '../context/AuthContext';
+import CleanerDashboard from './CleanerDashboard';
+import HandypersonDashboard from './HandypersonDashboard';
+import { VIEW_AS_OPTIONS } from '../components/AppLayout';
 
 const WIDGET_STORE_KEY = 'roomreport:dashboard-widgets';
 const DEFAULT_WIDGETS = {
@@ -49,6 +53,23 @@ function timeLabel(date) {
 }
 
 export default function Dashboard() {
+  const { effectiveRole, canViewAs, viewAsRole, setViewAsRole, user } = useAuth();
+
+  // Route to a role-specific dashboard when the effective role is scoped.
+  if (effectiveRole === 'CLEANER') return <CleanerDashboard />;
+  if (effectiveRole === 'HANDYPERSON') return <HandypersonDashboard />;
+
+  return (
+    <OwnerDashboard
+      canViewAs={canViewAs}
+      viewAsRole={viewAsRole}
+      setViewAsRole={setViewAsRole}
+      realRole={user?.role}
+    />
+  );
+}
+
+function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState(null);
@@ -156,6 +177,27 @@ export default function Dashboard() {
           <p className="page-subtitle">{todayLabel}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+          {canViewAs && (
+            <select
+              className="view-as-picker"
+              value={viewAsRole || realRole || 'OWNER'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v || v === realRole) {
+                  setViewAsRole(null);
+                } else {
+                  setViewAsRole(v);
+                }
+              }}
+              title="Preview the app as another role"
+            >
+              {VIEW_AS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  View as: {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
           <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
           {isDesktop && (
             <button
