@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { queuePhoto } from '../lib/offlineStore';
 import Modal from '../components/Modal';
-import { FLAG_CATEGORIES, pillColors } from '../../../shared/index.js';
+import { FLAG_CATEGORIES } from '../../../shared/index.js';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -22,25 +22,30 @@ const COMPLIANCE_ZONE = 'Compliance';
 const MISC_ZONE = 'Misc';
 const COMPLETED_ZONE = '_Completed';
 
-// Canonical pill order — items are rendered in this exact order on every
-// room's compliance screen regardless of DB insertion order.
-const COMPLIANCE_PILL_ORDER = [
-  'Messy',
-  'Bad odor',
-  'Smoking',
-  'Unauthorized guests',
-  'Pets',
-  'Open food',
-  'Pests/bugs',
-  'Open flames/candles',
-  'Overloaded outlets',
-  'Kitchen appliances in room',
-  'Lithium batteries',
-  'Modifications (paint, holes, etc.)',
-  'Drug paraphernalia',
-  'Weapons',
-  'Unclear egress path',
+// Canonical pill order + display labels — items are rendered in this
+// exact order on every room's compliance screen regardless of DB
+// insertion order. Keys match the text stored on InspectionItem rows
+// (legacy values); the display label is what's shown on screen, so we
+// can tidy up wording without breaking older inspections.
+const COMPLIANCE_PILLS = [
+  { key: 'Messy',                                label: 'Messy' },
+  { key: 'Bad odor',                             label: 'Bad Odor' },
+  { key: 'Smoking',                              label: 'Smoking' },
+  { key: 'Unauthorized guests',                  label: 'Unauth. Guests' },
+  { key: 'Pets',                                 label: 'Pets' },
+  { key: 'Open food',                            label: 'Open Food' },
+  { key: 'Pests/bugs',                           label: 'Pests/Bugs' },
+  { key: 'Weapons',                              label: 'Weapons' },
+  { key: 'Drug paraphernalia',                   label: 'Drugs' },
+  { key: 'Unclear egress path',                  label: 'Unclear Egress Path' },
+  { key: 'Open flames/candles',                  label: 'Open Flames/Candles' },
+  { key: 'Overloaded outlets',                   label: 'Overloaded Outlets' },
+  { key: 'Kitchen appliances in room',           label: 'Kitchen Appliances in Room' },
+  { key: 'Lithium batteries',                    label: 'Lithium Batteries' },
+  { key: 'Modifications (paint, holes, etc.)',   label: 'Modifications (paint, holes, etc.)' },
 ];
+const COMPLIANCE_PILL_ORDER = COMPLIANCE_PILLS.map((p) => p.key);
+const COMPLIANCE_PILL_LABELS = Object.fromEntries(COMPLIANCE_PILLS.map((p) => [p.key, p.label]));
 
 function sortRooms(inspections) {
   return [...inspections].sort((a, b) => {
@@ -315,27 +320,17 @@ function ComplianceScreen({ items, inspectionId, saveItem, onItemUpdate, onBack,
       <div className="q-screen-body">
         <h2 className="q-screen-title">Select any that apply:</h2>
 
-        <div className="q-compliance-grid">
-          {pills.map((p) => {
-            const c = pillColors(p.text);
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={`q-compliance-card ${p.status === 'Fail' ? 'selected' : ''}`}
-                style={{
-                  '--pill-bg': c.bg,
-                  '--pill-fg': c.fg,
-                  '--pill-border': c.border,
-                  '--pill-sel-bg': c.selBg,
-                  '--pill-sel-fg': c.selFg,
-                }}
-                onClick={() => togglePill(p)}
-              >
-                {p.text}
-              </button>
-            );
-          })}
+        <div className="q-compliance-pills">
+          {pills.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`q-compliance-pill ${p.status === 'Fail' ? 'selected' : ''}`}
+              onClick={() => togglePill(p)}
+            >
+              {COMPLIANCE_PILL_LABELS[p.text] || p.text}
+            </button>
+          ))}
         </div>
 
         {selected.length > 0 && (
@@ -364,7 +359,7 @@ function ComplianceDetailCard({ item, inspectionId, onUpdate }) {
   const { fileRef, uploading, handlePhoto } = usePhotoUpload(inspectionId, item, onUpdate);
   return (
     <div className="q-compliance-detail">
-      <div className="q-compliance-detail-header">{item.text}</div>
+      <div className="q-compliance-detail-header">{COMPLIANCE_PILL_LABELS[item.text] || item.text}</div>
       <textarea
         className="q-flag-note"
         value={item.note || ''}
