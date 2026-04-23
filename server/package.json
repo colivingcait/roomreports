@@ -11,6 +11,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1030.0",
     "@lucia-auth/adapter-prisma": "^4.0.1",
     "@node-rs/argon2": "^2.0.2",
+    "@sendgrid/mail": "^8.1.6",
     "arctic": "^3.7.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
