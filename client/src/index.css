@@ -2295,17 +2295,21 @@ body {
 @media (max-width: 520px) {
   /* Phones: let all tabs share the row instead of scrolling off the
      right edge. Tabs shrink label size + padding so "Lease Violations"
-     still reads. */
+     still reads. !important beats the later design-system-2.0 rule at
+     line ~8625 which re-declares font-size + padding with no media
+     query. */
   .reports-tabs {
     overflow-x: visible;
     gap: 0;
   }
   .reports-tab {
-    flex: 1 1 0;
-    padding: 0.625rem 0.25rem;
-    font-size: 0.75rem;
-    min-width: 0;
-    text-align: center;
+    flex: 1 1 0 !important;
+    padding: 0.625rem 0.25rem !important;
+    font-size: 0.72rem !important;
+    min-width: 0 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    line-height: 1.2;
   }
 }
 .reports-tab.active {
@@ -8948,16 +8952,22 @@ img,
   .po-flat-desc { max-width: 60vw; }
 
   /* Inspection list rows: stack the status + download column below
-     the left column so nothing gets clipped by overflow-x: hidden. */
+     the left column so nothing gets clipped by overflow-x: hidden.
+     !important guards against any later unscoped rule. */
   .insp-history-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
   }
   .insp-history-right {
-    justify-content: flex-end;
-    flex-wrap: wrap;
+    justify-content: flex-end !important;
+    flex-wrap: wrap !important;
   }
+
+  /* Reports tabs: abbreviate padding + font so all three fit even
+     if the design-system 2.0 rule has already tried to re-expand
+     them. */
+  .reports-tabs { overflow-x: visible !important; }
 }
 
 /* ─── Property cards redesign — gray initials + health glow ─ */
