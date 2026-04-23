@@ -358,6 +358,8 @@ body {
 .notif-dropdown {
   position: absolute;
   top: 42px;
+  /* Default: open to the left of the bell (for the mobile header bell,
+     which lives near the right edge of the screen). */
   right: 0;
   width: 380px;
   max-width: 95vw;
@@ -368,6 +370,13 @@ body {
   z-index: 2000;
   overflow: hidden;
   color: #4A4543;
+}
+/* Sidebar bell sits in a narrow column — open the dropdown to the
+   right of the bell so it floats over the main content instead of
+   getting clipped off-screen on the left. */
+.sidebar .notif-dropdown {
+  right: auto;
+  left: 0;
 }
 .notif-wrap-compact .notif-dropdown {
   right: 8px;
