@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { roleLabel, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
+import { useAuth } from '../context/AuthContext';
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -19,6 +20,7 @@ function Lightbox({ url, onClose }) {
 export default function QuarterlyReview() {
   const { propertyId, date } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +28,9 @@ export default function QuarterlyReview() {
   const [itemSelections, setItemSelections] = useState({}); // itemId -> { createTask, description, pmNote }
   const [approving, setApproving] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState('');
+  const [reopening, setReopening] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchGroup = useCallback(async () => {
     try {
@@ -96,6 +101,43 @@ export default function QuarterlyReview() {
     }
   };
 
+  const handleReopenForEdit = async () => {
+    setReopening(true);
+    setError('');
+    try {
+      // Reopen every non-draft room in the batch so the inspector can
+      // resume the multi-room flow.
+      const ids = data.rooms
+        .filter((r) => r.status === 'SUBMITTED' || r.status === 'REVIEWED')
+        .map((r) => r.inspectionId);
+      for (const roomInspId of ids) {
+        await api(`/api/inspections/${roomInspId}/reopen`, { method: 'POST' });
+      }
+      navigate(`/quarterly/${propertyId}`);
+    } catch (err) {
+      setError(err.message);
+      setReopening(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError('');
+    try {
+      const ids = data.rooms.map((r) => r.inspectionId);
+      await api('/api/inspections/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+      navigate('/dashboard', {
+        state: { notification: 'Inspection deleted.' },
+      });
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <div className="page-loading">Loading room inspection...</div>;
   if (!data) return <div className="page-container"><div className="auth-error">{error || 'Not found'}</div></div>;
 
@@ -138,6 +180,20 @@ export default function QuarterlyReview() {
           </span>
         </div>
       </div>
+
+      {data.edits?.length > 0 && (
+        <div className="review-edit-note">
+          {data.completedAt && (
+            <>Originally submitted {new Date(data.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{' · '}</>
+          )}
+          {data.edits.map((e, i) => (
+            <span key={e.id}>
+              {i > 0 && ' · '}
+              Edited by {e.editorName} on {new Date(e.editedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Aggregated summary */}
       <div className="review-summary">
@@ -425,6 +481,36 @@ export default function QuarterlyReview() {
           </div>
         </div>
       )}
+
+      {/* Edit / Delete bar — OWNER/PM only */}
+      {(user?.role === 'OWNER' || user?.role === 'PM') && (
+        <div className="review-edit-delete-bar">
+          <button
+            className="btn-edit-outline"
+            onClick={handleReopenForEdit}
+            disabled={reopening || deleting}
+          >
+            {reopening ? 'Opening...' : 'Edit Inspection'}
+          </button>
+          <button
+            className="btn-delete-outline"
+            onClick={() => setShowDelete(true)}
+            disabled={reopening || deleting}
+          >
+            Delete Inspection
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete Inspection"
+        message="Are you sure you want to delete this inspection? Any maintenance tickets and lease violations created from this inspection will also be removed."
+        confirmLabel="Delete"
+        loading={deleting}
+      />
 
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />}
     </div>

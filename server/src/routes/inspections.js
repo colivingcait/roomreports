@@ -403,6 +403,7 @@ router.get('/:id', async (req, res) => {
         property: { select: { id: true, name: true, address: true } },
         room: { select: { id: true, label: true } },
         inspector: { select: { id: true, name: true, role: true, customRole: true } },
+        edits: { orderBy: { editedAt: 'asc' } },
       },
     });
 
@@ -576,14 +577,24 @@ router.post('/:id/reopen', async (req, res) => {
       return res.status(400).json({ error: 'Inspection is already a draft' });
     }
 
-    const updated = await prisma.inspection.update({
-      where: { id: inspection.id },
-      data: {
-        status: 'DRAFT',
-        completedAt: null,
-        editedAt: new Date(),
-        editCount: { increment: 1 },
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.inspectionEdit.create({
+        data: {
+          inspectionId: inspection.id,
+          editorId: req.user.id,
+          editorName: req.user.name,
+          editorRole: role,
+        },
+      });
+      return tx.inspection.update({
+        where: { id: inspection.id },
+        data: {
+          status: 'DRAFT',
+          completedAt: null,
+          editedAt: new Date(),
+          editCount: { increment: 1 },
+        },
+      });
     });
     return res.json({ inspection: updated });
   } catch (error) {
@@ -697,9 +708,63 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
-// ─── DELETE /api/inspections/:id — soft-delete DRAFT or REVIEWED ──
+// ─── DELETE /api/inspections/:id — soft-delete + cascade ──
+//
+// Deleting an inspection also soft-deletes any maintenance items and
+// lease violations that originated from its flagged items, so kanban,
+// reports, and violations views all drop them at once. OWNER/PM only.
 
-router.delete('/:id', async (req, res) => {
+async function cascadeSoftDeleteInspections(prisma, inspectionIds, organizationId) {
+  if (inspectionIds.length === 0) return 0;
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    // Find all inspection items for these inspections so we can target
+    // downstream records that were created from them.
+    const items = await tx.inspectionItem.findMany({
+      where: { inspectionId: { in: inspectionIds } },
+      select: { id: true },
+    });
+    const itemIds = items.map((i) => i.id);
+
+    // Maintenance items: linked via inspectionId OR inspectionItemId
+    await tx.maintenanceItem.updateMany({
+      where: {
+        organizationId,
+        deletedAt: null,
+        OR: [
+          { inspectionId: { in: inspectionIds } },
+          { inspectionItemId: { in: itemIds } },
+        ],
+      },
+      data: { deletedAt: now },
+    });
+
+    // Lease violations: same linkage
+    await tx.leaseViolation.updateMany({
+      where: {
+        organizationId,
+        deletedAt: null,
+        OR: [
+          { inspectionId: { in: inspectionIds } },
+          { inspectionItemId: { in: itemIds } },
+        ],
+      },
+      data: { deletedAt: now },
+    });
+
+    const result = await tx.inspection.updateMany({
+      where: {
+        id: { in: inspectionIds },
+        organizationId,
+        deletedAt: null,
+      },
+      data: { deletedAt: now },
+    });
+    return result.count;
+  });
+}
+
+router.delete('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
     const inspection = await prisma.inspection.findFirst({
       where: {
@@ -713,14 +778,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Inspection not found' });
     }
 
-    if (!['DRAFT', 'REVIEWED'].includes(inspection.status)) {
-      return res.status(400).json({ error: 'SUBMITTED inspections must be reviewed before deletion' });
-    }
-
-    await prisma.inspection.update({
-      where: { id: inspection.id },
-      data: { deletedAt: new Date() },
-    });
+    await cascadeSoftDeleteInspections(prisma, [inspection.id], req.user.organizationId);
 
     return res.json({ success: true });
   } catch (error) {
@@ -751,6 +809,7 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
         room: { select: { id: true, label: true } },
         inspector: { select: { name: true, role: true, customRole: true } },
         property: { select: { id: true, name: true } },
+        edits: { orderBy: { editedAt: 'asc' } },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -847,6 +906,18 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       }
     }
 
+    // Collapse per-room edits into a single chronological group log.
+    const seenEditIds = new Set();
+    const groupEdits = [];
+    for (const insp of inspections) {
+      for (const e of (insp.edits || [])) {
+        if (seenEditIds.has(e.id)) continue;
+        seenEditIds.add(e.id);
+        groupEdits.push(e);
+      }
+    }
+    groupEdits.sort((a, b) => new Date(a.editedAt) - new Date(b.editedAt));
+
     return res.json({
       propertyId,
       property: inspections[0].property,
@@ -860,6 +931,7 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
       totalItems: allItemsCount,
       rooms,
       commonAreaQuick,
+      edits: groupEdits,
     });
   } catch (error) {
     console.error('Quarterly group error:', error);
@@ -934,26 +1006,22 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
   }
 });
 
-// ─── POST /api/inspections/bulk-delete — soft-delete multiple DRAFT or REVIEWED ──
+// ─── POST /api/inspections/bulk-delete — soft-delete with cascade ──
+//
+// Same cascade rules as DELETE /:id — linked maintenance and lease
+// violation records are soft-deleted alongside each inspection. OWNER/PM
+// only.
 
-router.post('/bulk-delete', async (req, res) => {
+router.post('/bulk-delete', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array is required' });
     }
 
-    const result = await prisma.inspection.updateMany({
-      where: {
-        id: { in: ids },
-        organizationId: req.user.organizationId,
-        status: { in: ['DRAFT', 'REVIEWED'] },
-        deletedAt: null,
-      },
-      data: { deletedAt: new Date() },
-    });
+    const deleted = await cascadeSoftDeleteInspections(prisma, ids, req.user.organizationId);
 
-    return res.json({ deleted: result.count });
+    return res.json({ deleted });
   } catch (error) {
     console.error('Bulk delete inspections error:', error);
     return res.status(500).json({ error: 'Internal server error' });

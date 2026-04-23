@@ -257,11 +257,30 @@ model Inspection {
   organization     Organization      @relation(fields: [organizationId], references: [id])
   items            InspectionItem[]
   maintenanceItems MaintenanceItem[]
+  edits            InspectionEdit[]
 
   @@index([organizationId])
   @@index([propertyId])
   @@index([inspectorId])
   @@map("inspections")
+}
+
+// ─── InspectionEdit ─────────────────────────────────────
+// One row per reopen-to-edit event, so review pages can show a full
+// "edited by X on Y" history rather than just the latest timestamp.
+
+model InspectionEdit {
+  id            String   @id @default(cuid())
+  inspectionId  String
+  editorId      String
+  editorName    String
+  editorRole    String
+  editedAt      DateTime @default(now())
+
+  inspection    Inspection @relation(fields: [inspectionId], references: [id])
+
+  @@index([inspectionId])
+  @@map("inspection_edits")
 }
 
 // ─── InspectionItem ─────────────────────────────────────

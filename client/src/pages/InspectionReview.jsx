@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { roleLabel, PRIORITIES, PRIORITY_COLORS, suggestPriority } from '../../../shared/index.js';
 import { useAuth } from '../context/AuthContext';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -45,6 +46,8 @@ export default function InspectionReview() {
   const [sendBackReason, setSendBackReason] = useState('');
   const [showSendBack, setShowSendBack] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState('');
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchInspection = useCallback(async () => {
     try {
@@ -138,6 +141,20 @@ export default function InspectionReview() {
     }
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError('');
+    try {
+      await api(`/api/inspections/${id}`, { method: 'DELETE' });
+      navigate('/dashboard', {
+        state: { notification: 'Inspection deleted.' },
+      });
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  };
+
   const handleSendBack = async () => {
     setSendingBack(true);
     setError('');
@@ -219,15 +236,6 @@ export default function InspectionReview() {
               Download PDF
             </button>
           )}
-          {(user?.role === 'PM' || user?.role === 'OWNER') && (isSubmitted || isReviewed) && (
-            <button
-              className="btn-edit-inspection"
-              onClick={handleReopenForEdit}
-              disabled={reopening}
-            >
-              {reopening ? 'Opening...' : 'Edit Inspection'}
-            </button>
-          )}
           <span
             className="insp-status-badge"
             style={{ color: STATUS_COLORS[inspection.status], borderColor: STATUS_COLORS[inspection.status] }}
@@ -236,10 +244,24 @@ export default function InspectionReview() {
           </span>
         </div>
       </div>
-      {inspection.editCount > 0 && inspection.editedAt && (
+      {(inspection.edits?.length > 0 || (inspection.editCount > 0 && inspection.editedAt)) && (
         <div className="review-edit-note">
-          Edited on {new Date(inspection.editedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-          {inspection.editCount > 1 ? ` (${inspection.editCount} edits)` : ''}
+          {inspection.completedAt && (
+            <>Originally submitted {new Date(inspection.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{' · '}</>
+          )}
+          {inspection.edits?.length > 0
+            ? inspection.edits.map((e, i) => (
+                <span key={e.id}>
+                  {i > 0 && ' · '}
+                  Edited by {e.editorName} on {new Date(e.editedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              ))
+            : (
+              <span>
+                Edited on {new Date(inspection.editedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {inspection.editCount > 1 ? ` (${inspection.editCount} edits)` : ''}
+              </span>
+            )}
         </div>
       )}
 
@@ -501,6 +523,36 @@ export default function InspectionReview() {
           </div>
         </div>
       )}
+
+      {/* Edit / Delete bar — OWNER/PM only */}
+      {(user?.role === 'OWNER' || user?.role === 'PM') && (
+        <div className="review-edit-delete-bar">
+          <button
+            className="btn-edit-outline"
+            onClick={handleReopenForEdit}
+            disabled={reopening || deleting}
+          >
+            {reopening ? 'Opening...' : 'Edit Inspection'}
+          </button>
+          <button
+            className="btn-delete-outline"
+            onClick={() => setShowDelete(true)}
+            disabled={reopening || deleting}
+          >
+            Delete Inspection
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete Inspection"
+        message="Are you sure you want to delete this inspection? Any maintenance tickets and lease violations created from this inspection will also be removed."
+        confirmLabel="Delete"
+        loading={deleting}
+      />
 
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />}
     </div>
