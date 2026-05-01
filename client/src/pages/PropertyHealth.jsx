@@ -23,6 +23,43 @@ const api = (path, opts = {}) =>
       return d;
     });
 
+function fmtMoneyShort(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0,
+  });
+}
+
+function PropertyFinancialFooter({ summary, hasData }) {
+  if (!summary) {
+    return (
+      <div className="prop-card-financials">
+        <span className="pcf-empty">
+          {hasData ? 'No financial match yet' : 'No financial data — upload in Financials tab'}
+        </span>
+      </div>
+    );
+  }
+  const netClass = summary.netMonthly > 0 ? 'pcf-value-good'
+    : summary.netMonthly < 0 ? 'pcf-value-bad' : '';
+  return (
+    <div className="prop-card-financials">
+      <div className="pcf-row">
+        <span className="pcf-label">Avg monthly revenue</span>
+        <span className="pcf-value">{fmtMoneyShort(summary.avgRevenue)}</span>
+      </div>
+      <div className="pcf-row">
+        <span className="pcf-label">Avg monthly maintenance</span>
+        <span className="pcf-value">{fmtMoneyShort(summary.avgMaintenance)}</span>
+      </div>
+      <div className="pcf-row">
+        <span className="pcf-label">Net monthly</span>
+        <span className={`pcf-value ${netClass}`}>{fmtMoneyShort(summary.netMonthly)}</span>
+      </div>
+    </div>
+  );
+}
+
 function timeAgo(date) {
   if (!date) return null;
   const d = new Date(date);
@@ -47,11 +84,19 @@ export default function PropertyHealth() {
   const navigate = useNavigate();
   const { limit, isBeta, gate, promptUpgrade, dismiss } = useFeatureGate();
 
+  const [financials, setFinancials] = useState({ propertySummary: {}, hasData: false });
+
   const load = () => {
     setLoading(true);
     setError('');
-    api('/api/properties?withHealth=true')
-      .then((d) => setProperties(d.properties || []))
+    Promise.all([
+      api('/api/properties?withHealth=true'),
+      api('/api/financials/property-summary').catch(() => ({ propertySummary: {}, hasData: false })),
+    ])
+      .then(([d, f]) => {
+        setProperties(d.properties || []);
+        setFinancials(f || { propertySummary: {}, hasData: false });
+      })
       .catch((err) => setError(err.message || 'Failed to load properties'))
       .finally(() => setLoading(false));
   };
@@ -210,6 +255,10 @@ export default function PropertyHealth() {
                     <div className="prop-card-subtitle">{subtitle}</div>
                   </div>
                 </div>
+                <PropertyFinancialFooter
+                  summary={financials.propertySummary?.[p.id]}
+                  hasData={financials.hasData}
+                />
                 <div className="prop-card-status">
                   {open === 0 && viol === 0 ? (
                     <span className="prop-status">

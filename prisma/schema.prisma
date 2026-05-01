@@ -88,6 +88,9 @@ model Organization {
   invitations Invitation[]
   vendors     Vendor[]
   notifications Notification[]
+  financialUploads  FinancialUpload[]
+  financialRecords  FinancialRecord[]
+  padSplitMappings  PadSplitPropertyMapping[]
 
   @@map("organizations")
 }
@@ -646,6 +649,89 @@ model Notification {
   @@index([userId, read, createdAt])
   @@index([organizationId])
   @@map("notifications")
+}
+
+// ─── FinancialUpload ────────────────────────────────────
+// One per (org, earningsMonth) — represents a single PadSplit
+// monthly report upload. Reuploading the same month overwrites
+// prior records via cascade delete on FinancialRecord.
+
+model FinancialUpload {
+  id             String   @id @default(cuid())
+  organizationId String
+  earningsMonth  String   // "YYYY-MM"
+  uploadedAt     DateTime @default(now())
+  uploadedById   String?
+  fileNames      String[] @default([])
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  records      FinancialRecord[]
+
+  @@unique([organizationId, earningsMonth])
+  @@index([organizationId])
+  @@map("financial_uploads")
+}
+
+// ─── FinancialRecord ────────────────────────────────────
+// Normalized rows parsed out of summary.csv, collected.csv,
+// billed.csv, earnings_table.csv. Categorized by recordType.
+
+model FinancialRecord {
+  id              String   @id @default(cuid())
+  uploadId        String
+  organizationId  String
+  earningsMonth   String   // "YYYY-MM"
+  recordType      String   // SUMMARY | COLLECTED | BILLED | EARNINGS_TABLE
+  propertyAddress String?
+  propertyPSID    String?
+  roomNumber      String?
+  roomId          String?
+  memberId        String?
+  memberName      String?
+  billType        String?  // membership_dues | late_fees | concession | ...
+  transactionType String?
+  transactionReason String?
+  billId          String?
+  grossAmount     Float?
+  bookingFee      Float?
+  serviceFee      Float?
+  transactionFee  Float?
+  hostEarnings    Float?
+  totalCollections Float?
+  totalExpenses    Float?
+  totalPayout      Float?
+  category        String?
+  rowType         String?
+  createdAt       DateTime @default(now())
+
+  upload       FinancialUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, earningsMonth])
+  @@index([uploadId])
+  @@index([propertyAddress])
+  @@index([roomNumber])
+  @@map("financial_records")
+}
+
+// ─── PadSplitPropertyMapping ───────────────────────────
+// Maps a PadSplit street address (from CSVs) to a RoomReport
+// Property. Stored per-org so we don't re-fuzzy-match every load.
+
+model PadSplitPropertyMapping {
+  id             String   @id @default(cuid())
+  organizationId String
+  padsplitAddress String  // normalized street, e.g. "2136 chestnut hill cir"
+  propertyId     String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, padsplitAddress])
+  @@index([organizationId])
+  @@index([propertyId])
+  @@map("padsplit_property_mappings")
 }
 
 // ─── NotificationPreference ─────────────────────────────
