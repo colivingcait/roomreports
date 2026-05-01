@@ -10057,7 +10057,10 @@ img,
   border-radius: 12px;
   box-shadow: var(--ds-shadow-card);
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
+.fin-prop-list { min-width: 0; }
 .fin-prop-head {
   width: 100%;
   background: none; border: none;
@@ -10092,12 +10095,14 @@ img,
   padding: 1rem;
   border-top: 1px solid var(--ds-divider);
   background: #FAF7F2;
+  min-width: 0;
 }
 .fin-prop-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
+  min-width: 0;
 }
 .fin-prop-stat {
   background: #fff;
@@ -10119,6 +10124,11 @@ img,
   background: #fff;
   border: 1px solid var(--ds-divider);
   border-radius: 8px;
+  width: 100%;
+  max-width: 100%;
+  /* Critical: a flex/grid child needs min-width:0 so it actually
+     constrains overflow-x to its parent rather than dictating width. */
+  min-width: 0;
 }
 .fin-table {
   width: 100%;

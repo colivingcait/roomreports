@@ -310,8 +310,12 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
   const [sortDir, setSortDir] = useState('asc');
 
   const rooms = useMemo(() => {
-    const sorted = [...p.rooms];
-    sorted.sort((a, b) => {
+    // Derive platformFees so it's sortable like a real column.
+    const enriched = p.rooms.map((r) => ({
+      ...r,
+      platformFees: (r.bookingFee || 0) + (r.serviceFee || 0) + (r.transactionFee || 0),
+    }));
+    enriched.sort((a, b) => {
       const av = a[sortBy] ?? '';
       const bv = b[sortBy] ?? '';
       if (typeof av === 'number' && typeof bv === 'number') {
@@ -320,7 +324,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
       const r = String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? r : -r;
     });
-    return sorted;
+    return enriched;
   }, [p.rooms, sortBy, sortDir]);
 
   const toggleSort = (key) => {
@@ -384,11 +388,8 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                   {headerCell('residentName', 'Resident')}
                   {headerCell('gross', 'Collected')}
                   {headerCell('lateFees', 'Late fees')}
-                  {headerCell('bookingFee', 'Booking')}
-                  {headerCell('serviceFee', 'Service')}
-                  {headerCell('transactionFee', 'Txn fee')}
+                  {headerCell('platformFees', 'Platform fees')}
                   {headerCell('hostEarnings', 'Host earn')}
-                  {headerCell('billed', 'Billed')}
                   {headerCell('vacantDays', 'Vacant days')}
                   {headerCell('vacancy', 'Vacancy')}
                   {headerCell('turnover', 'Turn?')}
@@ -407,11 +408,8 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                       <td>{r.residentName || <span className="fin-muted">vacant</span>}</td>
                       <td>{fmtMoney(r.gross)}</td>
                       <td>{fmtMoney(r.lateFees)}</td>
-                      <td>{fmtMoney(r.bookingFee)}</td>
-                      <td>{fmtMoney(r.serviceFee)}</td>
-                      <td>{fmtMoney(r.transactionFee)}</td>
+                      <td>{fmtMoney(r.platformFees)}</td>
                       <td>{fmtMoney(r.hostEarnings)}</td>
-                      <td>{fmtMoney(r.billed)}</td>
                       <td>{r.vacantDays || 0}</td>
                       <td>{fmtMoney(r.vacancy)}</td>
                       <td>{r.turnover ? <span className="fin-turn-yes">Yes</span> : '—'}</td>
@@ -421,7 +419,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                   );
                 })}
                 {rooms.length === 0 && (
-                  <tr><td colSpan="14" className="fin-empty">No room data for this month.</td></tr>
+                  <tr><td colSpan="11" className="fin-empty">No room data for this month.</td></tr>
                 )}
               </tbody>
             </table>
