@@ -701,8 +701,9 @@ router.post('/:id/unmerge', requireRole('OWNER', 'PM'), async (req, res) => {
 });
 
 // ─── PUT /api/maintenance/children/:childId/cost ─────────
-// Update an individual child's actualCost (so vendor invoices can be
-// split across the merged items). The parent's cost auto-sums on read.
+// Update an individual child's estimatedCost / actualCost (so vendor
+// invoices can be split across the merged items). The parent's cost
+// auto-rolls up to the sum across children.
 
 router.put('/children/:childId/cost', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
@@ -715,22 +716,39 @@ router.put('/children/:childId/cost', requireRole('OWNER', 'PM'), async (req, re
       },
     });
     if (!child) return res.status(404).json({ error: 'Child ticket not found' });
-    const cost = req.body?.actualCost;
-    const value = cost === '' || cost == null ? null : Number(cost);
+    const data = {};
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'estimatedCost')) {
+      const v = req.body.estimatedCost;
+      data.estimatedCost = v === '' || v == null ? null : Number(v);
+    }
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'actualCost')) {
+      const v = req.body.actualCost;
+      data.actualCost = v === '' || v == null ? null : Number(v);
+    }
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'estimatedCost or actualCost required' });
+    }
     const updated = await prisma.maintenanceItem.update({
       where: { id: child.id },
-      data: { actualCost: value },
+      data,
     });
-    // Roll up to parent's actualCost.
+    // Roll up parent costs as the sum across children.
     const sumRow = await prisma.maintenanceItem.aggregate({
       where: { parentTicketId: child.parentTicketId, deletedAt: null },
-      _sum: { actualCost: true },
+      _sum: { actualCost: true, estimatedCost: true },
     });
     await prisma.maintenanceItem.update({
       where: { id: child.parentTicketId },
-      data: { actualCost: sumRow._sum.actualCost || 0 },
+      data: {
+        actualCost: sumRow._sum.actualCost || 0,
+        estimatedCost: sumRow._sum.estimatedCost || 0,
+      },
     });
-    return res.json({ child: updated, parentTotal: sumRow._sum.actualCost || 0 });
+    return res.json({
+      child: updated,
+      parentActualTotal: sumRow._sum.actualCost || 0,
+      parentEstimatedTotal: sumRow._sum.estimatedCost || 0,
+    });
   } catch (err) {
     console.error('Update child cost error:', err);
     return res.status(500).json({ error: 'Internal server error' });

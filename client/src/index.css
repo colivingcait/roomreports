@@ -1672,12 +1672,49 @@ body {
 }
 .md-merged-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; }
 .md-merged-cost-row {
-  display: flex; gap: 0.5rem; align-items: flex-end; font-size: 12px;
+  display: flex; gap: 0.75rem; align-items: flex-end; font-size: 12px;
+  flex-wrap: wrap;
 }
-.md-merged-cost-row label { font-size: 11px; color: var(--ds-text-secondary); }
+.md-merged-cost-row label {
+  font-size: 11px; color: var(--ds-text-secondary);
+  display: flex; flex-direction: column; gap: 2px;
+}
 .md-merged-cost-row .maint-input { max-width: 120px; }
 .md-merged-total {
-  margin-top: 0.5rem; font-size: 13px; color: var(--ds-text-secondary); text-align: right;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: #FAF7F2;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1.5rem;
+}
+.md-merged-total span { color: var(--ds-text-secondary); }
+.md-merged-total strong { color: var(--ds-text); }
+
+/* Read-only cost summary on parent ticket detail */
+.md-cost-summary {
+  background: #FAF7F2;
+  border: 1px solid var(--ds-divider);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1rem;
+}
+.md-cost-summary > div { display: flex; flex-direction: column; gap: 2px; }
+.md-cost-summary label {
+  font-size: 11px; color: var(--ds-text-secondary);
+}
+.md-cost-summary span {
+  font-size: 14px; font-weight: 600; color: var(--ds-text);
+}
+.md-cost-summary-note {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--ds-text-muted);
+  font-style: italic;
 }
 
 .modal-content {
