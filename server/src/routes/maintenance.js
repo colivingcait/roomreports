@@ -150,9 +150,17 @@ router.get('/', async (req, res) => {
       where.status = { not: 'DEFERRED' };
     }
 
+    // Children of merged tickets are hidden from the board — only the
+    // parent surfaces. Callers that explicitly want to pick from any
+    // open ticket (e.g. the "Merge with..." picker) pass
+    // includeChildren=true.
+    if (req.query.includeChildren !== 'true') {
+      where.parentTicketId = null;
+    }
+
     const items = await prisma.maintenanceItem.findMany({
       where,
-      include: MAINTENANCE_INCLUDE,
+      include: { ...MAINTENANCE_INCLUDE, _count: { select: { children: true } } },
       orderBy: [{ createdAt: 'desc' }],
     });
 
@@ -190,7 +198,18 @@ router.get('/:id', async (req, res) => {
         organizationId: req.user.organizationId,
         deletedAt: null,
       },
-      include: DETAIL_INCLUDE,
+      include: {
+        ...DETAIL_INCLUDE,
+        children: {
+          where: { deletedAt: null },
+          include: {
+            room: { select: { id: true, label: true } },
+            photos: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        parent: { select: { id: true, description: true } },
+      },
     });
     if (!item) return res.status(404).json({ error: 'Maintenance item not found' });
 
@@ -404,6 +423,25 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
       include: MAINTENANCE_INCLUDE,
     });
 
+    // Propagate parent-level changes to all children. Status, priority,
+    // and assignment apply to every merged item; cost stays per-child
+    // (handled by /children/:id/cost) so vendor invoices can be split.
+    const childPropagation = {};
+    if (status !== undefined) childPropagation.status = status;
+    if (status === 'RESOLVED' && existing.status !== 'RESOLVED') childPropagation.resolvedAt = new Date();
+    if (status && status !== 'RESOLVED' && existing.status === 'RESOLVED') childPropagation.resolvedAt = null;
+    if (priority !== undefined) childPropagation.priority = priority;
+    if (assignedUserId !== undefined) childPropagation.assignedUserId = data.assignedUserId;
+    if (assignedVendorId !== undefined) childPropagation.assignedVendorId = data.assignedVendorId;
+    if (assignedTo !== undefined) childPropagation.assignedTo = data.assignedTo ?? assignedTo;
+    if (vendor !== undefined) childPropagation.vendor = vendor;
+    if (Object.keys(childPropagation).length > 0) {
+      await prisma.maintenanceItem.updateMany({
+        where: { parentTicketId: existing.id, deletedAt: null },
+        data: childPropagation,
+      });
+    }
+
     // Event log
     const events = [];
     if (status !== undefined && status !== existing.status) {
@@ -453,6 +491,235 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
 });
 
 // ─── POST /api/maintenance/:id/archive — archive / unarchive ─
+
+// ─── POST /api/maintenance/merge ────────────────────────
+// Body: { ticketIds: [...], title, flagCategory, priority, assignedUserId,
+//         assignedTo, assignedVendorId }
+// Creates a new parent ticket and links all selected tickets as children.
+// All selected tickets must belong to the same property and the same org.
+
+router.post('/merge', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const { ticketIds, title, flagCategory, priority, assignedUserId, assignedTo, assignedVendorId, vendor } = req.body;
+    if (!Array.isArray(ticketIds) || ticketIds.length < 2) {
+      return res.status(400).json({ error: 'Select at least two tickets to merge' });
+    }
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    const tickets = await prisma.maintenanceItem.findMany({
+      where: {
+        id: { in: ticketIds },
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        archivedAt: null,
+      },
+    });
+    if (tickets.length !== ticketIds.length) {
+      return res.status(400).json({ error: 'Some tickets are missing or unavailable' });
+    }
+    const propertyIds = [...new Set(tickets.map((t) => t.propertyId))];
+    if (propertyIds.length > 1) {
+      return res.status(400).json({ error: 'All tickets to merge must belong to the same property' });
+    }
+    if (tickets.some((t) => t.parentTicketId)) {
+      return res.status(400).json({ error: 'One or more tickets are already merged into another parent' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const parent = await tx.maintenanceItem.create({
+        data: {
+          organizationId: req.user.organizationId,
+          propertyId: propertyIds[0],
+          description: String(title).trim(),
+          zone: 'Merged',
+          flagCategory: flagCategory || tickets[0].flagCategory || 'General',
+          priority: priority || tickets[0].priority || null,
+          status: 'OPEN',
+          assignedUserId: assignedUserId || null,
+          assignedTo: assignedTo || null,
+          assignedVendorId: assignedVendorId || null,
+          vendor: vendor || null,
+          reportedById: req.user.id,
+          reportedByName: req.user.name,
+          reportedByRole: req.user.role,
+        },
+      });
+      await tx.maintenanceItem.updateMany({
+        where: { id: { in: ticketIds } },
+        data: {
+          parentTicketId: parent.id,
+          mergedAt: new Date(),
+          // Inherit parent status so kanban moves are consistent.
+          status: 'OPEN',
+        },
+      });
+      await tx.maintenanceEvent.create({
+        data: {
+          maintenanceItemId: parent.id,
+          type: 'merged',
+          note: `Merged ${ticketIds.length} tickets`,
+          byUserId: req.user.id,
+          byUserName: req.user.name,
+        },
+      });
+      for (const t of tickets) {
+        await tx.maintenanceEvent.create({
+          data: {
+            maintenanceItemId: t.id,
+            type: 'merged',
+            note: `Merged into "${parent.description}"`,
+            byUserId: req.user.id,
+            byUserName: req.user.name,
+          },
+        });
+      }
+      return parent;
+    });
+
+    const full = await prisma.maintenanceItem.findUnique({
+      where: { id: result.id },
+      include: { ...DETAIL_INCLUDE, children: { where: { deletedAt: null }, include: { room: true, photos: true } } },
+    });
+    return res.json({ item: shapeItem(full) });
+  } catch (err) {
+    console.error('Merge tickets error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/add-children ──────────────
+// Body: { ticketIds: [...] } — attach more tickets to an existing parent.
+
+router.post('/:id/add-children', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const parent = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (!parent) return res.status(404).json({ error: 'Parent ticket not found' });
+    if (parent.parentTicketId) {
+      return res.status(400).json({ error: 'Cannot add children to a child ticket' });
+    }
+    const { ticketIds } = req.body;
+    if (!Array.isArray(ticketIds) || ticketIds.length === 0) {
+      return res.status(400).json({ error: 'ticketIds required' });
+    }
+    const tickets = await prisma.maintenanceItem.findMany({
+      where: {
+        id: { in: ticketIds },
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        archivedAt: null,
+        propertyId: parent.propertyId,
+        parentTicketId: null,
+      },
+    });
+    if (tickets.length !== ticketIds.length) {
+      return res.status(400).json({ error: 'Some tickets are unavailable or in a different property' });
+    }
+    await prisma.maintenanceItem.updateMany({
+      where: { id: { in: ticketIds } },
+      data: { parentTicketId: parent.id, mergedAt: new Date(), status: parent.status },
+    });
+    for (const t of tickets) {
+      await prisma.maintenanceEvent.create({
+        data: {
+          maintenanceItemId: t.id,
+          type: 'merged',
+          note: `Merged into "${parent.description}"`,
+          byUserId: req.user.id,
+          byUserName: req.user.name,
+        },
+      });
+    }
+    return res.json({ ok: true, added: tickets.length });
+  } catch (err) {
+    console.error('Add children error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/unmerge ───────────────────
+// Splits a parent ticket back into its children. The parent record is
+// soft-deleted; children regain their independence with original data.
+
+router.post('/:id/unmerge', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const parent = await prisma.maintenanceItem.findFirst({
+      where: { id: req.params.id, organizationId: req.user.organizationId, deletedAt: null },
+      include: { children: { where: { deletedAt: null } } },
+    });
+    if (!parent) return res.status(404).json({ error: 'Ticket not found' });
+    if (parent.parentTicketId) {
+      return res.status(400).json({ error: 'This is a child ticket; unmerge from its parent' });
+    }
+    if (parent.children.length === 0) {
+      return res.status(400).json({ error: 'No children to unmerge' });
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.maintenanceItem.updateMany({
+        where: { parentTicketId: parent.id },
+        data: { parentTicketId: null, mergedAt: null },
+      });
+      await tx.maintenanceItem.update({
+        where: { id: parent.id },
+        data: { deletedAt: new Date() },
+      });
+      for (const child of parent.children) {
+        await tx.maintenanceEvent.create({
+          data: {
+            maintenanceItemId: child.id,
+            type: 'unmerged',
+            note: `Unmerged from "${parent.description}"`,
+            byUserId: req.user.id,
+            byUserName: req.user.name,
+          },
+        });
+      }
+    });
+    return res.json({ ok: true, count: parent.children.length });
+  } catch (err) {
+    console.error('Unmerge tickets error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PUT /api/maintenance/children/:childId/cost ─────────
+// Update an individual child's actualCost (so vendor invoices can be
+// split across the merged items). The parent's cost auto-sums on read.
+
+router.put('/children/:childId/cost', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const child = await prisma.maintenanceItem.findFirst({
+      where: {
+        id: req.params.childId,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        parentTicketId: { not: null },
+      },
+    });
+    if (!child) return res.status(404).json({ error: 'Child ticket not found' });
+    const cost = req.body?.actualCost;
+    const value = cost === '' || cost == null ? null : Number(cost);
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: child.id },
+      data: { actualCost: value },
+    });
+    // Roll up to parent's actualCost.
+    const sumRow = await prisma.maintenanceItem.aggregate({
+      where: { parentTicketId: child.parentTicketId, deletedAt: null },
+      _sum: { actualCost: true },
+    });
+    await prisma.maintenanceItem.update({
+      where: { id: child.parentTicketId },
+      data: { actualCost: sumRow._sum.actualCost || 0 },
+    });
+    return res.json({ child: updated, parentTotal: sumRow._sum.actualCost || 0 });
+  } catch (err) {
+    console.error('Update child cost error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.post('/:id/archive', requireRole('OWNER', 'PM'), async (req, res) => {
   try {

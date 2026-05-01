@@ -80,7 +80,14 @@ function KanbanCard({ item, onOpenDetail, selected, onToggleSelect, selectMode, 
         />
       )}
       <div className="maint-card-top">
-        <div className="maint-card-desc">{item.description}</div>
+        <div className="maint-card-desc">
+          {item.description}
+          {item._count?.children > 0 && (
+            <span className="maint-merged-badge" title={`${item._count.children} merged tickets`}>
+              {item._count.children} merged
+            </span>
+          )}
+        </div>
         {item.priority && (
           <span
             className="maint-priority-tag"
@@ -227,6 +234,7 @@ export default function Maintenance() {
 
   // Select mode (for batch PDF)
   const [selectMode, setSelectMode] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
@@ -332,6 +340,16 @@ export default function Maintenance() {
     }
   };
 
+  const selectedItems = useMemo(
+    () => items.filter((i) => selected.has(i.id)),
+    [items, selected],
+  );
+  const selectedSameProperty = useMemo(() => {
+    if (selectedItems.length < 2) return false;
+    const first = selectedItems[0].propertyId;
+    return selectedItems.every((i) => i.propertyId === first);
+  }, [selectedItems]);
+
   const toggleSelect = (id) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -390,13 +408,25 @@ export default function Maintenance() {
               <button className="btn-secondary" onClick={() => { setSelectMode(false); setSelected(new Set()); }}>
                 Cancel
               </button>
+              <button
+                className="btn-secondary-sm"
+                onClick={() => setShowMergeModal(true)}
+                disabled={selected.size < 2 || !selectedSameProperty}
+                title={
+                  selected.size < 2 ? 'Select two or more tickets'
+                  : !selectedSameProperty ? 'All selected tickets must be at the same property'
+                  : 'Merge selected tickets'
+                }
+              >
+                Merge tickets ({selected.size})
+              </button>
               <button className="btn-primary-sm" onClick={batchPdf} disabled={selected.size === 0}>
                 Download work order ({selected.size})
               </button>
             </>
           ) : (
             <>
-              <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select for work order</button>
+              <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select</button>
               <button className="btn-primary-sm" onClick={() => setShowNew(true)}>+ New Maintenance</button>
             </>
           )}
@@ -537,6 +567,172 @@ export default function Maintenance() {
           fetchItems();
         }}
       />
+
+      {showMergeModal && (
+        <MergeTicketsModal
+          tickets={selectedItems}
+          onClose={() => setShowMergeModal(false)}
+          onMerged={(parent) => {
+            setShowMergeModal(false);
+            setSelectMode(false);
+            setSelected(new Set());
+            fetchItems();
+            if (parent?.id) setDetailId(parent.id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MergeTicketsModal({ tickets, onClose, onMerged, parentId, addToParent }) {
+  // Pre-fill from selected tickets:
+  //   title — first ticket's description
+  //   category — most common
+  //   priority — highest among selected
+  //   assignee — first ticket that has one
+  const initialTitle = (() => {
+    if (parentId) return ''; // not used in add-mode
+    if (tickets.length === 0) return '';
+    return tickets[0].description || '';
+  })();
+  const initialCategory = (() => {
+    const counts = {};
+    for (const t of tickets) {
+      const c = t.flagCategory || 'General';
+      counts[c] = (counts[c] || 0) + 1;
+    }
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return sorted[0]?.[0] || 'General';
+  })();
+  const initialPriority = (() => {
+    const order = { High: 3, Medium: 2, Low: 1 };
+    let best = null;
+    for (const t of tickets) {
+      const p = t.priority;
+      if (!p) continue;
+      if (!best || (order[p] || 0) > (order[best] || 0)) best = p;
+    }
+    return best || '';
+  })();
+  const initialAssignment = (() => {
+    const assigned = tickets.find((t) => t.assignedUserId || t.assignedVendorId || t.assignedTo);
+    if (!assigned) return { assignedUserId: '', assignedVendorId: '', assignedTo: '' };
+    return {
+      assignedUserId: assigned.assignedUserId || '',
+      assignedVendorId: assigned.assignedVendorId || '',
+      assignedTo: assigned.assignedTo || '',
+    };
+  })();
+
+  const [title, setTitle] = useState(initialTitle);
+  const [flagCategory, setFlagCategory] = useState(initialCategory);
+  const [priority, setPriority] = useState(initialPriority);
+  const [assignedUserId, setAssignedUserId] = useState(initialAssignment.assignedUserId);
+  const [assignedVendorId, setAssignedVendorId] = useState(initialAssignment.assignedVendorId);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const propertyName = tickets[0]?.property?.name || '';
+
+  const handleSubmit = async () => {
+    if (!parentId && !title.trim()) {
+      setError('Title is required');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const body = parentId
+        ? { ticketIds: tickets.map((t) => t.id) }
+        : {
+          ticketIds: tickets.map((t) => t.id),
+          title: title.trim(),
+          flagCategory,
+          priority: priority || null,
+          assignedUserId: assignedUserId || null,
+          assignedVendorId: assignedVendorId || null,
+        };
+      const url = parentId ? `/api/maintenance/${parentId}/add-children` : '/api/maintenance/merge';
+      const res = await api(url, { method: 'POST', body: JSON.stringify(body) });
+      onMerged?.(res.item || { id: parentId });
+    } catch (err) {
+      setError(err.message || 'Failed to merge');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onClose()}>
+      <div className="modal-content modal-content-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{parentId ? `Add to "${addToParent?.description || 'merged ticket'}"` : 'Merge tickets'}</h3>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="modal-form">
+          <p className="page-subtitle" style={{ marginBottom: '0.5rem' }}>
+            {tickets.length} ticket{tickets.length === 1 ? '' : 's'}{propertyName ? ` at ${propertyName}` : ''}
+          </p>
+          <ul className="merge-ticket-list">
+            {tickets.map((t) => (
+              <li key={t.id}>
+                <strong>{t.room?.label || 'Common area'}</strong> — {t.description}
+              </li>
+            ))}
+          </ul>
+
+          {!parentId && (
+            <>
+              <label>
+                Merged ticket title
+                <input
+                  type="text"
+                  className="maint-input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Pest control — Chestnut Hill"
+                  autoFocus
+                />
+              </label>
+              <label>
+                Category
+                <select
+                  className="form-select"
+                  value={flagCategory}
+                  onChange={(e) => setFlagCategory(e.target.value)}
+                >
+                  {[...new Set([flagCategory, ...tickets.map((t) => t.flagCategory || 'General')])].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select
+                  className="form-select"
+                  value={priority || ''}
+                  onChange={(e) => setPriority(e.target.value)}
+                >
+                  <option value="">No priority</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          {error && <div className="auth-error">{error}</div>}
+
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn-primary" onClick={handleSubmit} disabled={busy}>
+              {busy ? 'Merging…' : (parentId ? 'Add to merged ticket' : 'Merge')}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -61,6 +61,8 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
 
   // Defer UI state
   const [showDefer, setShowDefer] = useState(false);
+  const [showMergePicker, setShowMergePicker] = useState(false);
+  const [unmerging, setUnmerging] = useState(false);
   const [deferMode, setDeferMode] = useState('ROOM_TURN');
   const [deferDate, setDeferDate] = useState('');
   const [deferReason, setDeferReason] = useState('');
@@ -320,9 +322,9 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
               </div>
             )}
 
-            {/* Defer action (not available when already resolved or deferred) */}
-            {data.item.status !== 'DEFERRED' && data.item.status !== 'RESOLVED' && (
-              <div className="md-defer-actions">
+            {/* Defer / Merge / Unmerge actions */}
+            <div className="md-defer-actions">
+              {data.item.status !== 'DEFERRED' && data.item.status !== 'RESOLVED' && (
                 <button
                   type="button"
                   className="btn-secondary-sm md-defer-btn"
@@ -330,8 +332,37 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
                 >
                   Defer
                 </button>
-              </div>
-            )}
+              )}
+              {!data.item.parentTicketId && (
+                <button
+                  type="button"
+                  className="btn-secondary-sm"
+                  onClick={() => setShowMergePicker(true)}
+                >
+                  {data.children?.length ? '+ Add ticket' : 'Merge with...'}
+                </button>
+              )}
+              {data.children?.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary-sm"
+                  onClick={async () => {
+                    if (!confirm(`Split this back into ${data.children.length} separate tickets?`)) return;
+                    setUnmerging(true);
+                    try {
+                      await api(`/api/maintenance/${data.item.id}/unmerge`, { method: 'POST', body: '{}' });
+                      onUpdated?.();
+                      onClose?.();
+                    } catch (e) {
+                      setError(e.message || 'Failed to unmerge');
+                    } finally { setUnmerging(false); }
+                  }}
+                  disabled={unmerging}
+                >
+                  {unmerging ? 'Unmerging…' : 'Unmerge'}
+                </button>
+              )}
+            </div>
 
             {/* Source / metadata */}
             <section className="md-section">
@@ -550,6 +581,14 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
               )}
             </section>
 
+            {/* Merged items (only on parent tickets) */}
+            {data.children?.length > 0 && (
+              <MergedChildrenSection
+                items={data.children}
+                onChange={async () => { await fetchDetail(); onUpdated?.(); }}
+              />
+            )}
+
             {/* Related */}
             {data.previousInRoom?.length > 0 && (
               <section className="md-section">
@@ -679,6 +718,214 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
           </div>
         </div>
       )}
+
+      {showMergePicker && (
+        <MergeWithPicker
+          parent={data?.item}
+          onClose={() => setShowMergePicker(false)}
+          onAdded={async () => {
+            setShowMergePicker(false);
+            await fetchDetail();
+            onUpdated?.();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function MergedChildrenSection({ items, onChange }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [costDrafts, setCostDrafts] = useState(() => {
+    const m = {};
+    for (const c of items) m[c.id] = c.actualCost == null ? '' : String(c.actualCost);
+    return m;
+  });
+  const [savingFor, setSavingFor] = useState(null);
+
+  const toggle = (id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const saveCost = async (childId) => {
+    setSavingFor(childId);
+    try {
+      await api(`/api/maintenance/children/${childId}/cost`, {
+        method: 'PUT',
+        body: JSON.stringify({ actualCost: costDrafts[childId] === '' ? null : Number(costDrafts[childId]) }),
+      });
+      onChange?.();
+    } catch { /* ignore */ }
+    finally { setSavingFor(null); }
+  };
+
+  const total = items.reduce((s, c) => s + (Number(c.actualCost) || 0), 0);
+
+  return (
+    <section className="md-section">
+      <h3 className="md-section-title">Merged items ({items.length})</h3>
+      <ul className="md-merged-list">
+        {items.map((c) => {
+          const isOpen = expanded.has(c.id);
+          return (
+            <li key={c.id} className="md-merged-item">
+              <button
+                type="button"
+                className="md-merged-head"
+                onClick={() => toggle(c.id)}
+              >
+                <div className="md-merged-head-left">
+                  <strong>{c.room?.label || 'Common area'}</strong>
+                  <span className="md-merged-head-desc">— {c.description}</span>
+                </div>
+                <span className={`po-room-chevron ${isOpen ? 'open' : ''}`}>▸</span>
+              </button>
+              {isOpen && (
+                <div className="md-merged-body">
+                  {c.note && (
+                    <p className="md-merged-note">{c.note}</p>
+                  )}
+                  {c.photos?.length > 0 && (
+                    <div className="md-merged-photos">
+                      {c.photos.map((p) => (
+                        <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                          <img src={p.url} alt="" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <div className="md-merged-cost-row">
+                    <label>
+                      Cost
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="maint-input"
+                        value={costDrafts[c.id] ?? ''}
+                        onChange={(e) => setCostDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                        onBlur={() => saveCost(c.id)}
+                      />
+                    </label>
+                    {savingFor === c.id && <span className="md-dim">Saving…</span>}
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="md-merged-total">
+        Total cost: <strong>${total.toFixed(2)}</strong>
+      </div>
+    </section>
+  );
+}
+
+function MergeWithPicker({ parent, onClose, onAdded }) {
+  const [candidates, setCandidates] = useState(null);
+  const [picked, setPicked] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!parent) return;
+    api(`/api/maintenance?propertyId=${parent.propertyId}`)
+      .then((d) => {
+        // Eligible: open/assigned/in_progress, not the parent itself,
+        // not already a child of any parent.
+        const list = (d.items || []).filter((i) =>
+          i.id !== parent.id
+          && !i.parentTicketId
+          && i.status !== 'RESOLVED'
+          && i.status !== 'DEFERRED',
+        );
+        setCandidates(list);
+      })
+      .catch((e) => setError(e.message || 'Failed to load tickets'));
+  }, [parent]);
+
+  const togglePick = (id) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleMerge = async () => {
+    if (picked.size === 0) return;
+    setBusy(true);
+    setError('');
+    try {
+      const ticketIds = [...picked];
+      if (parent.parentTicketId) {
+        // Should never happen — parent is always a top-level ticket.
+        return;
+      }
+      // Two cases:
+      //   (a) parent has children → use add-children
+      //   (b) parent has no children → start a new merge with this ticket as the first child
+      // For (b) we use POST /merge so a brand-new parent is created. To keep
+      // titles/categories obvious, pre-pend the existing description.
+      const url = `/api/maintenance/${parent.id}/add-children`;
+      await api(url, { method: 'POST', body: JSON.stringify({ ticketIds }) });
+      onAdded?.();
+    } catch (e) {
+      setError(e.message || 'Failed to merge');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay defer-modal-overlay" onClick={() => !busy && onClose()}>
+      <div className="modal-content modal-content-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Merge with...</h3>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="modal-form">
+          <p className="page-subtitle">
+            Pick open tickets at <strong>{parent?.property?.name}</strong> to merge into this one.
+          </p>
+          {!candidates ? (
+            <p className="empty-text">Loading…</p>
+          ) : candidates.length === 0 ? (
+            <p className="empty-text">No other open tickets in this property.</p>
+          ) : (
+            <ul className="merge-picker-list">
+              {candidates.map((c) => (
+                <li key={c.id}>
+                  <label className="merge-picker-row">
+                    <input
+                      type="checkbox"
+                      checked={picked.has(c.id)}
+                      onChange={() => togglePick(c.id)}
+                    />
+                    <span className="merge-picker-label">
+                      <strong>{c.room?.label || 'Common area'}</strong> — {c.description}
+                      <span className="md-dim"> · {c.flagCategory}</span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <div className="auth-error">{error}</div>}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button
+              className="btn-primary"
+              onClick={handleMerge}
+              disabled={busy || picked.size === 0}
+            >
+              {busy ? 'Merging…' : `Merge ${picked.size} ticket${picked.size === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
