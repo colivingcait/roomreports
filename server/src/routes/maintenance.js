@@ -262,8 +262,14 @@ router.get('/:id', async (req, res) => {
       },
     });
 
+    // Surface children + parent at the top level of the response so the
+    // client can read `data.children` and `data.parent` directly. Keep
+    // the included copies on `item` too (for backwards compat / future
+    // callers that expect them nested).
     return res.json({
       item: shapeItem(item),
+      children: item.children || [],
+      parent: item.parent || null,
       previousInRoom: sortedRoom,
       relatedInProperty: relatedProperty,
     });
