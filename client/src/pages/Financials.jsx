@@ -353,8 +353,8 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
           <span><strong>{fmtMoney(p.gross)}</strong><br /><small>Collected</small></span>
           <span><strong>{fmtMoney(p.hostEarnings)}</strong><br /><small>Host earn</small></span>
           <span>
-            <strong>{p.collectionRate != null ? `${p.collectionRate.toFixed(1)}%` : '—'}</strong>
-            <br /><small>Collection</small>
+            <strong>{p.occupancyRate != null ? `${p.occupancyRate.toFixed(1)}%` : '—'}</strong>
+            <br /><small>Occupied</small>
           </span>
           <span className="fin-prop-chev">{expanded ? '▾' : '▸'}</span>
         </div>
