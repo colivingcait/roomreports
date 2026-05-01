@@ -595,10 +595,10 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />}
 
       {showDefer && (
-        <div className="modal-backdrop" onClick={() => !defering && setShowDefer(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h2>Defer ticket</h2>
+        <div className="modal-overlay defer-modal-overlay" onClick={() => !defering && setShowDefer(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Defer ticket</h3>
               <button className="modal-close" onClick={() => setShowDefer(false)} aria-label="Close">&times;</button>
             </div>
             <div className="modal-form">
