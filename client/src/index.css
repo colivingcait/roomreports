@@ -1607,15 +1607,34 @@ body {
   justify-content: space-between;
   gap: 0.5rem;
 }
+.review-violation-fields {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: #FAF0F5;
+  border: 1px solid #E0CCDB;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.review-violation-label {
+  font-size: 12px;
+  color: #8A2B6D;
+}
 .review-followup-btn {
   color: #8A2B6D;
-  border: 1px solid #E0CCDB;
+  border: 1px solid #C99BB8;
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 6px 12px;
   background: #fff;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
-.review-followup-btn:hover { background: #FAF0F5; }
+.review-followup-btn:hover { background: #F5E0EB; border-color: #8A2B6D; }
 
 /* Lease follow-up badge on kanban card */
 .maint-followup-badge {
