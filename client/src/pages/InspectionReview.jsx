@@ -96,14 +96,6 @@ export default function InspectionReview() {
         description: state.description,
         pmNote: state.pmNote,
         priority: state.priority || null,
-        // Inline follow-up: if PM checked it, server creates the
-        // maintenance ticket as part of this approval transaction.
-        followUp: state.createFollowUp ? {
-          title: state.followUpTitle || '',
-          priority: state.followUpPriority || 'Medium',
-          dueAt: state.followUpDueAt || null,
-          note: state.followUpNote || null,
-        } : null,
       }));
 
       const data = await api(`/api/inspections/${id}/approve`, {
@@ -431,69 +423,19 @@ export default function InspectionReview() {
                           </div>
 
                           {state.createViolation && (
-                            <div className="review-violation-fields">
-                              <label className="review-task-toggle review-task-toggle-violation">
-                                <input
-                                  type="checkbox"
-                                  checked={!!state.createFollowUp}
-                                  onChange={(e) => updateItemState(item.id, {
-                                    createFollowUp: e.target.checked,
-                                    followUpTitle: state.followUpTitle
-                                      || `Follow-up: ${item.text}${inspection.room?.label ? ` — ${inspection.room.label}` : ''}`,
-                                    followUpPriority: state.followUpPriority || 'Medium',
-                                    followUpDueAt: state.followUpDueAt
-                                      || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-                                    followUpNote: state.followUpNote || '',
-                                  })}
-                                />
-                                <span>Create follow-up ticket</span>
-                              </label>
-                              {state.createFollowUp && (
-                                <div className="review-followup-grid">
-                                  <label className="review-field-label">
-                                    Title
-                                    <input
-                                      type="text"
-                                      className="maint-input"
-                                      value={state.followUpTitle || ''}
-                                      onChange={(e) => updateItemState(item.id, { followUpTitle: e.target.value })}
-                                    />
-                                  </label>
-                                  <label className="review-field-label">
-                                    Due date
-                                    <input
-                                      type="date"
-                                      className="maint-input"
-                                      min={new Date().toISOString().slice(0, 10)}
-                                      value={state.followUpDueAt || ''}
-                                      onChange={(e) => updateItemState(item.id, { followUpDueAt: e.target.value })}
-                                    />
-                                  </label>
-                                  <label className="review-field-label">
-                                    Priority
-                                    <select
-                                      className="form-select"
-                                      value={state.followUpPriority || 'Medium'}
-                                      onChange={(e) => updateItemState(item.id, { followUpPriority: e.target.value })}
-                                    >
-                                      <option value="Low">Low</option>
-                                      <option value="Medium">Medium</option>
-                                      <option value="High">High</option>
-                                    </select>
-                                  </label>
-                                  <label className="review-field-label review-field-wide">
-                                    Notes
-                                    <input
-                                      type="text"
-                                      className="maint-input"
-                                      placeholder="Optional notes for the maintenance team"
-                                      value={state.followUpNote || ''}
-                                      onChange={(e) => updateItemState(item.id, { followUpNote: e.target.value })}
-                                    />
-                                  </label>
-                                </div>
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              className="review-followup-btn"
+                              onClick={() => setFollowUpFor({
+                                inspectionItemId: item.id,
+                                violationDescription: item.text,
+                                violationCategory: item.flagCategory || 'Lease Compliance',
+                                note: item.note || '',
+                                roomLabel: inspection.room?.label,
+                              })}
+                            >
+                              + Create follow-up ticket
+                            </button>
                           )}
 
                           {state.createTask && (

@@ -670,12 +670,14 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(400).json({ error: 'Inspection already submitted' });
     }
 
-    // Check that all items have a status set. Ignore metadata zones
-    // starting with _ and section-divider items (options === ['_section'])
-    // used as headings inside per-area checklists.
+    // Check that all REQUIRED items have a status set. Ignore:
+    //   • metadata zones (_*)
+    //   • section-divider items (options === ['_section'])
+    //   • Misc — free-form bonus section, never blocks submission
     const incomplete = inspection.items.filter((i) => {
       if (i.status) return false;
       if (i.zone?.startsWith('_')) return false;
+      if (i.zone === 'Misc') return false;
       if (Array.isArray(i.options) && i.options.includes('_section')) return false;
       return true;
     });
@@ -1171,15 +1173,24 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
 
     // Maintenance side
     if (item.isMaintenance && !existingIds.has(item.id)) {
+      // Common-area quick-check items live on the room's inspection but
+      // they aren't tied to any one room — strip the room link and use
+      // a clean common-area zone so the ticket reads as a property-
+      // level issue (e.g. "Downstairs Shared Bath").
+      const isQuickCommon = item.zone?.startsWith('_QuickCommon:');
+      const ticketRoomId = isQuickCommon ? null : inspection.roomId;
+      const ticketZone = isQuickCommon
+        ? (item.text || (item.zone.split(':')[1] || 'Common area'))
+        : item.zone;
       const mi = await tx.maintenanceItem.create({
         data: {
           inspectionItemId: item.id,
           inspectionId: inspection.id,
           propertyId: inspection.propertyId,
-          roomId: inspection.roomId,
+          roomId: ticketRoomId,
           organizationId: inspection.organizationId,
           description,
-          zone: item.zone,
+          zone: ticketZone,
           flagCategory: category,
           note: combinedNote || null,
           priority,
@@ -1340,6 +1351,25 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
             pmNote: null,
           });
         }
+      }
+    }
+
+    // Common-area quick-check items live on the primary inspection with
+    // a `_QuickCommon:Kitchen|Bathroom` zone. The PM review UI doesn't
+    // surface explicit checkboxes for them, so any item flagged
+    // isMaintenance=true at inspection time should still generate a
+    // ticket on approval. Append them here unless already covered.
+    {
+      const alreadyPicked = new Set(pairs.map((p) => p.item.id));
+      for (const item of inspection.items) {
+        if (alreadyPicked.has(item.id)) continue;
+        if (!item.zone?.startsWith('_QuickCommon:')) continue;
+        if (!item.isMaintenance) continue;
+        pairs.push({
+          item,
+          description: (item.note && item.note.trim()) || item.text,
+          pmNote: null,
+        });
       }
     }
 
