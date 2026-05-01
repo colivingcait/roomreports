@@ -420,6 +420,21 @@ export default function InspectionReview() {
                               />
                               <span>Record lease violation</span>
                             </label>
+                            {state.createViolation && (
+                              <button
+                                type="button"
+                                className="btn-text-sm review-followup-btn"
+                                onClick={() => setFollowUpFor({
+                                  inspectionItemId: item.id,
+                                  violationDescription: item.text,
+                                  violationCategory: item.flagCategory || 'Lease Compliance',
+                                  note: item.note || '',
+                                  roomLabel: inspection.room?.label,
+                                })}
+                              >
+                                + Create follow-up
+                              </button>
+                            )}
                           </div>
 
                           {state.createTask && (
@@ -478,7 +493,7 @@ export default function InspectionReview() {
                               violationDescription: item.text,
                               violationCategory: item.flagCategory || 'Lease Compliance',
                               note: item.note || '',
-                              roomLabel: data.inspection.room?.label,
+                              roomLabel: inspection.room?.label,
                             })}
                           >
                             + Create follow-up
@@ -571,7 +586,7 @@ export default function InspectionReview() {
       {followUpFor && (
         <FollowUpModal
           spec={followUpFor}
-          inspection={data.inspection}
+          inspection={inspection}
           onClose={() => setFollowUpFor(null)}
           onCreated={() => {
             setFollowUpFor(null);

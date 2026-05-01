@@ -1210,7 +1210,7 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
         where: { inspectionItemId: item.id },
       }).catch(() => null);
       if (!existingViolation) {
-        await tx.leaseViolation.create({
+        const created = await tx.leaseViolation.create({
           data: {
             organizationId: inspection.organizationId,
             propertyId: inspection.propertyId,
@@ -1225,6 +1225,16 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
           },
         });
         violationsCreated += 1;
+        // Backfill any follow-up tickets the PM created during the
+        // approval flow before this violation existed.
+        await tx.maintenanceItem.updateMany({
+          where: {
+            isLeaseFollowUp: true,
+            inspectionItemId: item.id,
+            leaseViolationId: null,
+          },
+          data: { leaseViolationId: created.id },
+        });
       }
     }
   }
