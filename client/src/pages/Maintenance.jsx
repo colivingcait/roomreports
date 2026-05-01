@@ -34,6 +34,14 @@ function fmtCurrency(n) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
+// Pull just the digits out of a room label ("Cedar (Room 3)" → "3"),
+// falling back to the original label if there are none — keeps the
+// "Rooms 5, 8" summary tidy for merged parents.
+function roomNumPart(label) {
+  const m = String(label || '').match(/(\d+)/);
+  return m ? m[1] : (label || '');
+}
+
 function shortDate(d) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
@@ -102,7 +110,28 @@ function KanbanCard({ item, onOpenDetail, selected, onToggleSelect, selectMode, 
       </div>
       <div className="maint-card-meta">
         <span>{item.property?.name}</span>
-        {item.room && <><span className="dot" /><span>{item.room.label}</span></>}
+        {(() => {
+          // For merged parents that span multiple rooms, show the room
+          // list (or "Multiple rooms" if it'd be too long). For regular
+          // tickets, show the single room label.
+          const childRooms = (item.children || [])
+            .map((c) => c.room?.label)
+            .filter(Boolean);
+          const uniqueRoomLabels = [...new Set(childRooms)];
+          if (uniqueRoomLabels.length > 1) {
+            const text = uniqueRoomLabels.length <= 3
+              ? `Rooms ${uniqueRoomLabels.map(roomNumPart).join(', ')}`
+              : 'Multiple rooms';
+            return <><span className="dot" /><span>{text}</span></>;
+          }
+          if (uniqueRoomLabels.length === 1) {
+            return <><span className="dot" /><span>{uniqueRoomLabels[0]}</span></>;
+          }
+          if (item.room) {
+            return <><span className="dot" /><span>{item.room.label}</span></>;
+          }
+          return null;
+        })()}
         <span className="dot" /><span>{item.flagCategory}</span>
       </div>
       <div className="maint-card-foot">
@@ -544,6 +573,7 @@ export default function Maintenance() {
         <MaintenanceDetail
           itemId={detailId}
           onClose={() => setDetailId(null)}
+          onNavigate={(id) => setDetailId(id)}
           onUpdated={(updated) => {
             // Optimistic merge if a full item is provided (from /save).
             // Defer / archive / reactivate call without an arg — for
