@@ -617,21 +617,41 @@ router.get('/dashboard', async (req, res) => {
       // scope — we don't know the room existed yet.
       if (roomFirstMonthStr && monthStr < roomFirstMonthStr) return 0;
       const dim = daysInMonth(monthStr);
-      if (!intervals || intervals.length === 0) return dim; // never occupied
+      if (!intervals || intervals.length === 0) return dim;
       const [y, m] = monthStr.split('-').map(Number);
-      // Day-level check across the full month. A day is occupied iff
-      // any actual-occupant interval [firstPaymentDate, lastPaymentDate]
-      // covers it. This naturally handles arbitrary mid-month moves —
-      // a tenant moving in April 14 and out April 24 leaves April 1-13
-      // and April 25-30 vacant if no one else is present.
+
+      // Effective end-date per interval:
+      //   - The LATEST occupant (last in the sorted list) is treated as
+      //     "still present" — they extend through end-of-time so days
+      //     after their last payment don't appear as vacant. PadSplit
+      //     processes weekly payments on different days; a member
+      //     paying April 3 then April 24 lived there continuously.
+      //   - Earlier occupants who were replaced by someone else have
+      //     their interval close at their lastPositiveDate. The gap
+      //     from there until the next occupant's firstPositiveDate is
+      //     vacancy.
+      const FAR_FUTURE = new Date(8640000000000000);
+      const effective = intervals.map((intv, i) => ({
+        start: intv.firstDate,
+        end: i === intervals.length - 1 ? FAR_FUTURE : intv.lastDate,
+      }));
+
+      // For the room's FIRST month: don't count days before the first
+      // occupant's move-in as vacant (the room may have been newly
+      // listed mid-month — we don't know it existed before then).
+      const isRoomsFirstMonth = roomFirstMonthStr && monthStr === roomFirstMonthStr;
+      const firstStart = effective[0].start;
+
       let occupied = 0;
+      let skipped = 0;
       for (let day = 1; day <= dim; day++) {
         const d = new Date(Date.UTC(y, m - 1, day));
-        for (const i of intervals) {
-          if (d >= i.firstDate && d <= i.lastDate) { occupied += 1; break; }
+        if (isRoomsFirstMonth && d < firstStart) { skipped += 1; continue; }
+        for (const e of effective) {
+          if (d >= e.start && d <= e.end) { occupied += 1; break; }
         }
       }
-      return dim - occupied;
+      return dim - occupied - skipped;
     }
 
     function turnoversInMonthForRoom(intervals, monthStr) {
@@ -724,10 +744,21 @@ router.get('/dashboard', async (req, res) => {
 
     // Finalize property breakdowns. We backfill rooms that have ever
     // had history but no records in the current month so we can still
-    // count their vacancy.
+    // count their vacancy. Rooms whose first-ever data is AFTER the
+    // selected month are hidden — they didn't exist yet.
+    const selectedMonthForVisibility = (month && month !== 'all') ? month : null;
+    function roomVisibleInScope(rentKey) {
+      if (!selectedMonthForVisibility) return true; // all-time shows everything
+      const fm = roomFirstMonth[rentKey];
+      if (!fm) return false; // never had any data
+      return fm <= selectedMonthForVisibility;
+    }
+
     for (const p of Object.values(byProperty)) {
       const everSeen = allRoomKeysByProperty[p.propertyKey] || new Set();
       for (const roomKey of everSeen) {
+        const rentKey = `${p.propertyKey}|${roomKey}`;
+        if (!roomVisibleInScope(rentKey)) continue;
         if (!p.rooms[roomKey]) {
           p.rooms[roomKey] = {
             roomNumber: roomKey,
@@ -741,12 +772,24 @@ router.get('/dashboard', async (req, res) => {
           };
         }
       }
+      // Drop any rooms that snuck in but aren't visible in this scope
+      // (shouldn't happen since enriched-loop already filters by month,
+      // but belt-and-suspenders).
+      for (const roomKey of Object.keys(p.rooms)) {
+        const rentKey = `${p.propertyKey}|${roomKey}`;
+        if (!roomVisibleInScope(rentKey)) delete p.rooms[roomKey];
+      }
     }
 
     // Make sure every property that has historical data shows up too
     // — even if the selected month has no records at all (fully vacant).
     for (const norm of Object.keys(allRoomKeysByProperty)) {
       if (byProperty[norm]) continue;
+      // If none of the property's rooms are visible in scope, skip the
+      // whole property too.
+      const visibleRooms = [...allRoomKeysByProperty[norm]]
+        .filter((rk) => roomVisibleInScope(`${norm}|${rk}`));
+      if (visibleRooms.length === 0) continue;
       const propId = mappingByAddr[norm];
       const matchedProp = propId ? propertyById[propId] : null;
       // Recover an address label if we have one in history.
@@ -767,7 +810,7 @@ router.get('/dashboard', async (req, res) => {
         rooms: {},
         memberIds: new Set(),
       };
-      for (const roomKey of allRoomKeysByProperty[norm]) {
+      for (const roomKey of visibleRooms) {
         byProperty[norm].rooms[roomKey] = {
           roomNumber: roomKey, roomId: null,
           residentName: null, residentMemberId: null,
