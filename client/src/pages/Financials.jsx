@@ -104,6 +104,27 @@ function toYearMonth(v) {
   return null;
 }
 
+// Parse a date-ish cell into an ISO date string (YYYY-MM-DD).
+// Returns null if unparseable. Used for per-row "Created" timestamps
+// so the server can compute exact move-in / move-out days.
+function toIsoDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  // Already-ISO YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS...
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // US slash: M/D/YYYY
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us) {
+    return `${us[3]}-${String(us[1]).padStart(2, '0')}-${String(us[2]).padStart(2, '0')}`;
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 function parseRows(kind, rows) {
   const out = [];
   if (kind === 'summary') {
@@ -128,9 +149,11 @@ function parseRows(kind, rows) {
         rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Payout Date'),
       );
       if (!month) continue;
+      const recordDate = toIsoDate(rowGet(r, 'Created', 'Payout Date'));
       out.push({
         recordType: 'COLLECTED',
         earningsMonth: month,
+        recordDate,
         roomNumber: rowGet(r, 'Room Number'),
         roomId: rowGet(r, 'Room ID'),
         memberId: rowGet(r, 'Member ID'),
@@ -152,9 +175,11 @@ function parseRows(kind, rows) {
         rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Created Date', 'Bill Date'),
       );
       if (!month) continue;
+      const recordDate = toIsoDate(rowGet(r, 'Created', 'Created Date', 'Bill Date'));
       out.push({
         recordType: 'BILLED',
         earningsMonth: month,
+        recordDate,
         billId: rowGet(r, 'Bill ID'),
         transactionType: rowGet(r, 'Transaction Type'),
         transactionReason: rowGet(r, 'Transaction Reason'),

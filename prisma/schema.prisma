@@ -705,6 +705,7 @@ model FinancialRecord {
   totalPayout      Float?
   category        String?
   rowType         String?
+  recordDate      DateTime?
   createdAt       DateTime @default(now())
 
   upload       FinancialUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
