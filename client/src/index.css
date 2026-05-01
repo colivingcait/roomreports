@@ -10319,4 +10319,75 @@ img,
   .fin-metric-value { font-size: 22px; }
 }
 
+/* Per-room financial badge + expanded detail */
+.po-fin-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--ds-text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #F5F2EE;
+}
+.po-fin-badge-warn {
+  background: var(--ds-terracotta-light);
+  color: var(--ds-terracotta);
+  font-weight: 600;
+}
+.po-fin-detail {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  border-radius: 8px;
+}
+.po-fin-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+.po-fin-stat { display: flex; flex-direction: column; gap: 2px; }
+.po-fin-stat label {
+  font-size: 11px;
+  color: var(--ds-text-secondary);
+}
+.po-fin-stat span {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ds-text);
+}
+
+/* Dashboard financial summary widget */
+.db-fin-card { /* uses base db-card + db-grid placement */ }
+.db-fin-empty {
+  font-size: 13px;
+  color: var(--ds-text-secondary);
+  padding: 0.5rem 0;
+}
+.db-fin-row {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+.db-fin-block { display: flex; flex-direction: column; gap: 2px; }
+.db-fin-label {
+  font-size: 11px;
+  color: var(--ds-text-secondary);
+}
+.db-fin-value {
+  font-family: var(--ds-font-serif);
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ds-text);
+  line-height: 1.1;
+}
+.db-fin-trend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ds-text-secondary);
+}
+.db-fin-trend-up   { color: #4A7B52; }
+.db-fin-trend-down { color: var(--ds-danger); }
+.db-fin-spark { height: 36px; }
+
 /* ═══════ END DESIGN SYSTEM 2.0 ═══════ */

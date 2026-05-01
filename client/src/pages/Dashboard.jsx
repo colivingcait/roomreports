@@ -13,6 +13,7 @@ const DEFAULT_WIDGETS = {
   maintenanceMonth: true,
   propertyHealth: true,
   needsAttention: true,
+  financialSummary: true,
   recentActivity: true,
 };
 const WIDGET_LABELS = {
@@ -20,6 +21,7 @@ const WIDGET_LABELS = {
   maintenanceMonth: 'Maintenance This Month',
   propertyHealth: 'Property Health',
   needsAttention: 'Needs Attention',
+  financialSummary: 'Financial Summary',
   recentActivity: 'Recent Activity',
 };
 
@@ -73,6 +75,7 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState(null);
+  const [financial, setFinancial] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
   const [notification, setNotification] = useState(location.state?.notification || '');
@@ -109,6 +112,10 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false));
+    fetch('/api/financials/portfolio-summary', { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setFinancial)
+      .catch(() => setFinancial({ hasData: false }));
   }, []);
 
   useEffect(() => {
@@ -394,6 +401,11 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
         </div>
         )}
 
+        {/* ── FINANCIAL SUMMARY ── */}
+        {isWidgetOn('financialSummary') && (
+          <FinancialSummaryCard data={financial} onView={() => navigate('/financials')} />
+        )}
+
       </div>
 
       {/* ── Recent Inspection Activity (Submitted + Reviewed) ── */}
@@ -473,6 +485,101 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+function fmtMoneyShort(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0,
+  });
+}
+
+function fmtMonth(s) {
+  if (!s) return '';
+  const [y, m] = s.split('-');
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function FinSparkline({ points }) {
+  if (!points || points.length === 0) return null;
+  const W = 200, H = 36, PAD = 2;
+  const values = points.map((p) => p.host || 0);
+  const max = Math.max(1, ...values);
+  const n = points.length;
+  const x = (i) => PAD + (n === 1 ? (W - 2 * PAD) / 2 : (i / (n - 1)) * (W - 2 * PAD));
+  const y = (v) => PAD + (H - 2 * PAD) - (v / max) * (H - 2 * PAD);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(p.host || 0)}`).join(' ');
+  const fillPath = `${path} L${x(n - 1)},${H - PAD} L${x(0)},${H - PAD} Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" aria-hidden>
+      <path d={fillPath} fill="#6B8F71" fillOpacity="0.18" />
+      <path d={path} fill="none" stroke="#6B8F71" strokeWidth="1.5"
+            strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FinancialSummaryCard({ data, onView }) {
+  // Loading: render a placeholder to keep grid alignment.
+  if (data == null) {
+    return (
+      <div className="db-card db-fin-card">
+        <div className="db-card-head">
+          <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
+        </div>
+        <div className="db-card-body">
+          <div className="db-empty">Loading…</div>
+        </div>
+      </div>
+    );
+  }
+  if (!data.hasData) {
+    return (
+      <div className="db-card db-fin-card">
+        <div className="db-card-head">
+          <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
+        </div>
+        <div className="db-card-body">
+          <div className="db-fin-empty">
+            Upload PadSplit reports to see financial data.{' '}
+            <button className="db-link" onClick={onView}>Go to Financials &rarr;</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const trend = data.hostEarningsTrend;
+  const trendStr = trend == null ? null
+    : `${trend > 0 ? '▲' : trend < 0 ? '▼' : '±'} ${Math.abs(trend).toFixed(1)}%`;
+  const trendClass = trend == null ? ''
+    : trend > 0 ? 'db-fin-trend-up' : trend < 0 ? 'db-fin-trend-down' : '';
+  return (
+    <div className="db-card db-fin-card">
+      <div className="db-card-head">
+        <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
+        <button className="db-link" onClick={onView}>View financials &rarr;</button>
+      </div>
+      <div className="db-card-body">
+        <div className="db-fin-row">
+          <div className="db-fin-block">
+            <div className="db-fin-label">Host earnings · {fmtMonth(data.latestMonth)}</div>
+            <div className="db-fin-value db-sage">{fmtMoneyShort(data.hostEarnings)}</div>
+            {trendStr && <div className={`db-fin-trend ${trendClass}`}>{trendStr}</div>}
+          </div>
+          <div className="db-fin-block">
+            <div className="db-fin-label">Portfolio occupancy</div>
+            <div className="db-fin-value">
+              {data.portfolioOccupancy != null ? `${data.portfolioOccupancy.toFixed(1)}%` : '—'}
+            </div>
+          </div>
+        </div>
+        <div className="db-fin-spark">
+          <FinSparkline points={data.sparkline} />
+        </div>
+      </div>
     </div>
   );
 }
