@@ -359,8 +359,12 @@ router.get('/dashboard', async (req, res) => {
     // one. Records with no propertyAddress are bucketed under "Unknown".
     const byProperty = {};
     for (const r of enriched) {
-      const addr = r.propertyAddress || 'Unknown';
+      // Skip address-less rows (PadSplit puts platform-level adjustments
+      // here) — they shouldn't surface as a phantom "Unknown" property.
+      if (!r.propertyAddress || String(r.propertyAddress).trim() === '') continue;
+      const addr = r.propertyAddress;
       const key = normalizeAddress(addr) || 'unknown';
+      if (key === 'unknown') continue;
       if (!byProperty[key]) {
         const matchedProp = r.propertyId ? propertyById[r.propertyId] : null;
         byProperty[key] = {
@@ -493,6 +497,29 @@ router.get('/dashboard', async (req, res) => {
       return out;
     })();
 
+    // ─── DEBUG: dataset sanity check ──────────────────────
+    {
+      const totalCollected = allCollectedHistory.length;
+      const withDate = allCollectedHistory.filter((r) => r.recordDate).length;
+      const meadowR3 = allCollectedHistory.filter((r) =>
+        (r.propertyAddress || '').toLowerCase().includes('meadowchase') &&
+        (r.roomNumber || '').toString().trim() === '3',
+      );
+      const meadowR3April = meadowR3.filter((r) => r.earningsMonth === '2026-04');
+      console.log(
+        `[fin-debug] history rows=${totalCollected} withRecordDate=${withDate} ` +
+        `meadowR3=${meadowR3.length} meadowR3-Apr2026=${meadowR3April.length}`,
+      );
+      for (const r of meadowR3April) {
+        console.log(
+          `[fin-debug]   raw  member=${(r.memberId || '').toString().trim()} ` +
+          `(${r.memberName || '?'}) gross=${(r.grossAmount || 0).toFixed(2)} ` +
+          `billType=${r.billType || ''} ` +
+          `recordDate=${r.recordDate ? new Date(r.recordDate).toISOString().slice(0, 10) : 'null'}`,
+        );
+      }
+    }
+
     // ─── Occupancy intervals per room ─────────────────────
     // Filters out REJECTED members (those whose net collected per
     // month is <= 0 — meaning their full payment was reversed because
@@ -510,12 +537,15 @@ router.get('/dashboard', async (req, res) => {
     {
       const grouped = {}; // "norm|room" → memberId → month → { net, firstDate, lastDate, name }
       for (const r of allCollectedHistory) {
-        if (!isDuesBillType(r.billType)) continue;
+        // Skip rows with no usable property address — those become the
+        // "Unknown" bucket which we don't want to surface as a property.
+        if (!r.propertyAddress || String(r.propertyAddress).trim() === '') continue;
         const memberId = (r.memberId || '').toString().trim();
         if (!memberId) continue;
         const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
         if (!roomKey) continue;
         const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+        if (norm === 'unknown') continue;
         const k = `${norm}|${roomKey}`;
         if (!allRoomKeysByProperty[norm]) allRoomKeysByProperty[norm] = new Set();
         allRoomKeysByProperty[norm].add(roomKey);
@@ -526,23 +556,57 @@ router.get('/dashboard', async (req, res) => {
         if (!grouped[k][memberId]) grouped[k][memberId] = {};
         if (!grouped[k][memberId][r.earningsMonth]) {
           grouped[k][memberId][r.earningsMonth] = {
-            net: 0, firstDate: null, lastDate: null, name: r.memberName || null,
+            net: 0, firstDate: null, lastDate: null,
+            firstPositiveDate: null, lastPositiveDate: null,
+            name: r.memberName || null,
           };
         }
         const slot = grouped[k][memberId][r.earningsMonth];
+        // Sum across ALL bill types so reversals (which may carry a
+        // different bill type than the original payment) cancel out and
+        // mark the member as REJECTED (net <= 0).
         slot.net += (r.grossAmount || 0);
         if (r.memberName && !slot.name) slot.name = r.memberName;
         const d = r.recordDate ? new Date(r.recordDate) : null;
         if (d && !isNaN(d.getTime())) {
           if (!slot.firstDate || d < slot.firstDate) slot.firstDate = d;
           if (!slot.lastDate || d > slot.lastDate) slot.lastDate = d;
+          // Track positive-only dates separately so we can use the
+          // actual move-in date (first positive) and last positive
+          // payment date as occupancy boundaries — reversal entries
+          // shouldn't count as "presence".
+          if ((r.grossAmount || 0) > 0) {
+            if (!slot.firstPositiveDate || d < slot.firstPositiveDate) slot.firstPositiveDate = d;
+            if (!slot.lastPositiveDate || d > slot.lastPositiveDate) slot.lastPositiveDate = d;
+          }
         }
       }
+
+      // ── DEBUG: focused logging for Meadowchase Room 3 in April 2026 ──
+      // Strip when the user confirms numbers look right.
+      const DEBUG_KEY_NEEDLE = 'meadowchase';
+      const DEBUG_ROOM = '3';
+      const DEBUG_MONTH = '2026-04';
 
       for (const k of Object.keys(grouped)) {
         const memberMonths = grouped[k];
         const intervals = [];
         const namesByMonth = {}; // month → memberName (the actual occupant for that month)
+        const isDebug = k.toLowerCase().includes(DEBUG_KEY_NEEDLE) && k.endsWith(`|${DEBUG_ROOM}`);
+        if (isDebug) {
+          console.log(`[fin-debug] ROOM=${k}`);
+          for (const memberId of Object.keys(memberMonths)) {
+            const aprilSlot = memberMonths[memberId][DEBUG_MONTH];
+            if (!aprilSlot) continue;
+            console.log(
+              `[fin-debug]   ${DEBUG_MONTH} member=${memberId} (${aprilSlot.name || '?'}) net=${aprilSlot.net.toFixed(2)} ` +
+              `firstDate=${aprilSlot.firstDate ? aprilSlot.firstDate.toISOString().slice(0, 10) : 'null'} ` +
+              `firstPositiveDate=${aprilSlot.firstPositiveDate ? aprilSlot.firstPositiveDate.toISOString().slice(0, 10) : 'null'} ` +
+              `lastPositiveDate=${aprilSlot.lastPositiveDate ? aprilSlot.lastPositiveDate.toISOString().slice(0, 10) : 'null'} ` +
+              `→ ${aprilSlot.net > 0 ? 'ACTUAL' : 'REJECTED'}`,
+            );
+          }
+        }
         for (const memberId of Object.keys(memberMonths)) {
           const months = memberMonths[memberId];
           let firstDate = null, lastDate = null;
@@ -551,10 +615,16 @@ router.get('/dashboard', async (req, res) => {
           for (const month of Object.keys(months)) {
             const m = months[month];
             if (!memberName && m.name) memberName = m.name;
+            // Member-month is an actual occupancy iff net is positive
+            // AFTER reversals. Use POSITIVE-row dates for the move-in /
+            // move-out approximation; reversal entries shouldn't extend
+            // the occupancy window.
             if (m.net > 0) {
               positiveMonths.add(month);
-              if (m.firstDate && (!firstDate || m.firstDate < firstDate)) firstDate = m.firstDate;
-              if (m.lastDate && (!lastDate || m.lastDate > lastDate)) lastDate = m.lastDate;
+              const fd = m.firstPositiveDate || m.firstDate;
+              const ld = m.lastPositiveDate || m.lastDate;
+              if (fd && (!firstDate || fd < firstDate)) firstDate = fd;
+              if (ld && (!lastDate || ld > lastDate)) lastDate = ld;
               namesByMonth[month] = m.name || memberName;
             }
           }
@@ -581,6 +651,16 @@ router.get('/dashboard', async (req, res) => {
           });
         }
         intervals.sort((a, b) => a.firstDate - b.firstDate);
+        if (isDebug) {
+          console.log(`[fin-debug]   intervals (after rejection filter):`);
+          for (const i of intervals) {
+            console.log(
+              `[fin-debug]     ${i.memberId} (${i.memberName || '?'}) ` +
+              `[${i.firstDate.toISOString().slice(0, 10)} → ${i.lastDate.toISOString().slice(0, 10)}] ` +
+              `positiveMonths=${[...i.positiveMonths].sort().join(',')}`,
+            );
+          }
+        }
         occupancyByRoom[k] = intervals;
         memberLabelByRoom[k] = namesByMonth;
       }
@@ -774,6 +854,7 @@ router.get('/dashboard', async (req, res) => {
         let totalDaysTotal = 0;
         let turnoversTotal = 0;
         let turnoverInSelectedMonth = false;
+        const isRoomDebug = rentKey.toLowerCase().includes('meadowchase') && rentKey.endsWith('|3');
         for (const m of allMonthsForVacancy) {
           if (firstMonth && m < firstMonth) continue; // before room existed
           const vd = vacantDaysInMonthForRoom(intervals, m, firstMonth);
@@ -782,6 +863,12 @@ router.get('/dashboard', async (req, res) => {
           const tn = turnoversInMonthForRoom(intervals, m);
           turnoversTotal += tn;
           if (tn > 0) turnoverInSelectedMonth = true;
+          if (isRoomDebug) {
+            console.log(`[fin-debug]   vacancy month=${m} vacantDays=${vd}/${daysInMonth(m)} turnovers=${tn}`);
+          }
+        }
+        if (isRoomDebug) {
+          console.log(`[fin-debug]   ROOM TOTAL: ${vacantDaysTotal} vacant of ${totalDaysTotal} (intervals=${intervals.length}) dailyRate=${dailyRate.toFixed(2)} firstMonth=${firstMonth || '-'}`);
         }
         const vacancyCostTotal = dailyRate * vacantDaysTotal;
         const residentName = (() => {
