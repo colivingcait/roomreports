@@ -44,7 +44,7 @@ function Lightbox({ url, onClose }) {
 
 // ─── Main slide-over ────────────────────────────────────
 
-export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
+export default function MaintenanceDetail({ itemId, onClose, onUpdated, onNavigate }) {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -722,11 +722,21 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
       {showMergePicker && (
         <MergeWithPicker
           parent={data?.item}
+          isExistingParent={(data?.children?.length || 0) > 0}
           onClose={() => setShowMergePicker(false)}
-          onAdded={async () => {
+          onAdded={async (newParentId) => {
             setShowMergePicker(false);
-            await fetchDetail();
-            onUpdated?.();
+            // If a new parent was created (the current ticket became a
+            // child), navigate the slideover to that parent so the
+            // merged-items section shows everything. If we just added
+            // children to an existing parent, refetch in place.
+            if (newParentId && newParentId !== data?.item?.id) {
+              onNavigate?.(newParentId);
+              onUpdated?.();
+            } else {
+              await fetchDetail();
+              onUpdated?.();
+            }
           }}
         />
       )}
@@ -825,7 +835,7 @@ function MergedChildrenSection({ items, onChange }) {
   );
 }
 
-function MergeWithPicker({ parent, onClose, onAdded }) {
+function MergeWithPicker({ parent, isExistingParent, onClose, onAdded }) {
   const [candidates, setCandidates] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
@@ -861,34 +871,62 @@ function MergeWithPicker({ parent, onClose, onAdded }) {
     setBusy(true);
     setError('');
     try {
-      const ticketIds = [...picked];
-      if (parent.parentTicketId) {
-        // Should never happen — parent is always a top-level ticket.
-        return;
+      if (isExistingParent) {
+        // Parent already has children → just attach the picked tickets.
+        await api(`/api/maintenance/${parent.id}/add-children`, {
+          method: 'POST',
+          body: JSON.stringify({ ticketIds: [...picked] }),
+        });
+        onAdded?.(null);
+      } else {
+        // Brand-new merge — create a NEW parent containing the current
+        // ticket AND every picked one. None of the originals should
+        // remain at top level. Pre-fill the merged ticket's metadata
+        // from the current ticket so the user doesn't have to re-enter
+        // a title.
+        const order = { High: 3, Medium: 2, Low: 1 };
+        const all = [parent, ...candidates.filter((c) => picked.has(c.id))];
+        let bestPriority = parent.priority || null;
+        for (const t of all) {
+          if (!t.priority) continue;
+          if (!bestPriority || (order[t.priority] || 0) > (order[bestPriority] || 0)) {
+            bestPriority = t.priority;
+          }
+        }
+        const res = await api('/api/maintenance/merge', {
+          method: 'POST',
+          body: JSON.stringify({
+            ticketIds: [parent.id, ...picked],
+            title: parent.description,
+            flagCategory: parent.flagCategory,
+            priority: bestPriority,
+            assignedUserId: parent.assignedUserId || null,
+            assignedVendorId: parent.assignedVendorId || null,
+            assignedTo: parent.assignedTo || null,
+            vendor: parent.vendor || null,
+          }),
+        });
+        onAdded?.(res?.item?.id || null);
       }
-      // Two cases:
-      //   (a) parent has children → use add-children
-      //   (b) parent has no children → start a new merge with this ticket as the first child
-      // For (b) we use POST /merge so a brand-new parent is created. To keep
-      // titles/categories obvious, pre-pend the existing description.
-      const url = `/api/maintenance/${parent.id}/add-children`;
-      await api(url, { method: 'POST', body: JSON.stringify({ ticketIds }) });
-      onAdded?.();
     } catch (e) {
       setError(e.message || 'Failed to merge');
     } finally { setBusy(false); }
   };
 
+  const headlineCount = picked.size + (isExistingParent ? 0 : 1);
+
   return (
     <div className="modal-overlay defer-modal-overlay" onClick={() => !busy && onClose()}>
       <div className="modal-content modal-content-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Merge with...</h3>
+          <h3>{isExistingParent ? 'Add tickets to merge' : 'Merge with...'}</h3>
           <button className="modal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="modal-form">
           <p className="page-subtitle">
-            Pick open tickets at <strong>{parent?.property?.name}</strong> to merge into this one.
+            {isExistingParent
+              ? <>Pick open tickets at <strong>{parent?.property?.name}</strong> to add to this merged ticket.</>
+              : <>This ticket plus the ones you pick at <strong>{parent?.property?.name}</strong> will be merged into a new parent ticket.</>}
           </p>
           {!candidates ? (
             <p className="empty-text">Loading…</p>
@@ -921,7 +959,11 @@ function MergeWithPicker({ parent, onClose, onAdded }) {
               onClick={handleMerge}
               disabled={busy || picked.size === 0}
             >
-              {busy ? 'Merging…' : `Merge ${picked.size} ticket${picked.size === 1 ? '' : 's'}`}
+              {busy
+                ? 'Merging…'
+                : isExistingParent
+                  ? `Add ${picked.size} ticket${picked.size === 1 ? '' : 's'}`
+                  : `Merge ${headlineCount} tickets`}
             </button>
           </div>
         </div>

@@ -160,7 +160,16 @@ router.get('/', async (req, res) => {
 
     const items = await prisma.maintenanceItem.findMany({
       where,
-      include: { ...MAINTENANCE_INCLUDE, _count: { select: { children: true } } },
+      include: {
+        ...MAINTENANCE_INCLUDE,
+        _count: { select: { children: true } },
+        // Lightweight children info so kanban cards can render
+        // "Rooms 5, 8" on parents that span multiple rooms.
+        children: {
+          where: { deletedAt: null },
+          select: { id: true, room: { select: { id: true, label: true } } },
+        },
+      },
       orderBy: [{ createdAt: 'desc' }],
     });
 
