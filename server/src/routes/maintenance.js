@@ -670,10 +670,17 @@ router.post('/:id/unmerge', requireRole('OWNER', 'PM'), async (req, res) => {
         where: { parentTicketId: parent.id },
         data: { parentTicketId: null, mergedAt: null },
       });
-      await tx.maintenanceItem.update({
-        where: { id: parent.id },
-        data: { deletedAt: new Date() },
-      });
+      // Only soft-delete the parent if it was a SYNTHETIC merge
+      // container (created by POST /merge, identified by zone =
+      // 'Merged'). Real tickets that were promoted to a parent via the
+      // older buggy "Merge with..." flow must be preserved — deleting
+      // them would lose the user's original ticket data.
+      if (parent.zone === 'Merged') {
+        await tx.maintenanceItem.update({
+          where: { id: parent.id },
+          data: { deletedAt: new Date() },
+        });
+      }
       for (const child of parent.children) {
         await tx.maintenanceEvent.create({
           data: {
@@ -726,6 +733,72 @@ router.put('/children/:childId/cost', requireRole('OWNER', 'PM'), async (req, re
     return res.json({ child: updated, parentTotal: sumRow._sum.actualCost || 0 });
   } catch (err) {
     console.error('Update child cost error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/maintenance/deleted ────────────────────────
+// Lists soft-deleted maintenance tickets so users can recover ones
+// that were unintentionally removed (e.g. the buggy "Merge with..."
+// flow that briefly soft-deleted real tickets during unmerge).
+
+router.get('/deleted', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const items = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: req.user.organizationId,
+        deletedAt: { not: null },
+      },
+      include: {
+        property: { select: { id: true, name: true } },
+        room: { select: { id: true, label: true } },
+      },
+      orderBy: { deletedAt: 'desc' },
+      take: 100,
+    });
+    return res.json({ items });
+  } catch (err) {
+    console.error('List deleted error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/maintenance/:id/restore ───────────────────
+// Un-soft-delete a ticket. Clears any leftover parent linkage so the
+// restored ticket lands back on the kanban as a regular item.
+
+router.post('/:id/restore', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const item = await prisma.maintenanceItem.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: { not: null },
+      },
+    });
+    if (!item) return res.status(404).json({ error: 'Deleted ticket not found' });
+    const updated = await prisma.maintenanceItem.update({
+      where: { id: item.id },
+      data: {
+        deletedAt: null,
+        // Drop the merged linkage too — restored tickets should be
+        // independent on the kanban.
+        parentTicketId: null,
+        mergedAt: null,
+      },
+    });
+    await prisma.maintenanceEvent.create({
+      data: {
+        maintenanceItemId: item.id,
+        type: 'restored',
+        note: 'Restored from deleted',
+        byUserId: req.user.id,
+        byUserName: req.user.name,
+      },
+    });
+    return res.json({ item: updated });
+  } catch (err) {
+    console.error('Restore ticket error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

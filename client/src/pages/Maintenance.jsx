@@ -264,6 +264,7 @@ export default function Maintenance() {
   // Select mode (for batch PDF)
   const [selectMode, setSelectMode] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [showDeletedModal, setShowDeletedModal] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
@@ -455,6 +456,7 @@ export default function Maintenance() {
             </>
           ) : (
             <>
+              <button className="btn-text-sm" onClick={() => setShowDeletedModal(true)}>Restore deleted</button>
               <button className="btn-text-sm" onClick={() => setSelectMode(true)}>Select</button>
               <button className="btn-primary-sm" onClick={() => setShowNew(true)}>+ New Maintenance</button>
             </>
@@ -611,6 +613,79 @@ export default function Maintenance() {
           }}
         />
       )}
+
+      {showDeletedModal && (
+        <RestoreDeletedModal
+          onClose={() => setShowDeletedModal(false)}
+          onRestored={() => fetchItems()}
+        />
+      )}
+    </div>
+  );
+}
+
+function RestoreDeletedModal({ onClose, onRestored }) {
+  const [items, setItems] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(() => {
+    setError('');
+    api('/api/maintenance/deleted')
+      .then((d) => setItems(d.items || []))
+      .catch((e) => setError(e.message || 'Failed to load'));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const restore = async (id) => {
+    setBusy(id);
+    setError('');
+    try {
+      await api(`/api/maintenance/${id}/restore`, { method: 'POST', body: '{}' });
+      await load();
+      onRestored?.();
+    } catch (e) {
+      setError(e.message || 'Failed to restore');
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onClose()}>
+      <div className="modal-content modal-content-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Restore deleted tickets</h3>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="modal-form">
+          {!items ? (
+            <p className="empty-text">Loading…</p>
+          ) : items.length === 0 ? (
+            <p className="empty-text">No deleted tickets to restore.</p>
+          ) : (
+            <ul className="merge-picker-list" style={{ maxHeight: 320 }}>
+              {items.map((t) => (
+                <li key={t.id} className="merge-picker-row" style={{ cursor: 'default' }}>
+                  <span className="merge-picker-label">
+                    <strong>{t.room?.label || 'Common area'}</strong> — {t.description}
+                    <span className="md-dim"> · {t.property?.name} · deleted {new Date(t.deletedAt).toLocaleDateString()}</span>
+                  </span>
+                  <button
+                    className="btn-secondary-sm"
+                    onClick={() => restore(t.id)}
+                    disabled={busy === t.id}
+                  >
+                    {busy === t.id ? 'Restoring…' : 'Restore'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <div className="auth-error">{error}</div>}
+          <div className="modal-actions">
+            <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
