@@ -268,7 +268,23 @@ router.get('/dashboard', async (req, res) => {
     const propertyById = {};
     for (const p of properties) propertyById[p.id] = p;
 
-    // Attach matched propertyId to records
+    // Auto-fuzzy-match any addresses we don't have an explicit mapping
+    // for. This way property breakdown + names show up the moment a
+    // property name overlaps the PadSplit street name.
+    const distinctAddrs = [...new Set(records.map((r) => r.propertyAddress).filter(Boolean))];
+    for (const addr of distinctAddrs) {
+      const norm = normalizeAddress(addr);
+      if (mappingByAddr[norm]) continue;
+      let bestId = null;
+      let bestScore = 0;
+      for (const p of properties) {
+        const s = matchScore(addr, p);
+        if (s > bestScore) { bestScore = s; bestId = p.id; }
+      }
+      if (bestScore >= 1 && bestId) mappingByAddr[norm] = bestId;
+    }
+
+    // Attach matched propertyId to records (or null when unmatched).
     const enriched = records.map((r) => {
       const norm = normalizeAddress(r.propertyAddress);
       return { ...r, propertyId: mappingByAddr[norm] || null };
@@ -300,15 +316,21 @@ router.get('/dashboard', async (req, res) => {
     }
     const totalUncollected = Math.max(0, totalBilledDues - totalCollectedDues);
 
-    // Per-property + per-room breakdown
+    // Per-property + per-room breakdown — keyed by the PadSplit address
+    // (normalized). We don't require a RoomReport property match for
+    // numbers to show up; we just attach the matched name when we have
+    // one. Records with no propertyAddress are bucketed under "Unknown".
     const byProperty = {};
     for (const r of enriched) {
-      if (!r.propertyId) continue;
-      if (!byProperty[r.propertyId]) {
-        byProperty[r.propertyId] = {
-          propertyId: r.propertyId,
-          property: propertyById[r.propertyId] || null,
-          padsplitAddress: r.propertyAddress,
+      const addr = r.propertyAddress || 'Unknown';
+      const key = normalizeAddress(addr) || 'unknown';
+      if (!byProperty[key]) {
+        const matchedProp = r.propertyId ? propertyById[r.propertyId] : null;
+        byProperty[key] = {
+          propertyKey: key,
+          propertyId: r.propertyId || null,
+          property: matchedProp || null,
+          padsplitAddress: addr,
           gross: 0,
           bookingFee: 0,
           serviceFee: 0,
@@ -321,7 +343,7 @@ router.get('/dashboard', async (req, res) => {
           memberIds: new Set(),
         };
       }
-      const p = byProperty[r.propertyId];
+      const p = byProperty[key];
       const isCollected = r.recordType === 'COLLECTED';
       if (isCollected) {
         p.gross += r.grossAmount || 0;
@@ -394,51 +416,73 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
-    // Turnover tracker: count distinct member ids per room across the
-    // selected month/all months for properties in scope.
-    const turnoverWhere = { organizationId: orgId, recordType: 'COLLECTED' };
+    // Turnover tracker. Correct definition:
+    //   For each room (Property Address + Room Number), look at the SET
+    //   of distinct member IDs each month. A turnover counts each
+    //   month-to-month transition where the new month's set is fully
+    //   disjoint from the prior month's set (i.e. all old residents are
+    //   gone). Initial occupancy is NOT a turnover. Multiple payments
+    //   in a month from the same member are NOT turnovers.
     const turnoverRecords = await prisma.financialRecord.findMany({
-      where: turnoverWhere,
+      where: { organizationId: orgId, recordType: 'COLLECTED' },
       select: { roomNumber: true, roomId: true, memberId: true, propertyAddress: true, earningsMonth: true },
     });
-    const turnoverByRoom = {}; // key = "addr|room"
+
+    // key = "<normalized addr>|<room number>" → { propertyName, byMonth: Map<month, Set<memberId>> }
+    const turnoverByRoom = {};
     for (const r of turnoverRecords) {
-      if (!r.roomNumber && !r.roomId) continue;
-      if (!r.memberId) continue;
-      const propId = mappingByAddr[normalizeAddress(r.propertyAddress)];
-      const key = `${propId || r.propertyAddress}|${r.roomNumber || r.roomId}`;
+      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+      if (!roomKey) continue;
+      const memberId = (r.memberId || '').toString().trim();
+      if (!memberId) continue;
+      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+      const key = `${norm}|${roomKey}`;
       if (!turnoverByRoom[key]) {
+        const propId = mappingByAddr[norm];
         turnoverByRoom[key] = {
           propertyId: propId || null,
-          propertyName: propId ? (propertyById[propId]?.name || null) : r.propertyAddress,
-          roomNumber: r.roomNumber || r.roomId,
-          memberMonths: {}, // memberId -> Set of months
-          months: new Set(),
+          propertyName: propId ? (propertyById[propId]?.name || r.propertyAddress) : (r.propertyAddress || '—'),
+          roomNumber: roomKey,
+          byMonth: new Map(),
         };
       }
       const t = turnoverByRoom[key];
-      t.months.add(r.earningsMonth);
-      if (!t.memberMonths[r.memberId]) t.memberMonths[r.memberId] = new Set();
-      t.memberMonths[r.memberId].add(r.earningsMonth);
+      if (!t.byMonth.has(r.earningsMonth)) t.byMonth.set(r.earningsMonth, new Set());
+      t.byMonth.get(r.earningsMonth).add(memberId);
     }
+
     const turnoverList = Object.values(turnoverByRoom).map((t) => {
-      const memberCount = Object.keys(t.memberMonths).length;
-      const turnovers = Math.max(0, memberCount - 1);
-      const monthCount = t.months.size;
-      const avgTenure = memberCount > 0 ? monthCount / memberCount : 0;
+      const months = [...t.byMonth.keys()].sort();
+      const allMembers = new Set();
+      for (const set of t.byMonth.values()) for (const m of set) allMembers.add(m);
+
+      let turnovers = 0;
+      for (let i = 1; i < months.length; i++) {
+        const prev = t.byMonth.get(months[i - 1]);
+        const curr = t.byMonth.get(months[i]);
+        if (!prev || prev.size === 0) continue;        // first occupancy
+        if (!curr || curr.size === 0) continue;        // vacant gap, not a turnover yet
+        let overlap = false;
+        for (const m of curr) if (prev.has(m)) { overlap = true; break; }
+        if (!overlap) turnovers += 1;
+      }
+
+      const occupiedMonths = [...t.byMonth.values()].filter((s) => s.size > 0).length;
+      const avgTenure = occupiedMonths / Math.max(1, turnovers + 1);
+
       return {
         propertyId: t.propertyId,
         propertyName: t.propertyName,
         roomNumber: t.roomNumber,
         turnovers,
-        memberCount,
+        memberCount: allMembers.size,
         avgTenureMonths: Number(avgTenure.toFixed(2)),
       };
     });
     turnoverList.sort((a, b) => b.turnovers - a.turnovers);
 
-    // Turnovers this month (per property): count rooms whose member
-    // changed vs prior month.
+    // Turnovers this month (per property key = normalized address):
+    // count rooms whose current set is fully disjoint from prior month's.
     const turnoversThisMonthByProperty = {};
     if (month && month !== 'all') {
       const prev = monthBefore(month);
@@ -446,24 +490,30 @@ router.get('/dashboard', async (req, res) => {
         where: { organizationId: orgId, earningsMonth: prev, recordType: 'COLLECTED' },
         select: { roomNumber: true, roomId: true, memberId: true, propertyAddress: true },
       });
-      const prevMap = {};
+      const prevByRoom = {}; // key = "<normAddr>|<roomNum>" → Set<memberId>
       for (const r of prevRecords) {
-        if (!r.memberId) continue;
-        const propId = mappingByAddr[normalizeAddress(r.propertyAddress)];
-        const key = `${propId}|${r.roomNumber || r.roomId}`;
-        prevMap[key] = r.memberId;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        const memberId = (r.memberId || '').toString().trim();
+        if (!roomKey || !memberId) continue;
+        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+        const k = `${norm}|${roomKey}`;
+        if (!prevByRoom[k]) prevByRoom[k] = new Set();
+        prevByRoom[k].add(memberId);
       }
-      for (const propId of Object.keys(byProperty)) {
-        const p = byProperty[propId];
+      for (const propKey of Object.keys(byProperty)) {
+        const p = byProperty[propKey];
         for (const roomKey of Object.keys(p.rooms)) {
           const room = p.rooms[roomKey];
-          const key = `${propId}|${roomKey}`;
-          const prevMember = prevMap[key];
+          const k = `${propKey}|${roomKey}`;
+          const prevSet = prevByRoom[k];
           const currentMembers = [...room.memberIds];
-          const isTurnover = prevMember && currentMembers.length > 0 && !currentMembers.includes(prevMember);
+          let isTurnover = false;
+          if (prevSet && prevSet.size > 0 && currentMembers.length > 0) {
+            isTurnover = !currentMembers.some((m) => prevSet.has(m));
+          }
           room.turnover = !!isTurnover;
           if (isTurnover) {
-            turnoversThisMonthByProperty[propId] = (turnoversThisMonthByProperty[propId] || 0) + 1;
+            turnoversThisMonthByProperty[propKey] = (turnoversThisMonthByProperty[propKey] || 0) + 1;
           }
         }
       }
@@ -514,8 +564,8 @@ router.get('/dashboard', async (req, res) => {
         lateFees: round2(p.lateFees),
         vacancyCost: round2(vacancyCost),
         avgRentPerRoom: round2(avgRent),
-        turnoversThisMonth: turnoversThisMonthByProperty[p.propertyId] || 0,
-        maintenanceCost: round2(maintByProperty[p.propertyId] || 0),
+        turnoversThisMonth: turnoversThisMonthByProperty[p.propertyKey] || 0,
+        maintenanceCost: round2(p.propertyId ? (maintByProperty[p.propertyId] || 0) : 0),
         rooms,
       };
     });
@@ -595,33 +645,50 @@ router.get('/timeseries', async (req, res) => {
     const propertyById = {};
     for (const p of properties) propertyById[p.id] = p;
 
-    // [propertyId][month] = { gross, fees, host }
+    // Auto-fuzzy match unmapped addresses for nicer chart labels.
+    const distinctAddrs = [...new Set(records.map((r) => r.propertyAddress).filter(Boolean))];
+    for (const addr of distinctAddrs) {
+      const norm = normalizeAddress(addr);
+      if (mappingByAddr[norm]) continue;
+      let bestId = null;
+      let bestScore = 0;
+      for (const p of properties) {
+        const s = matchScore(addr, p);
+        if (s > bestScore) { bestScore = s; bestId = p.id; }
+      }
+      if (bestScore >= 1 && bestId) mappingByAddr[norm] = bestId;
+    }
+
+    // Bucket by normalized address — chart shows every property with
+    // data, matched or not.
     const buckets = {};
+    const labelByKey = {};
     const monthsSet = new Set();
     for (const r of records) {
-      const norm = normalizeAddress(r.propertyAddress);
+      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
       const propId = mappingByAddr[norm];
-      if (!propId) continue;
+      const label = propId ? (propertyById[propId]?.name || r.propertyAddress) : (r.propertyAddress || 'Unknown');
+      labelByKey[norm] = label;
       monthsSet.add(r.earningsMonth);
-      if (!buckets[propId]) buckets[propId] = {};
-      if (!buckets[propId][r.earningsMonth]) {
-        buckets[propId][r.earningsMonth] = { gross: 0, fees: 0, host: 0 };
+      if (!buckets[norm]) buckets[norm] = {};
+      if (!buckets[norm][r.earningsMonth]) {
+        buckets[norm][r.earningsMonth] = { gross: 0, fees: 0, host: 0 };
       }
-      const b = buckets[propId][r.earningsMonth];
+      const b = buckets[norm][r.earningsMonth];
       b.gross += r.grossAmount || 0;
-      b.fees += (r.bookingFee || 0) + (r.serviceFee || 0) + (r.transactionFee || 0);
+      b.fees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
       b.host += r.hostEarnings || 0;
     }
 
     const months = [...monthsSet].sort();
-    const series = Object.keys(buckets).map((propId) => ({
-      propertyId: propId,
-      propertyName: propertyById[propId]?.name || propId,
+    const series = Object.keys(buckets).map((key) => ({
+      propertyId: mappingByAddr[key] || null,
+      propertyName: labelByKey[key] || key,
       points: months.map((m) => ({
         month: m,
-        gross: round2(buckets[propId][m]?.gross || 0),
-        fees: round2(buckets[propId][m]?.fees || 0),
-        host: round2(buckets[propId][m]?.host || 0),
+        gross: round2(buckets[key][m]?.gross || 0),
+        fees: round2(buckets[key][m]?.fees || 0),
+        host: round2(buckets[key][m]?.host || 0),
       })),
     }));
 

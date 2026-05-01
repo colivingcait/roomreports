@@ -591,22 +591,22 @@ export default function Financials() {
           <section className="fin-section">
             <div className="fin-metric-row">
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Total Collected</div>
+                <div className="fin-metric-label">Total collected</div>
                 <div className="fin-metric-value">{fmtMoney(totals?.collected)}</div>
                 <TrendArrow delta={trends?.collected} />
               </div>
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Platform Fees</div>
+                <div className="fin-metric-label">Platform fees</div>
                 <div className="fin-metric-value">{fmtMoney(totals?.platformFees)}</div>
                 <TrendArrow delta={trends?.fees} invert />
               </div>
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Host Earnings</div>
+                <div className="fin-metric-label">Host earnings</div>
                 <div className="fin-metric-value fin-metric-value-sage">{fmtMoney(totals?.hostEarnings)}</div>
                 <TrendArrow delta={trends?.hostEarnings} />
               </div>
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Uncollected Rent</div>
+                <div className="fin-metric-label">Uncollected rent</div>
                 <div className="fin-metric-value fin-metric-value-terra">{fmtMoney(totals?.uncollected)}</div>
                 <TrendArrow delta={trends?.uncollected} invert />
               </div>
@@ -621,15 +621,15 @@ export default function Financials() {
                 <button
                   className={`fin-toggle ${chartMetric === 'host' ? 'fin-toggle-active' : ''}`}
                   onClick={() => setChartMetric('host')}
-                >Host Earnings</button>
+                >Host earnings</button>
                 <button
                   className={`fin-toggle ${chartMetric === 'gross' ? 'fin-toggle-active' : ''}`}
                   onClick={() => setChartMetric('gross')}
-                >Gross Collected</button>
+                >Gross collected</button>
                 <button
                   className={`fin-toggle ${chartMetric === 'fees' ? 'fin-toggle-active' : ''}`}
                   onClick={() => setChartMetric('fees')}
-                >Platform Fees</button>
+                >Platform fees</button>
               </div>
             </div>
             <div className="fin-chart">

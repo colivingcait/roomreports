@@ -9977,7 +9977,6 @@ img,
 }
 .fin-metric-label {
   font-size: 12px; color: var(--ds-text-secondary);
-  text-transform: uppercase; letter-spacing: 0.05em;
   margin-bottom: 0.25rem;
 }
 .fin-metric-value {
@@ -10082,8 +10081,7 @@ img,
   display: flex; flex-direction: column;
 }
 .fin-prop-stat label {
-  font-size: 10px; color: var(--ds-text-secondary);
-  text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: 11px; color: var(--ds-text-secondary);
 }
 .fin-prop-stat span {
   font-size: 14px; font-weight: 600; color: var(--ds-text);
@@ -10112,9 +10110,7 @@ img,
   background: #FAF7F2;
   font-weight: 600;
   color: var(--ds-text-secondary);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 12px;
 }
 .fin-th-sorted { color: var(--ds-text); }
 .fin-row-clickable { cursor: pointer; }
@@ -10194,8 +10190,7 @@ img,
   display: flex; flex-direction: column; gap: 2px;
 }
 .fin-detail-stat label {
-  font-size: 10px; color: var(--ds-text-secondary);
-  text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: 11px; color: var(--ds-text-secondary);
 }
 .fin-detail-stat span {
   font-family: var(--ds-font-serif);
