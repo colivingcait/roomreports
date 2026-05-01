@@ -51,6 +51,19 @@ export default function QuarterlyReview() {
           };
         }
       }
+      // Common Area Quick Check failed items also need PM-controlled
+      // ticket creation. Default createTask=true for any failed common-area
+      // item so the PM can uncheck if they don't want a ticket.
+      for (const c of (d.commonAreaQuick || [])) {
+        if (c.status !== 'Fail') continue;
+        sel[c.id] = {
+          createTask: c.isMaintenance !== false, // default true on failure
+          createViolation: false,
+          description: (c.note && c.note.trim()) || c.label,
+          pmNote: '',
+          priority: c.priority || (c.flagCategory ? suggestPriority(c.flagCategory) : 'Medium'),
+        };
+      }
       setItemSelections(sel);
     } catch (err) {
       setError(err.message);
@@ -450,7 +463,9 @@ export default function QuarterlyReview() {
             return (
               <div key={kind} className="qr-common-group">
                 <h4 className="qr-common-subtitle">{kind}s</h4>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const sel = itemSelections[r.id];
+                  return (
                   <div
                     key={r.id}
                     className={`qr-common-row qr-common-row-${r.status || 'empty'}`}
@@ -482,8 +497,30 @@ export default function QuarterlyReview() {
                         )}
                       </div>
                     )}
+                    {r.status === 'Fail' && isReviewable && sel && (
+                      <div className="qr-item-action-row">
+                        <label className="qr-item-action-toggle">
+                          <input
+                            type="checkbox"
+                            checked={!!sel.createTask}
+                            onChange={(e) => updateSelection(r.id, { createTask: e.target.checked })}
+                          />
+                          <span>Create maintenance task</span>
+                        </label>
+                        {sel.createTask && (
+                          <input
+                            className="qr-item-action-input"
+                            type="text"
+                            value={sel.description || ''}
+                            onChange={(e) => updateSelection(r.id, { description: e.target.value })}
+                            placeholder="Task description"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}
