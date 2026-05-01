@@ -210,7 +210,7 @@ router.get('/', requireRole('OWNER', 'PM'), async (req, res) => {
 
 router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
-    const { email, name, role, customRole, propertyId, propertyIds } = req.body;
+    const { email, name, role, customRole, propertyId, propertyIds, assignToAllProperties } = req.body;
 
     if (!email || !role) {
       return res.status(400).json({ error: 'email and role are required' });
@@ -224,9 +224,20 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
       return res.status(400).json({ error: 'customRole is required when role is OTHER' });
     }
 
-    const assignedPropertyIds = Array.isArray(propertyIds)
+    let assignedPropertyIds = Array.isArray(propertyIds)
       ? propertyIds
       : propertyId ? [propertyId] : [];
+
+    // "All current and future properties" — pre-populate with the current
+    // property set so the invitee gets immediate access on accept; the
+    // flag itself is what drives auto-assign on future property creation.
+    if (assignToAllProperties) {
+      const allProps = await prisma.property.findMany({
+        where: { organizationId: req.user.organizationId, deletedAt: null },
+        select: { id: true },
+      });
+      assignedPropertyIds = allProps.map((p) => p.id);
+    }
 
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -291,6 +302,7 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
             role,
             customRole: role === 'OTHER' ? customRole.trim() : null,
             propertyIds: assignedPropertyIds,
+            assignToAllProperties: !!assignToAllProperties,
             token,
             expiresAt,
             lastSentAt: new Date(),
@@ -304,6 +316,7 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
             customRole: role === 'OTHER' ? customRole.trim() : null,
             organizationId: req.user.organizationId,
             propertyIds: assignedPropertyIds,
+            assignToAllProperties: !!assignToAllProperties,
             invitedById: req.user.id,
             token,
             expiresAt,

@@ -209,6 +209,7 @@ router.post('/signup', async (req, res) => {
             role: teamInvite.role,
             customRole: teamInvite.customRole,
             organizationId: teamInvite.organizationId,
+            assignToAllProperties: !!teamInvite.assignToAllProperties,
           },
         });
         const propIds = Array.isArray(teamInvite.propertyIds) ? teamInvite.propertyIds : [];

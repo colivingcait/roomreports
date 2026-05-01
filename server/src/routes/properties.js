@@ -249,6 +249,22 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
       },
     });
 
+    // Auto-assign any team members marked "all current and future properties"
+    const allOrgUsers = await prisma.user.findMany({
+      where: {
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+        assignToAllProperties: true,
+      },
+      select: { id: true },
+    });
+    if (allOrgUsers.length > 0) {
+      await prisma.propertyAssignment.createMany({
+        data: allOrgUsers.map((u) => ({ userId: u.id, propertyId: property.id })),
+        skipDuplicates: true,
+      });
+    }
+
     return res.status(201).json({ property });
   } catch (error) {
     console.error('Create property error:', error);
