@@ -62,11 +62,12 @@ function visibleItems(items) {
   return items.filter((i) => !i.zone?.startsWith('_'));
 }
 
-// Items required for the room to count as "complete". Misc is OPTIONAL —
-// it's a free-form notes / extras section that should never block
-// submission. Anything that's not metadata or Misc is required.
+// Items required for the room to count as "complete". ONLY the
+// Maintenance checklist (Screen 2) is required — Compliance pills
+// (Screen 3) are opt-in flags so unticked pills don't count as
+// "unanswered", and Misc (Screen 4) is bonus / free-form.
 function requiredItems(items) {
-  return items.filter((i) => !i.zone?.startsWith('_') && i.zone !== MISC_ZONE);
+  return items.filter((i) => i.zone === MAINTENANCE_ZONE);
 }
 
 function isRoomComplete(items) {

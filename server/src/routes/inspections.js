@@ -670,14 +670,12 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(400).json({ error: 'Inspection already submitted' });
     }
 
-    // Check that all REQUIRED items have a status set. Ignore:
-    //   • metadata zones (_*)
-    //   • section-divider items (options === ['_section'])
-    //   • Misc — free-form bonus section, never blocks submission
+    // Required for completion = ONLY items in the Maintenance zone.
+    // Compliance pills (only get a status when the inspector explicitly
+    // ticks them) and Misc (free-form) are bonus and never block.
     const incomplete = inspection.items.filter((i) => {
       if (i.status) return false;
-      if (i.zone?.startsWith('_')) return false;
-      if (i.zone === 'Misc') return false;
+      if (i.zone !== 'Maintenance') return false;
       if (Array.isArray(i.options) && i.options.includes('_section')) return false;
       return true;
     });
@@ -1019,11 +1017,18 @@ router.post('/bulk-approve', requireRole('OWNER', 'PM'), async (req, res) => {
       for (const insp of inspections) {
         const pairs = [];
         for (const item of insp.items) {
-          if (item.zone.startsWith('_')) continue;
+          // Skip metadata items (`_PartialReason`, `_Completed`, etc.)
+          // but ALLOW `_QuickCommon:Kitchen|Bathroom` items — those are
+          // common-area quick-check rows that should still create
+          // tickets when they're flagged as maintenance.
+          if (item.zone.startsWith('_') && !item.zone.startsWith('_QuickCommon:')) continue;
           const sel = selectionMap[item.id];
           const createTask = sel ? sel.createTask : item.isMaintenance;
           const createViolation = sel ? sel.createViolation : item.isLeaseViolation;
           if (!createTask && !createViolation) continue;
+          if (createTask && item.zone.startsWith('_QuickCommon:')) {
+            console.log(`[approve-debug] common-area ticket from ${insp.id} item=${item.id} zone=${item.zone} text="${item.text}" isMaintenance=${item.isMaintenance}`);
+          }
           pairs.push({
             item: { ...item, isMaintenance: !!createTask, isLeaseViolation: !!createViolation },
             description: (sel?.description && sel.description.trim())
@@ -1161,6 +1166,15 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
   });
   const existingIds = new Set(existing.map((m) => m.inspectionItemId));
 
+  // Debug: surface what's about to be processed so it's obvious in
+  // pm2 logs whether quick-check items reached this point.
+  const roomCount = pairs.filter((p) => !p.item.zone?.startsWith('_QuickCommon:')).length;
+  const commonCount = pairs.filter((p) => p.item.zone?.startsWith('_QuickCommon:')).length;
+  console.log(
+    `[approve-debug] inspection=${inspection.id} room=${inspection.roomId || 'none'} ` +
+    `pairs=${pairs.length} (room-items=${roomCount}, common-area=${commonCount})`,
+  );
+
   let maintenanceCreated = 0;
   let violationsCreated = 0;
 
@@ -1202,6 +1216,11 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
           reportedByRole: inspection.inspectorRole,
         },
       });
+      console.log(
+        `[approve-debug]   created ticket id=${mi.id} ` +
+        `source=${isQuickCommon ? 'common-area' : 'room'} zone="${ticketZone}" ` +
+        `roomId=${ticketRoomId || 'null'} desc="${description.slice(0, 60)}"`,
+      );
       await tx.maintenanceEvent.create({
         data: {
           maintenanceItemId: mi.id,
