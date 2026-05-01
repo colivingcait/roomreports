@@ -965,19 +965,41 @@ function TurnoverTracker({ rows }) {
     return <div className="fin-empty fin-tt-empty">No turnover data yet.</div>;
   }
 
-  // Group by property; sort properties alphabetically; within each
-  // property sort rooms by annualized turnover rate (desc) then room
-  // number for stable ordering.
+  // Group by property; sort properties by problem-room count desc
+  // (then alphabetically). Within each property, rooms with turnovers
+  // sort by annualized rate desc, and 0-turnover rooms sink to the
+  // bottom sorted by room number.
   const groups = {};
   for (const r of rows) {
     const name = r.propertyName || '—';
     if (!groups[name]) groups[name] = [];
     groups[name].push(r);
   }
+  const propertyMonthsByName = {};
+  const problemCountByName = {};
   for (const name of Object.keys(groups)) {
-    groups[name].sort((a, b) => {
-      const dr = (b.annualizedTurnovers || 0) - (a.annualizedTurnovers || 0);
-      if (dr !== 0) return dr;
+    const propertyRows = groups[name];
+    const propertyMonthsOfData = propertyRows.reduce(
+      (m, r) => Math.max(m, r.monthsOfData || 0), 0,
+    );
+    propertyMonthsByName[name] = propertyMonthsOfData;
+    const limitedData = propertyMonthsOfData < MIN_MONTHS_FOR_PROBLEM;
+    let problemCount = 0;
+    if (!limitedData) {
+      for (const r of propertyRows) {
+        if ((r.annualizedTurnovers || 0) >= PROBLEM_TURNOVER_RATE) problemCount += 1;
+      }
+    }
+    problemCountByName[name] = problemCount;
+
+    propertyRows.sort((a, b) => {
+      const aZero = (a.turnovers || 0) === 0;
+      const bZero = (b.turnovers || 0) === 0;
+      if (aZero !== bZero) return aZero ? 1 : -1; // 0-turnover rooms sink
+      if (!aZero) {
+        const dr = (b.annualizedTurnovers || 0) - (a.annualizedTurnovers || 0);
+        if (dr !== 0) return dr;
+      }
       const an = String(a.roomNumber || '');
       const bn = String(b.roomNumber || '');
       const numCmp = parseInt(an, 10) - parseInt(bn, 10);
@@ -985,18 +1007,18 @@ function TurnoverTracker({ rows }) {
       return an.localeCompare(bn);
     });
   }
-  const propertyNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+  const propertyNames = Object.keys(groups).sort((a, b) => {
+    const pc = (problemCountByName[b] || 0) - (problemCountByName[a] || 0);
+    if (pc !== 0) return pc;
+    return a.localeCompare(b);
+  });
 
   return (
     <div className="fin-tt">
       {propertyNames.map((name) => {
         const propertyRows = groups[name];
         const totalTurnovers = propertyRows.reduce((s, r) => s + (r.turnovers || 0), 0);
-        // Use the property's longest-running room as the property's data span.
-        const propertyMonthsOfData = propertyRows.reduce(
-          (m, r) => Math.max(m, r.monthsOfData || 0), 0,
-        );
-        const limitedData = propertyMonthsOfData < MIN_MONTHS_FOR_PROBLEM;
+        const limitedData = (propertyMonthsByName[name] || 0) < MIN_MONTHS_FOR_PROBLEM;
         return (
           <div key={name} className="fin-tt-group">
             <h3 className="fin-tt-property">{name}</h3>
