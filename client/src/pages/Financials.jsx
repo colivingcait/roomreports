@@ -149,10 +149,10 @@ function parseRows(kind, rows) {
         propertyPSID: rowGet(r, 'PSID'),
         propertyAddress: rowGet(r, 'Address'),
         grossAmount: num(rowGet(r, 'Gross Collected')),
-        bookingFee: num(rowGet(r, 'Booking Fees Amount', 'Booking Fee Amount')),
+        bookingFee: num(rowGet(r, 'Booking Fees Amount', 'Booking Fee Amount', 'Booking Fee', 'Booking Fees')),
         hostEarnings: num(rowGet(r, 'Host Earnings')),
-        serviceFee: num(rowGet(r, 'Service Fee Amount', 'Service Fees Amount')),
-        transactionFee: num(rowGet(r, 'Transaction Fee Amount', 'Transaction Fees Amount')),
+        serviceFee: num(rowGet(r, 'Service Fees', 'Service Fee', 'Service Fee Amount', 'Service Fees Amount')),
+        transactionFee: num(rowGet(r, 'Txn Fees', 'Txn Fee', 'Transaction Fees', 'Transaction Fee', 'Transaction Fee Amount', 'Transaction Fees Amount')),
       });
     }
   } else if (kind === 'collected') {
@@ -174,9 +174,9 @@ function parseRows(kind, rows) {
         propertyAddress: rowAddress(r),
         propertyPSID: rowGet(r, 'PSID', 'Property ID'),
         grossAmount: num(rowGet(r, 'Gross Collected')),
-        bookingFee: num(rowGet(r, 'Booking Fee Amount', 'Booking Fees Amount')),
-        serviceFee: num(rowGet(r, 'Service Fee Amount', 'Service Fees Amount')),
-        transactionFee: num(rowGet(r, 'Transaction Fee Amount', 'Transaction Fees Amount')),
+        bookingFee: num(rowGet(r, 'Booking Fee Amount', 'Booking Fees Amount', 'Booking Fee', 'Booking Fees')),
+        serviceFee: num(rowGet(r, 'Service Fees', 'Service Fee', 'Service Fee Amount', 'Service Fees Amount')),
+        transactionFee: num(rowGet(r, 'Txn Fees', 'Txn Fee', 'Transaction Fees', 'Transaction Fee', 'Transaction Fee Amount', 'Transaction Fees Amount')),
         hostEarnings: num(rowGet(r, 'Host Earnings')),
         category: rowGet(r, 'Category'),
       });
@@ -746,6 +746,11 @@ export default function Financials() {
                   </div>
                 )}
                 <TrendArrow delta={trends?.vacancy} invert />
+              </div>
+              <div className="fin-metric-card">
+                <div className="fin-metric-label">Turnovers</div>
+                <div className="fin-metric-value">{totals?.turnovers ?? 0}</div>
+                <TrendArrow delta={trends?.turnovers} invert />
               </div>
             </div>
           </section>
