@@ -62,6 +62,13 @@ function visibleItems(items) {
   return items.filter((i) => !i.zone?.startsWith('_'));
 }
 
+// Items required for the room to count as "complete". Misc is OPTIONAL —
+// it's a free-form notes / extras section that should never block
+// submission. Anything that's not metadata or Misc is required.
+function requiredItems(items) {
+  return items.filter((i) => !i.zone?.startsWith('_') && i.zone !== MISC_ZONE);
+}
+
 function isRoomComplete(items) {
   return items.some((i) => i.zone === COMPLETED_ZONE && i.status === 'Yes');
 }
@@ -824,7 +831,10 @@ export default function QuarterlyFlow() {
   // items still have no status — regardless of whether the user tapped
   // "Done with Room" (which only flips the `_Completed` marker). The
   // backend enforces the same rule, so we always match it here.
-  const roomHasUnanswered = (items) => visibleItems(items).some((i) => !i.status);
+  // A room is complete when every REQUIRED item has a status set —
+  // Misc is excluded so an empty Misc section doesn't trigger the
+  // "Partial Inspection" warning.
+  const roomHasUnanswered = (items) => requiredItems(items).some((i) => !i.status);
 
   const getIncompleteRooms = () => {
     if (!data) return [];
