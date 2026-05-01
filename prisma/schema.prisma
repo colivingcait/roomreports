@@ -388,7 +388,11 @@ model MaintenanceItem {
   resolvedAt        DateTime?
   archivedAt        DateTime?
   deletedAt         DateTime?
+  parentTicketId    String?
+  mergedAt          DateTime?
 
+  parent          MaintenanceItem?        @relation("MergedTickets", fields: [parentTicketId], references: [id])
+  children        MaintenanceItem[]       @relation("MergedTickets")
   inspectionItem  InspectionItem?         @relation(fields: [inspectionItemId], references: [id])
   inspection      Inspection?             @relation(fields: [inspectionId], references: [id])
   property        Property                @relation(fields: [propertyId], references: [id])
@@ -407,6 +411,7 @@ model MaintenanceItem {
   @@index([assignedUserId])
   @@index([trackingToken])
   @@index([deferUntil])
+  @@index([parentTicketId])
   @@map("maintenance_items")
 }
 

@@ -1599,6 +1599,87 @@ body {
    so it needs a stacking context above any sibling slideover content. */
 .defer-modal-overlay { z-index: 1200; }
 
+/* Merged ticket UI */
+.maint-merged-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: #E8F0E9;
+  color: #4A6B4F;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.merge-ticket-list,
+.merge-picker-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.merge-ticket-list li {
+  background: #FAF7F2;
+  border: 1px solid #F0EDE8;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 13px;
+}
+.merge-picker-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.6rem;
+  background: #fff;
+  border: 1px solid #F0EDE8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.merge-picker-row:hover { border-color: var(--ds-primary); }
+.merge-picker-label { flex: 1; font-size: 13px; line-height: 1.4; }
+
+.md-merged-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.md-merged-item {
+  background: #fff;
+  border: 1px solid #F0EDE8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.md-merged-head {
+  width: 100%;
+  background: none; border: none;
+  padding: 0.55rem 0.75rem;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; cursor: pointer; text-align: left;
+  font-size: 13px;
+}
+.md-merged-head:hover { background: #FAF7F2; }
+.md-merged-head-desc { color: var(--ds-text-secondary); margin-left: 0.4rem; }
+.md-merged-body {
+  padding: 0.6rem 0.75rem 0.75rem;
+  border-top: 1px solid #F0EDE8;
+  background: #FAF7F2;
+}
+.md-merged-note { margin: 0 0 0.5rem; font-size: 13px; color: var(--ds-text); }
+.md-merged-photos {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 0.5rem;
+}
+.md-merged-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; }
+.md-merged-cost-row {
+  display: flex; gap: 0.5rem; align-items: flex-end; font-size: 12px;
+}
+.md-merged-cost-row label { font-size: 11px; color: var(--ds-text-secondary); }
+.md-merged-cost-row .maint-input { max-width: 120px; }
+.md-merged-total {
+  margin-top: 0.5rem; font-size: 13px; color: var(--ds-text-secondary); text-align: right;
+}
+
 .modal-content {
   background: #fff;
   border-radius: 16px;
