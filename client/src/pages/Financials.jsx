@@ -954,6 +954,11 @@ export default function Financials() {
 
 // Annualized turnover threshold: 4+ per year flags as a "Problem" room.
 const PROBLEM_TURNOVER_RATE = 4;
+// Minimum months of data required to trust an annualized rate. Below
+// this, we still display the rate but mark it "(limited data)" and
+// don't apply the Problem badge — extrapolating 1 turnover over 2
+// months as 6/yr is alarming but meaningless.
+const MIN_MONTHS_FOR_PROBLEM = 6;
 
 function TurnoverTracker({ rows }) {
   if (!rows || rows.length === 0) {
@@ -987,6 +992,11 @@ function TurnoverTracker({ rows }) {
       {propertyNames.map((name) => {
         const propertyRows = groups[name];
         const totalTurnovers = propertyRows.reduce((s, r) => s + (r.turnovers || 0), 0);
+        // Use the property's longest-running room as the property's data span.
+        const propertyMonthsOfData = propertyRows.reduce(
+          (m, r) => Math.max(m, r.monthsOfData || 0), 0,
+        );
+        const limitedData = propertyMonthsOfData < MIN_MONTHS_FOR_PROBLEM;
         return (
           <div key={name} className="fin-tt-group">
             <h3 className="fin-tt-property">{name}</h3>
@@ -1006,13 +1016,19 @@ function TurnoverTracker({ rows }) {
                   </thead>
                   <tbody>
                     {propertyRows.map((r) => {
-                      const isProblem = (r.annualizedTurnovers || 0) >= PROBLEM_TURNOVER_RATE;
+                      const annualized = r.annualizedTurnovers || 0;
+                      // Only flag Problem when the annualized rate is
+                      // actually meaningful — at least 6 months of data.
+                      const isProblem = !limitedData && annualized >= PROBLEM_TURNOVER_RATE;
                       return (
                         <tr key={`${name}-${r.roomNumber}`}
                             className={isProblem ? 'fin-tt-problem' : ''}>
                           <td>{r.roomNumber || '—'}</td>
                           <td>{r.turnovers}</td>
-                          <td>{(r.annualizedTurnovers || 0).toFixed(1)} / yr</td>
+                          <td className={limitedData ? 'fin-tt-limited' : ''}>
+                            {annualized.toFixed(1)} / yr
+                            {limitedData && <span className="fin-tt-limited-tag"> (limited data)</span>}
+                          </td>
                           <td>{(r.avgTenureMonths || 0).toFixed(1)}</td>
                           <td>{isProblem ? <span className="fin-pill-bad">Problem</span> : null}</td>
                         </tr>
