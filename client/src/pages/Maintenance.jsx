@@ -95,6 +95,11 @@ function KanbanCard({ item, onOpenDetail, selected, onToggleSelect, selectMode, 
               {item._count.children} merged
             </span>
           )}
+          {item.isLeaseFollowUp && (
+            <span className="maint-followup-badge" title="Lease compliance follow-up">
+              Lease follow-up
+            </span>
+          )}
         </div>
         {item.priority && (
           <span

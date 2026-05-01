@@ -390,6 +390,10 @@ model MaintenanceItem {
   deletedAt         DateTime?
   parentTicketId    String?
   mergedAt          DateTime?
+  isLeaseFollowUp   Boolean   @default(false)
+  leaseViolationId  String?
+  dueAt             DateTime?
+  dueNotifiedAt     DateTime?
 
   parent          MaintenanceItem?        @relation("MergedTickets", fields: [parentTicketId], references: [id])
   children        MaintenanceItem[]       @relation("MergedTickets")

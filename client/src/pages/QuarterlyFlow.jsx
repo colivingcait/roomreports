@@ -842,15 +842,26 @@ export default function QuarterlyFlow() {
     setSubmitting(true);
     setError('');
     try {
+      const submittedIds = [];
       for (const insp of data.inspections) {
         if (insp.status !== 'DRAFT') continue;
         // Per-inspection decision: if this specific room has unanswered
         // items, send partial + reason; if every item is answered, submit
         // normally (even if the batch overall has other incomplete rooms).
+        // `silent: true` suppresses the per-room notification — we send
+        // ONE consolidated notification via /notify-batch below.
         const body = roomHasUnanswered(insp.items)
-          ? { partial: true, partialReason }
-          : {};
+          ? { partial: true, partialReason, silent: true }
+          : { silent: true };
         await api(`/api/inspections/${insp.id}/submit`, { method: 'POST', body: JSON.stringify(body) });
+        submittedIds.push(insp.id);
+      }
+      if (submittedIds.length > 0) {
+        // One summary notification covering every room in this batch.
+        await api('/api/inspections/notify-batch', {
+          method: 'POST',
+          body: JSON.stringify({ inspectionIds: submittedIds }),
+        }).catch(() => { /* notification is best-effort */ });
       }
 
       // Quick-check items live on the primary room inspection, so they're

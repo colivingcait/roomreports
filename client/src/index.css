@@ -1599,6 +1599,39 @@ body {
    so it needs a stacking context above any sibling slideover content. */
 .defer-modal-overlay { z-index: 1200; }
 
+/* Inspection review — Create follow-up button row */
+.review-task-violation {
+  color: #8A2B6D;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.review-followup-btn {
+  color: #8A2B6D;
+  border: 1px solid #E0CCDB;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #fff;
+  font-size: 12px;
+}
+.review-followup-btn:hover { background: #FAF0F5; }
+
+/* Lease follow-up badge on kanban card */
+.maint-followup-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: #F5E8F0;
+  color: #8A2B6D;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
 /* Merged ticket UI */
 .maint-merged-badge {
   display: inline-block;

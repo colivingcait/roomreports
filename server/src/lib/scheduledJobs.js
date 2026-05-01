@@ -20,6 +20,7 @@ const MINUTE_MS = 60 * 1000;
 let ranOverdueOnDay = null;   // 'YYYY-MM-DD' string
 let ranDigestOnWeek = null;   // 'YYYY-WW' string
 let ranDeferredOnDay = null;  // 'YYYY-MM-DD' string
+let ranFollowUpOnDay = null;  // 'YYYY-MM-DD' string
 
 function todayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -277,6 +278,63 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// ─── Follow-up due-date reminder ────────────────────────
+// One day before a follow-up ticket's dueAt, ping the PM/Owners.
+// Once-per-ticket via dueNotifiedAt so duplicates don't pile up.
+
+async function runFollowUpDueJob() {
+  const now = new Date();
+  // Window: dueAt is between now and now+24h, not yet resolved/archived,
+  // and we haven't already fired the reminder.
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const due = await prisma.maintenanceItem.findMany({
+    where: {
+      deletedAt: null,
+      archivedAt: null,
+      status: { not: 'RESOLVED' },
+      dueAt: { gte: now, lte: tomorrow },
+      dueNotifiedAt: null,
+    },
+    include: {
+      property: { select: { name: true } },
+      room: { select: { label: true } },
+    },
+  });
+  if (due.length === 0) return;
+
+  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const byOrg = new Map();
+  for (const item of due) {
+    if (!byOrg.has(item.organizationId)) byOrg.set(item.organizationId, []);
+    byOrg.get(item.organizationId).push(item);
+  }
+  for (const [orgId, items] of byOrg) {
+    const ids = await pmAndOwnerIds(orgId);
+    if (ids.length === 0) continue;
+    for (const item of items) {
+      const loc = [item.property?.name, item.room?.label].filter(Boolean).join(' · ');
+      await notifyMany({
+        userIds: ids,
+        organizationId: orgId,
+        type: 'MAINTENANCE_STATUS_CHANGED',
+        title: `Follow-up due tomorrow: ${item.description.slice(0, 60)}`,
+        message: `Follow-up due tomorrow: ${item.description}${loc ? ` (${loc})` : ''}`,
+        link: `/maintenance?open=${item.id}`,
+        email: {
+          subject: `Follow-up due tomorrow — ${item.description.slice(0, 60)}`,
+          ctaLabel: 'Open ticket',
+          ctaHref: `${origin}/maintenance?open=${item.id}`,
+          bodyHtml: `<p style="margin:0 0 12px;">Follow-up due tomorrow:</p><p style="margin:0 0 12px;"><strong>${esc(item.description)}</strong>${loc ? ` — ${esc(loc)}` : ''}</p>`,
+        },
+      });
+    }
+    await prisma.maintenanceItem.updateMany({
+      where: { id: { in: items.map((i) => i.id) } },
+      data: { dueNotifiedAt: now },
+    });
+  }
+}
+
 // ─── Runner ─────────────────────────────────────────────
 
 async function tick() {
@@ -296,6 +354,13 @@ async function tick() {
   if (hour >= 1 && ranDeferredOnDay !== dk) {
     ranDeferredOnDay = dk;
     try { await runDeferredReactivateJob(); } catch (e) { console.error('deferred reactivate error:', e); }
+  }
+
+  // Follow-up due-date reminders: 1-day-out warning. Run alongside the
+  // deferred-reactivation pass so PMs see both at the same morning.
+  if (hour >= 1 && ranFollowUpOnDay !== dk) {
+    ranFollowUpOnDay = dk;
+    try { await runFollowUpDueJob(); } catch (e) { console.error('follow-up due job error:', e); }
   }
 
   // Weekly digest: Monday mornings after 13:00 UTC.
