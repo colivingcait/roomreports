@@ -506,6 +506,7 @@ router.get('/dashboard', async (req, res) => {
     const occupancyByRoom = {};
     const memberLabelByRoom = {}; // for resident-name display per (room, month)
     const allRoomKeysByProperty = {}; // norm → Set<roomKey> for "include vacant rooms"
+    const roomFirstMonth = {}; // "norm|room" → earliest earningsMonth that has ANY record
     {
       const grouped = {}; // "norm|room" → memberId → month → { net, firstDate, lastDate, name }
       for (const r of allCollectedHistory) {
@@ -518,6 +519,9 @@ router.get('/dashboard', async (req, res) => {
         const k = `${norm}|${roomKey}`;
         if (!allRoomKeysByProperty[norm]) allRoomKeysByProperty[norm] = new Set();
         allRoomKeysByProperty[norm].add(roomKey);
+        if (!roomFirstMonth[k] || r.earningsMonth < roomFirstMonth[k]) {
+          roomFirstMonth[k] = r.earningsMonth;
+        }
         if (!grouped[k]) grouped[k] = {};
         if (!grouped[k][memberId]) grouped[k][memberId] = {};
         if (!grouped[k][memberId][r.earningsMonth]) {
@@ -582,36 +586,26 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
-    function vacantDaysInMonthForRoom(intervals, monthStr) {
+    function vacantDaysInMonthForRoom(intervals, monthStr, roomFirstMonthStr) {
+      // Months strictly before the room's first ever data are out of
+      // scope — we don't know the room existed yet.
+      if (roomFirstMonthStr && monthStr < roomFirstMonthStr) return 0;
       const dim = daysInMonth(monthStr);
-      if (!intervals || intervals.length === 0) {
-        // No actual occupant ever seen for this room → fully vacant.
-        return dim;
-      }
+      if (!intervals || intervals.length === 0) return dim; // never occupied
       const [y, m] = monthStr.split('-').map(Number);
-      // Only count vacancy WITHIN the room's lifetime of data: from
-      // the first ever firstDate to the last ever lastDate. Days
-      // outside that span are treated as "no data" (not vacant).
-      const span0 = intervals[0].firstDate;
-      const span1 = intervals[intervals.length - 1].lastDate;
-      const monthStart = new Date(Date.UTC(y, m - 1, 1));
-      const monthEnd = new Date(Date.UTC(y, m - 1, dim));
-      const winStart = monthStart < span0 ? span0 : monthStart;
-      const winEnd = monthEnd > span1 ? span1 : monthEnd;
-      if (winStart > winEnd) return 0;
-
+      // Day-level check across the full month. A day is occupied iff
+      // any actual-occupant interval [firstPaymentDate, lastPaymentDate]
+      // covers it. This naturally handles arbitrary mid-month moves —
+      // a tenant moving in April 14 and out April 24 leaves April 1-13
+      // and April 25-30 vacant if no one else is present.
       let occupied = 0;
-      const oneDay = 24 * 60 * 60 * 1000;
-      for (let day = new Date(winStart); day <= winEnd; day = new Date(day.getTime() + oneDay)) {
+      for (let day = 1; day <= dim; day++) {
+        const d = new Date(Date.UTC(y, m - 1, day));
         for (const i of intervals) {
-          if (day >= i.firstDate && day <= i.lastDate) { occupied += 1; break; }
+          if (d >= i.firstDate && d <= i.lastDate) { occupied += 1; break; }
         }
       }
-      const windowDays = Math.round((winEnd - winStart) / oneDay) + 1;
-      // Vacant = days in the window not occupied.
-      const vacantWithinWindow = windowDays - occupied;
-      // Outside-window days in this month don't count (no data).
-      return vacantWithinWindow;
+      return dim - occupied;
     }
 
     function turnoversInMonthForRoom(intervals, monthStr) {
@@ -773,6 +767,7 @@ router.get('/dashboard', async (req, res) => {
         const typicalDailyRate = typicalDailyRateByRoom[rentKey] || 0;
         const dailyRate = typicalDailyRate || fallbackDailyRate;
         const intervals = occupancyByRoom[rentKey] || [];
+        const firstMonth = roomFirstMonth[rentKey];
 
         // Sum vacancy + turnovers across all months in scope.
         let vacantDaysTotal = 0;
@@ -780,7 +775,8 @@ router.get('/dashboard', async (req, res) => {
         let turnoversTotal = 0;
         let turnoverInSelectedMonth = false;
         for (const m of allMonthsForVacancy) {
-          const vd = vacantDaysInMonthForRoom(intervals, m);
+          if (firstMonth && m < firstMonth) continue; // before room existed
+          const vd = vacantDaysInMonthForRoom(intervals, m, firstMonth);
           vacantDaysTotal += vd;
           totalDaysTotal += daysInMonth(m);
           const tn = turnoversInMonthForRoom(intervals, m);
@@ -885,7 +881,7 @@ router.get('/dashboard', async (req, res) => {
         const typicalDailyRate = typicalDailyRateByRoom[k] || 0;
         const fallbackDailyRate = fallbackDailyRateByProperty[norm] || 0;
         const dailyRate = typicalDailyRate || fallbackDailyRate;
-        const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev);
+        const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev, roomFirstMonth[k]);
         pVacancy += dailyRate * vd;
       }
 
