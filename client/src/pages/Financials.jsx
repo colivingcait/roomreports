@@ -908,37 +908,7 @@ export default function Financials() {
           {/* Turnover tracker */}
           <section className="fin-section">
             <h2 className="fin-section-title">Turnover tracker</h2>
-            <div className="fin-table-wrap">
-              <table className="fin-table">
-                <thead>
-                  <tr>
-                    <th>Property</th>
-                    <th>Room</th>
-                    <th>Turnovers</th>
-                    <th>Members seen</th>
-                    <th>Avg tenure (months)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(dashboard?.turnoverTracker || []).length === 0 ? (
-                    <tr><td colSpan="5" className="fin-empty">No turnover data yet.</td></tr>
-                  ) : (
-                    (dashboard?.turnoverTracker || []).map((t, i) => (
-                      <tr key={i} className={t.turnovers >= 3 ? 'fin-row-warn' : ''}>
-                        <td>{t.propertyName || '—'}</td>
-                        <td>{t.roomNumber || '—'}</td>
-                        <td>
-                          {t.turnovers}
-                          {t.turnovers >= 3 && <span className="fin-pill-bad"> problem</span>}
-                        </td>
-                        <td>{t.memberCount}</td>
-                        <td>{t.avgTenureMonths.toFixed(1)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <TurnoverTracker rows={dashboard?.turnoverTracker || []} />
           </section>
         </>
       )}
@@ -978,6 +948,83 @@ export default function Financials() {
           onClose={() => setShowMappingModal(false)}
         />
       </Modal>
+    </div>
+  );
+}
+
+// Annualized turnover threshold: 4+ per year flags as a "Problem" room.
+const PROBLEM_TURNOVER_RATE = 4;
+
+function TurnoverTracker({ rows }) {
+  if (!rows || rows.length === 0) {
+    return <div className="fin-empty fin-tt-empty">No turnover data yet.</div>;
+  }
+
+  // Group by property; sort properties alphabetically; within each
+  // property sort rooms by annualized turnover rate (desc) then room
+  // number for stable ordering.
+  const groups = {};
+  for (const r of rows) {
+    const name = r.propertyName || '—';
+    if (!groups[name]) groups[name] = [];
+    groups[name].push(r);
+  }
+  for (const name of Object.keys(groups)) {
+    groups[name].sort((a, b) => {
+      const dr = (b.annualizedTurnovers || 0) - (a.annualizedTurnovers || 0);
+      if (dr !== 0) return dr;
+      const an = String(a.roomNumber || '');
+      const bn = String(b.roomNumber || '');
+      const numCmp = parseInt(an, 10) - parseInt(bn, 10);
+      if (!isNaN(numCmp) && numCmp !== 0) return numCmp;
+      return an.localeCompare(bn);
+    });
+  }
+  const propertyNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+
+  return (
+    <div className="fin-tt">
+      {propertyNames.map((name) => {
+        const propertyRows = groups[name];
+        const totalTurnovers = propertyRows.reduce((s, r) => s + (r.turnovers || 0), 0);
+        return (
+          <div key={name} className="fin-tt-group">
+            <h3 className="fin-tt-property">{name}</h3>
+            {totalTurnovers === 0 ? (
+              <div className="fin-tt-none">No turnovers</div>
+            ) : (
+              <div className="fin-table-wrap">
+                <table className="fin-table fin-tt-table">
+                  <thead>
+                    <tr>
+                      <th>Room</th>
+                      <th>Turnovers</th>
+                      <th>Annualized rate</th>
+                      <th>Avg tenure (months)</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {propertyRows.map((r) => {
+                      const isProblem = (r.annualizedTurnovers || 0) >= PROBLEM_TURNOVER_RATE;
+                      return (
+                        <tr key={`${name}-${r.roomNumber}`}
+                            className={isProblem ? 'fin-tt-problem' : ''}>
+                          <td>{r.roomNumber || '—'}</td>
+                          <td>{r.turnovers}</td>
+                          <td>{(r.annualizedTurnovers || 0).toFixed(1)} / yr</td>
+                          <td>{(r.avgTenureMonths || 0).toFixed(1)}</td>
+                          <td>{isProblem ? <span className="fin-pill-bad">Problem</span> : null}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

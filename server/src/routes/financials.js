@@ -625,6 +625,8 @@ router.get('/dashboard', async (req, res) => {
     // Turnover tracker — uses occupancyByRoom (rejected members already
     // filtered out). A turnover is a transition between two consecutive
     // ACTUAL OCCUPANTS in the same room.
+    const allDataMonths = [...new Set(allCollectedHistory.map((r) => r.earningsMonth))].sort();
+    const latestDataMonth = allDataMonths[allDataMonths.length - 1] || null;
     const turnoverList = Object.keys(occupancyByRoom).map((k) => {
       const intervals = occupancyByRoom[k];
       const [norm, roomKey] = k.split('|');
@@ -648,6 +650,15 @@ router.get('/dashboard', async (req, res) => {
       }
       const avgTenure = occupiedMonths.size / Math.max(1, turnovers + 1);
 
+      // Months of data observable for this room: from its first month
+      // through the latest month in the dataset (so a room with 15
+      // months of history annualizes 3 turnovers as 3/15*12 = 2.4/yr).
+      const fm = roomFirstMonth[k];
+      const monthsOfData = (fm && latestDataMonth)
+        ? Math.max(1, monthsBetween(fm, latestDataMonth))
+        : 1;
+      const annualized = (turnovers / monthsOfData) * 12;
+
       return {
         propertyId: propId || null,
         propertyName,
@@ -655,9 +666,11 @@ router.get('/dashboard', async (req, res) => {
         turnovers,
         memberCount: seenMembers.size,
         avgTenureMonths: Number(avgTenure.toFixed(2)),
+        monthsOfData,
+        annualizedTurnovers: Number(annualized.toFixed(2)),
       };
     });
-    turnoverList.sort((a, b) => b.turnovers - a.turnovers);
+    turnoverList.sort((a, b) => b.annualizedTurnovers - a.annualizedTurnovers);
 
     // (Turnovers-this-month is computed inline per-room in the
     // property breakdown below using the occupancy intervals — no
@@ -1368,6 +1381,13 @@ function daysInMonth(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   // Day 0 of next month = last day of current month.
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+// Inclusive month count between two YYYY-MM strings.
+function monthsBetween(startMonth, endMonth) {
+  const [y1, m1] = startMonth.split('-').map(Number);
+  const [y2, m2] = endMonth.split('-').map(Number);
+  return (y2 - y1) * 12 + (m2 - m1) + 1;
 }
 
 // Day-level vacancy check for a room in a given month, given its

@@ -10212,6 +10212,30 @@ img,
   text-transform: uppercase;
 }
 
+/* Turnover tracker */
+.fin-tt { display: flex; flex-direction: column; gap: 1.5rem; }
+.fin-tt-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.fin-tt-property {
+  font-family: var(--ds-font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ds-text);
+  margin: 0;
+}
+.fin-tt-none {
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  color: #4A7B52;
+  font-size: 13px;
+  font-weight: 500;
+}
+.fin-tt-empty { padding: 1.5rem; text-align: center; }
+.fin-tt-table tbody tr:hover td { background: #F5F3F0; }
+.fin-tt-problem td { background: var(--ds-danger-light); }
+.fin-tt-problem:hover td { background: var(--ds-danger-light); }
+
 /* Net P&L coloring */
 .fin-pl { font-weight: 600; }
 .fin-pl-good { color: #4A7B52; }
