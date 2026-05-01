@@ -76,6 +76,7 @@ export default function Team() {
   const [addEmail, setAddEmail] = useState('');
   const [addRole, setAddRole] = useState('CLEANER');
   const [addPropertyIds, setAddPropertyIds] = useState([]);
+  const [addAllProperties, setAddAllProperties] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState('');
   const [notification, setNotification] = useState('');
@@ -136,6 +137,7 @@ export default function Team() {
     setAddEmail('');
     setAddRole('CLEANER');
     setAddPropertyIds([]);
+    setAddAllProperties(false);
     setAddError('');
   };
 
@@ -154,7 +156,8 @@ export default function Team() {
           name: addName.trim(),
           email: addEmail.trim(),
           role: addRole,
-          propertyIds: addPropertyIds,
+          propertyIds: addAllProperties ? [] : addPropertyIds,
+          assignToAllProperties: addAllProperties,
         }),
       });
       setShowAdd(false);
@@ -501,21 +504,31 @@ export default function Team() {
           </label>
           <div>
             <div className="form-label-sm">Assign to properties</div>
-            {properties.length === 0 ? (
-              <p className="empty-text">No properties yet.</p>
-            ) : (
-              <div className="checkbox-list">
-                {properties.map((p) => (
-                  <label key={p.id} className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={addPropertyIds.includes(p.id)}
-                      onChange={() => togglePropertyId(addPropertyIds, setAddPropertyIds, p.id)}
-                    />
-                    <span>{p.name}</span>
-                  </label>
-                ))}
-              </div>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={addAllProperties}
+                onChange={(e) => setAddAllProperties(e.target.checked)}
+              />
+              <span>Add to all current and future properties</span>
+            </label>
+            {!addAllProperties && (
+              properties.length === 0 ? (
+                <p className="empty-text">No properties yet.</p>
+              ) : (
+                <div className="checkbox-list">
+                  {properties.map((p) => (
+                    <label key={p.id} className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={addPropertyIds.includes(p.id)}
+                        onChange={() => togglePropertyId(addPropertyIds, setAddPropertyIds, p.id)}
+                      />
+                      <span>{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )
             )}
           </div>
           {addError && <div className="auth-error">{addError}</div>}

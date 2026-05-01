@@ -106,6 +106,7 @@ model User {
   role           Role
   customRole     String?
   organizationId String
+  assignToAllProperties Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   deletedAt      DateTime?
@@ -149,6 +150,7 @@ model Invitation {
   organizationId String
   propertyId     String?
   propertyIds    String[]         @default([])
+  assignToAllProperties Boolean   @default(false)
   roomId         String?
   invitedById    String
   status         InvitationStatus @default(PENDING)
