@@ -73,6 +73,18 @@ function rowGet(row, ...keys) {
   return undefined;
 }
 
+// PadSplit's collected.csv splits resident names across "First Name"
+// and "Last Name" columns (some exports use "Member First Name" /
+// "Member Last Name"). Falls through to single-column variants.
+function rowMemberName(r) {
+  const single = rowGet(r, 'Member Name', 'Resident Name', 'Member', 'Tenant Name', 'Name');
+  if (single && String(single).trim()) return String(single).trim();
+  const first = rowGet(r, 'First Name', 'Member First Name', 'Tenant First Name', 'Resident First Name');
+  const last = rowGet(r, 'Last Name', 'Member Last Name', 'Tenant Last Name', 'Resident Last Name');
+  const parts = [first, last].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 // PadSplit splits the property address across Street 1 / Street 2 in
 // some exports; the SUMMARY file gives a single "Address". Always
 // produce a non-empty address so the dashboard can aggregate by it.
@@ -157,7 +169,7 @@ function parseRows(kind, rows) {
         roomNumber: rowGet(r, 'Room Number'),
         roomId: rowGet(r, 'Room ID'),
         memberId: rowGet(r, 'Member ID'),
-        memberName: rowGet(r, 'Member Name', 'Resident Name', 'Member'),
+        memberName: rowMemberName(r),
         billType: rowGet(r, 'Bill Type'),
         propertyAddress: rowAddress(r),
         propertyPSID: rowGet(r, 'PSID', 'Property ID'),
@@ -187,7 +199,7 @@ function parseRows(kind, rows) {
         roomNumber: rowGet(r, 'Room Number'),
         roomId: rowGet(r, 'Room ID'),
         memberId: rowGet(r, 'Member ID'),
-        memberName: rowGet(r, 'Member Name'),
+        memberName: rowMemberName(r),
         propertyAddress: rowAddress(r),
         propertyPSID: rowGet(r, 'PSID', 'Property ID'),
         grossAmount: num(rowGet(r, 'Amount')),
@@ -232,6 +244,10 @@ function parseFile(file) {
           reject(new Error(`Could not identify ${file.name}. Headers: ${headers.slice(0, 8).join(', ')}`));
           return;
         }
+        // One-time visibility into the CSV's actual column names.
+        // Helps debug "where's the resident name?" without a round trip.
+        // eslint-disable-next-line no-console
+        console.log(`[financials] ${file.name} (${kind}) headers:`, headers);
         const rows = parseRows(kind, result.data);
         const totalRaw = result.data.length;
         const dropped = totalRaw - rows.length;
