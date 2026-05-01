@@ -8,7 +8,7 @@ import { google } from '../lib/oauth.js';
 import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { verifyPropertyInvite } from '../lib/propertyInvite.js';
-import { notify, esc } from '../lib/notifications.js';
+import { notify, notifyMany, esc } from '../lib/notifications.js';
 import { sendEmail } from '../lib/email.js';
 
 const router = Router();
@@ -280,17 +280,35 @@ router.post('/signup', async (req, res) => {
 });
 
 async function notifyInviteAccepted(invite, newUser) {
-  if (!invite?.invitedById) return;
+  if (!invite?.organizationId) return;
   const origin = (process.env.APP_URL || '').replace(/\/$/, '');
-  await notify({
-    userId: invite.invitedById,
+
+  // Notify the inviter plus every active OWNER in the org so the
+  // account owner always sees these — even when a PM did the inviting.
+  const owners = await prisma.user.findMany({
+    where: {
+      organizationId: invite.organizationId,
+      role: 'OWNER',
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  const recipientIds = new Set(owners.map((o) => o.id));
+  if (invite.invitedById) recipientIds.add(invite.invitedById);
+  // Don't notify the new user themselves (e.g. an Owner accepting their
+  // own invite, in case that ever happens).
+  recipientIds.delete(newUser.id);
+  if (recipientIds.size === 0) return;
+
+  await notifyMany({
+    userIds: [...recipientIds],
     organizationId: invite.organizationId,
     type: 'TEAM_INVITE_ACCEPTED',
-    title: `${newUser.name} accepted your invite`,
+    title: `${newUser.name} accepted the team invite`,
     message: `${newUser.name} <${newUser.email}> just joined as ${newUser.role}.`,
     link: '/team',
     email: {
-      subject: `${newUser.name} accepted your RoomReport invite`,
+      subject: `${newUser.name} accepted their RoomReport invite`,
       ctaLabel: 'View team',
       ctaHref: `${origin}/team`,
       bodyHtml: `<p style="margin:0 0 12px;"><strong>${esc(newUser.name)}</strong> (${esc(newUser.email)}) just created their account and joined as <strong>${esc(newUser.role)}</strong>.</p>`,
