@@ -43,6 +43,7 @@ import Flyer from './pages/Flyer';
 import Notifications from './pages/Notifications';
 import NotificationSettings from './pages/NotificationSettings';
 import Track from './pages/Track';
+import Financials from './pages/Financials';
 
 function DefaultRedirect() {
   const { user } = useAuth();
@@ -109,6 +110,7 @@ function App() {
                 <Route path="/all" element={<MaintenanceToDoAll />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/financials" element={<Financials />} />
                 <Route path="/violations" element={<Violations />} />
                 <Route path="/health" element={<PropertyHealth />} />
                 <Route path="/templates" element={<Templates />} />

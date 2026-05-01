@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 import NewMaintenance from '../components/NewMaintenance';
 import LogViolation from '../components/LogViolation';
+import PropertyFinancialHealth from '../components/PropertyFinancialHealth';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -175,6 +176,8 @@ export default function PropertyOverview() {
           </div>
         </div>
       </div>
+
+      <PropertyFinancialHealth propertyId={id} />
 
       {/* ─── ROOM ACCORDION LIST ─── */}
       <section className="po-section">
