@@ -113,69 +113,91 @@ router.get('/uploads', async (req, res) => {
 });
 
 // ─── POST /api/financials/upload — upload + parse ───────
-// Body: { earningsMonth: "YYYY-MM", fileNames: [], records: [...parsed CSV rows...] }
+// Body: { fileNames: [], records: [...] } — each record carries its own
+// earningsMonth. We bucket by month, then for each month replace any
+// existing FinancialUpload for that org+month (cascade-deletes records).
+// Months that don't appear in the new payload are left untouched.
 
 router.post('/upload', async (req, res) => {
   try {
-    const { earningsMonth, fileNames, records } = req.body;
-    if (!earningsMonth || !Array.isArray(records)) {
-      return res.status(400).json({ error: 'earningsMonth and records required' });
+    const { fileNames, records } = req.body;
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ error: 'records[] required' });
     }
 
-    // Overwrite: delete existing upload (cascades to records) then recreate.
-    await prisma.financialUpload.deleteMany({
-      where: { organizationId: req.user.organizationId, earningsMonth },
-    });
+    // Group records by their earningsMonth.
+    const byMonth = new Map();
+    for (const r of records) {
+      const m = (r.earningsMonth || '').slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(m)) continue;
+      if (!byMonth.has(m)) byMonth.set(m, []);
+      byMonth.get(m).push(r);
+    }
+    if (byMonth.size === 0) {
+      return res.status(400).json({ error: 'No records had a valid earningsMonth (YYYY-MM)' });
+    }
 
-    const upload = await prisma.financialUpload.create({
-      data: {
-        organizationId: req.user.organizationId,
-        earningsMonth,
-        uploadedById: req.user.id,
-        fileNames: fileNames || [],
-      },
-    });
-
-    // Auto-match addresses to properties
+    // Auto-match addresses once for the whole payload.
     const addressSet = new Set();
     for (const r of records) {
       if (r.propertyAddress) addressSet.add(r.propertyAddress);
     }
     await autoMatchAddresses(req.user.organizationId, [...addressSet]);
 
-    // Bulk insert records in chunks of 500
-    const toInsert = records.map((r) => ({
-      uploadId: upload.id,
-      organizationId: req.user.organizationId,
-      earningsMonth,
-      recordType: r.recordType || 'COLLECTED',
-      propertyAddress: r.propertyAddress || null,
-      propertyPSID: r.propertyPSID || null,
-      roomNumber: r.roomNumber || null,
-      roomId: r.roomId || null,
-      memberId: r.memberId || null,
-      memberName: r.memberName || null,
-      billType: r.billType || null,
-      transactionType: r.transactionType || null,
-      transactionReason: r.transactionReason || null,
-      billId: r.billId || null,
-      grossAmount: r.grossAmount != null ? Number(r.grossAmount) : null,
-      bookingFee: r.bookingFee != null ? Number(r.bookingFee) : null,
-      serviceFee: r.serviceFee != null ? Number(r.serviceFee) : null,
-      transactionFee: r.transactionFee != null ? Number(r.transactionFee) : null,
-      hostEarnings: r.hostEarnings != null ? Number(r.hostEarnings) : null,
-      totalCollections: r.totalCollections != null ? Number(r.totalCollections) : null,
-      totalExpenses: r.totalExpenses != null ? Number(r.totalExpenses) : null,
-      totalPayout: r.totalPayout != null ? Number(r.totalPayout) : null,
-      category: r.category || null,
-      rowType: r.rowType || null,
-    }));
-    const CHUNK = 500;
-    for (let i = 0; i < toInsert.length; i += CHUNK) {
-      await prisma.financialRecord.createMany({ data: toInsert.slice(i, i + CHUNK) });
+    // Per-month: delete prior, create fresh, insert records.
+    let totalInserted = 0;
+    const monthsAffected = [];
+    for (const [month, rows] of byMonth.entries()) {
+      await prisma.financialUpload.deleteMany({
+        where: { organizationId: req.user.organizationId, earningsMonth: month },
+      });
+      const upload = await prisma.financialUpload.create({
+        data: {
+          organizationId: req.user.organizationId,
+          earningsMonth: month,
+          uploadedById: req.user.id,
+          fileNames: fileNames || [],
+        },
+      });
+      const toInsert = rows.map((r) => ({
+        uploadId: upload.id,
+        organizationId: req.user.organizationId,
+        earningsMonth: month,
+        recordType: r.recordType || 'COLLECTED',
+        propertyAddress: r.propertyAddress || null,
+        propertyPSID: r.propertyPSID || null,
+        roomNumber: r.roomNumber || null,
+        roomId: r.roomId || null,
+        memberId: r.memberId || null,
+        memberName: r.memberName || null,
+        billType: r.billType || null,
+        transactionType: r.transactionType || null,
+        transactionReason: r.transactionReason || null,
+        billId: r.billId || null,
+        grossAmount: r.grossAmount != null ? Number(r.grossAmount) : null,
+        bookingFee: r.bookingFee != null ? Number(r.bookingFee) : null,
+        serviceFee: r.serviceFee != null ? Number(r.serviceFee) : null,
+        transactionFee: r.transactionFee != null ? Number(r.transactionFee) : null,
+        hostEarnings: r.hostEarnings != null ? Number(r.hostEarnings) : null,
+        totalCollections: r.totalCollections != null ? Number(r.totalCollections) : null,
+        totalExpenses: r.totalExpenses != null ? Number(r.totalExpenses) : null,
+        totalPayout: r.totalPayout != null ? Number(r.totalPayout) : null,
+        category: r.category || null,
+        rowType: r.rowType || null,
+      }));
+      const CHUNK = 500;
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        await prisma.financialRecord.createMany({ data: toInsert.slice(i, i + CHUNK) });
+      }
+      totalInserted += toInsert.length;
+      monthsAffected.push(month);
     }
 
-    return res.json({ upload, recordsInserted: toInsert.length });
+    return res.json({
+      recordsInserted: totalInserted,
+      monthsAffected: monthsAffected.length,
+      months: monthsAffected.sort(),
+    });
   } catch (err) {
     console.error('upload financials error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -252,24 +274,27 @@ router.get('/dashboard', async (req, res) => {
       return { ...r, propertyId: mappingByAddr[norm] || null };
     });
 
-    // Portfolio totals
+    // Portfolio totals — use only COLLECTED rows for line-item totals;
+    // SUMMARY is a per-property aggregate from PadSplit and would double-
+    // count if added. Platform fees in PadSplit CSVs are stored as
+    // negative numbers (deductions); display them as positive magnitudes.
     let totalCollected = 0;
     let totalPlatformFees = 0;
     let totalHostEarnings = 0;
     let totalBilledDues = 0;
     let totalCollectedDues = 0;
     for (const r of enriched) {
-      if (r.recordType === 'COLLECTED' || r.recordType === 'SUMMARY') {
+      if (r.recordType === 'COLLECTED') {
         totalCollected += r.grossAmount || 0;
-        totalPlatformFees += (r.bookingFee || 0) + (r.serviceFee || 0) + (r.transactionFee || 0);
+        totalPlatformFees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
         totalHostEarnings += r.hostEarnings || 0;
-        if ((r.billType || '').toLowerCase().includes('membership')) {
+        if (isDuesBillType(r.billType)) {
           totalCollectedDues += r.grossAmount || 0;
         }
       }
       if (r.recordType === 'BILLED') {
-        if ((r.transactionReason || r.billType || '').toLowerCase().includes('membership')) {
-          totalBilledDues += r.grossAmount || 0;
+        if (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason)) {
+          totalBilledDues += Math.abs(r.grossAmount || 0);
         }
       }
     }
@@ -297,19 +322,19 @@ router.get('/dashboard', async (req, res) => {
         };
       }
       const p = byProperty[r.propertyId];
-      const isCollected = r.recordType === 'COLLECTED' || r.recordType === 'SUMMARY';
+      const isCollected = r.recordType === 'COLLECTED';
       if (isCollected) {
         p.gross += r.grossAmount || 0;
-        p.bookingFee += r.bookingFee || 0;
-        p.serviceFee += r.serviceFee || 0;
-        p.transactionFee += r.transactionFee || 0;
+        p.bookingFee += Math.abs(r.bookingFee || 0);
+        p.serviceFee += Math.abs(r.serviceFee || 0);
+        p.transactionFee += Math.abs(r.transactionFee || 0);
         p.hostEarnings += r.hostEarnings || 0;
       }
       const bt = (r.billType || '').toLowerCase();
-      if (isCollected && bt.includes('membership')) p.collectedDues += r.grossAmount || 0;
+      if (isCollected && isDuesBillType(r.billType)) p.collectedDues += r.grossAmount || 0;
       if (isCollected && bt.includes('late')) p.lateFees += r.grossAmount || 0;
-      if (r.recordType === 'BILLED' && (r.transactionReason || r.billType || '').toLowerCase().includes('membership')) {
-        p.billedDues += r.grossAmount || 0;
+      if (r.recordType === 'BILLED' && (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason))) {
+        p.billedDues += Math.abs(r.grossAmount || 0);
       }
       if (r.memberId) p.memberIds.add(r.memberId);
 
@@ -333,19 +358,21 @@ router.get('/dashboard', async (req, res) => {
           };
         }
         const room = p.rooms[key];
-        if (isCollected && bt.includes('membership')) {
+        if (isCollected && isDuesBillType(r.billType)) {
           room.gross += r.grossAmount || 0;
         }
         if (isCollected && bt.includes('late')) {
           room.lateFees += r.grossAmount || 0;
         }
         if (isCollected) {
-          room.bookingFee += r.bookingFee || 0;
-          room.serviceFee += r.serviceFee || 0;
-          room.transactionFee += r.transactionFee || 0;
+          room.bookingFee += Math.abs(r.bookingFee || 0);
+          room.serviceFee += Math.abs(r.serviceFee || 0);
+          room.transactionFee += Math.abs(r.transactionFee || 0);
           room.hostEarnings += r.hostEarnings || 0;
         }
-        if (r.recordType === 'BILLED') room.billed += r.grossAmount || 0;
+        if (r.recordType === 'BILLED' && (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason))) {
+          room.billed += Math.abs(r.grossAmount || 0);
+        }
         if (r.memberId) {
           room.memberIds.add(r.memberId);
           if (isCollected && (!room.lastSeen || (r.createdAt && r.createdAt > room.lastSeen))) {
@@ -503,14 +530,14 @@ router.get('/dashboard', async (req, res) => {
       });
       let pCollected = 0, pFees = 0, pHost = 0, pBilled = 0, pCollectedDues = 0;
       for (const r of prevRecords) {
-        if (r.recordType === 'COLLECTED' || r.recordType === 'SUMMARY') {
+        if (r.recordType === 'COLLECTED') {
           pCollected += r.grossAmount || 0;
-          pFees += (r.bookingFee || 0) + (r.serviceFee || 0) + (r.transactionFee || 0);
+          pFees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
           pHost += r.hostEarnings || 0;
-          if ((r.billType || '').toLowerCase().includes('membership')) pCollectedDues += r.grossAmount || 0;
+          if (isDuesBillType(r.billType)) pCollectedDues += r.grossAmount || 0;
         }
-        if (r.recordType === 'BILLED' && (r.transactionReason || r.billType || '').toLowerCase().includes('membership')) {
-          pBilled += r.grossAmount || 0;
+        if (r.recordType === 'BILLED' && (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason))) {
+          pBilled += Math.abs(r.grossAmount || 0);
         }
       }
       const pUncollected = Math.max(0, pBilled - pCollectedDues);
@@ -547,7 +574,7 @@ router.get('/timeseries', async (req, res) => {
   try {
     const orgId = req.user.organizationId;
     const records = await prisma.financialRecord.findMany({
-      where: { organizationId: orgId, recordType: { in: ['COLLECTED', 'SUMMARY'] } },
+      where: { organizationId: orgId, recordType: 'COLLECTED' },
       select: {
         propertyAddress: true,
         earningsMonth: true,
@@ -628,7 +655,7 @@ router.get('/property-summary', async (req, res) => {
         where: {
           organizationId: orgId,
           earningsMonth: { in: last6 },
-          recordType: { in: ['COLLECTED', 'SUMMARY'] },
+          recordType: 'COLLECTED',
         },
         select: {
           propertyAddress: true,
@@ -677,7 +704,7 @@ router.get('/property-summary', async (req, res) => {
       }
       byProp[propId].monthly[r.earningsMonth].host += r.hostEarnings || 0;
       byProp[propId].monthly[r.earningsMonth].gross += r.grossAmount || 0;
-      if (last3.includes(r.earningsMonth) && (r.billType || '').toLowerCase().includes('membership')) {
+      if (last3.includes(r.earningsMonth) && isDuesBillType(r.billType)) {
         byProp[propId].collectedDues += r.grossAmount || 0;
       }
     }
@@ -685,8 +712,8 @@ router.get('/property-summary', async (req, res) => {
       const propId = mappingByAddr[normalizeAddress(r.propertyAddress)];
       if (!propId) continue;
       if (!byProp[propId]) byProp[propId] = { monthly: {}, billedDues: 0, collectedDues: 0 };
-      if ((r.transactionReason || r.billType || '').toLowerCase().includes('membership')) {
-        byProp[propId].billedDues += r.grossAmount || 0;
+      if (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason)) {
+        byProp[propId].billedDues += Math.abs(r.grossAmount || 0);
       }
     }
 
@@ -778,6 +805,14 @@ router.post('/mappings', async (req, res) => {
 });
 
 // ─── helpers ────────────────────────────────────────────
+
+// PadSplit categorizes membership rent under several labels — match
+// loosely so we don't miss any.
+function isDuesBillType(v) {
+  if (!v) return false;
+  const s = String(v).toLowerCase();
+  return s.includes('membership') || s.includes('rent') || s.includes('dues');
+}
 
 function round2(n) {
   if (n == null || isNaN(n)) return 0;
