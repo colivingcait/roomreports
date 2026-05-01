@@ -420,10 +420,16 @@ export default function InspectionReview() {
                               />
                               <span>Record lease violation</span>
                             </label>
-                            {state.createViolation && (
+                          </div>
+
+                          {state.createViolation && (
+                            <div className="review-violation-fields">
+                              <span className="review-violation-label">
+                                A lease violation will be recorded when you approve.
+                              </span>
                               <button
                                 type="button"
-                                className="btn-text-sm review-followup-btn"
+                                className="review-followup-btn"
                                 onClick={() => setFollowUpFor({
                                   inspectionItemId: item.id,
                                   violationDescription: item.text,
@@ -432,10 +438,10 @@ export default function InspectionReview() {
                                   roomLabel: inspection.room?.label,
                                 })}
                               >
-                                + Create follow-up
+                                + Create follow-up ticket
                               </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
 
                           {state.createTask && (
                             <div className="review-task-fields">
