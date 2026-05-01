@@ -10003,6 +10003,16 @@ img,
 }
 .fin-metric-value-sage { color: var(--ds-primary-dark); }
 .fin-metric-value-terra { color: var(--ds-terracotta); }
+.fin-metric-sub {
+  font-size: 11px;
+  color: var(--ds-text-secondary);
+  margin-top: 0.15rem;
+}
+.fin-prop-stat-sub {
+  font-size: 10px;
+  color: var(--ds-text-secondary);
+  margin-top: 2px;
+}
 .fin-trend {
   display: inline-block;
   margin-top: 0.4rem;
