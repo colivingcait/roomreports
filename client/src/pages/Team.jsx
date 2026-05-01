@@ -18,7 +18,7 @@ const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
     .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
 
-function MemberMenu({ member, onEdit, onReset, onRemove, onClose }) {
+function MemberMenu({ member, onEdit, onSendLoginLink, onReset, onRemove, onClose }) {
   const ref = useRef();
   useEffect(() => {
     const handler = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
@@ -28,6 +28,7 @@ function MemberMenu({ member, onEdit, onReset, onRemove, onClose }) {
   return (
     <div className="member-menu" ref={ref}>
       <button className="member-menu-item" onClick={() => { onEdit(member); onClose(); }}>Edit</button>
+      <button className="member-menu-item" onClick={() => { onSendLoginLink(member); onClose(); }}>Send login link</button>
       <button className="member-menu-item" onClick={() => { onReset(member); onClose(); }}>Reset password</button>
       <button className="member-menu-item member-menu-danger" onClick={() => { onRemove(member); onClose(); }}>Remove</button>
     </div>
@@ -213,6 +214,15 @@ export default function Team() {
     finally { setDeactivating(false); }
   };
 
+  const handleSendLoginLink = async (m) => {
+    try {
+      await api(`/api/team/${m.id}/send-login-link`, { method: 'POST' });
+      setNotification(`Login link sent to ${m.email}.`);
+    } catch (err) {
+      setNotification(err.message || 'Failed to send login link');
+    }
+  };
+
   const handleResendInvite = async (inv) => {
     try {
       await api(`/api/team/invitations/${inv.id}/resend`, { method: 'POST' });
@@ -347,6 +357,7 @@ export default function Team() {
                           <MemberMenu
                             member={m}
                             onEdit={openEdit}
+                            onSendLoginLink={handleSendLoginLink}
                             onReset={(mem) => setResetTarget(mem)}
                             onRemove={(mem) => setDeactivateTarget(mem)}
                             onClose={() => setMenuOpenFor(null)}

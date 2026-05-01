@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const justReset = params.get('reset') === '1';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +31,11 @@ export default function Login() {
       <form onSubmit={handleSubmit} className="auth-form">
         <h2>Sign in</h2>
 
+        {justReset && (
+          <div className="notification-bar" style={{ marginBottom: '0.75rem' }}>
+            Password reset — you can now log in.
+          </div>
+        )}
         {error && <div className="auth-error">{error}</div>}
 
         <label>
@@ -52,6 +59,10 @@ export default function Login() {
             required
           />
         </label>
+
+        <div style={{ textAlign: 'right', marginTop: '-0.25rem', marginBottom: '0.5rem' }}>
+          <Link to="/forgot-password" className="auth-link-sm">Forgot password?</Link>
+        </div>
 
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Signing in...' : 'Sign in'}

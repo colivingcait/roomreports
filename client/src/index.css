@@ -190,6 +190,13 @@ body {
   text-decoration: none;
 }
 
+.auth-link-sm {
+  font-size: 0.85rem;
+  color: #6B8F71;
+  text-decoration: none;
+}
+.auth-link-sm:hover { text-decoration: underline; }
+
 .auth-footer a:hover {
   text-decoration: underline;
 }

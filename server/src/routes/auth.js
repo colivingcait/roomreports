@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { hash, verify } from '@node-rs/argon2';
 import { generateIdFromEntropySize } from 'lucia';
 import { generateState, generateCodeVerifier } from 'arctic';
@@ -8,6 +9,7 @@ import prisma from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { verifyPropertyInvite } from '../lib/propertyInvite.js';
 import { notify, esc } from '../lib/notifications.js';
+import { sendEmail } from '../lib/email.js';
 
 const router = Router();
 
@@ -561,6 +563,140 @@ router.get('/google/callback', async (req, res) => {
     return res.redirect('/');
   } catch (error) {
     console.error('Google OAuth callback error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Forgot password ────────────────────────────────────
+
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function appOrigin(req) {
+  const env = process.env.APP_URL;
+  if (env) return env.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+// POST /api/auth/forgot-password — { email }
+// Always returns success to avoid leaking which emails exist.
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && !user.deletedAt) {
+      const token = crypto.randomBytes(32).toString('base64url');
+      const expiresAt = new Date(Date.now() + RESET_TTL_MS);
+      await prisma.passwordResetToken.create({
+        data: { userId: user.id, token, expiresAt },
+      });
+
+      const resetUrl = `${appOrigin(req)}/reset-password?token=${encodeURIComponent(token)}`;
+      const html = `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#3B3634;background:#FAF8F5;">
+          <h1 style="margin:0 0 12px;font-size:22px;color:#3B3634;">Reset your RoomReport password</h1>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
+            Click the link below to reset your password. This link expires in 1 hour.
+          </p>
+          <p style="margin:0 0 32px;">
+            <a href="${resetUrl}" style="display:inline-block;background:#6B8F71;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;">Reset password</a>
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#8A8583;">
+            If you didn't request this, you can ignore this email.
+          </p>
+          <p style="margin:32px 0 0;font-size:12px;color:#8A8583;border-top:1px solid #E6E2DE;padding-top:16px;">RoomReport — roomreport.co</p>
+        </div>
+      `;
+      const text =
+        `Reset your RoomReport password.\n\n` +
+        `Click the link below to reset your password. This link expires in 1 hour.\n\n` +
+        `${resetUrl}\n\n` +
+        `If you didn't request this, you can ignore this email.\n\n` +
+        `RoomReport — roomreport.co`;
+
+      sendEmail({
+        to: user.email,
+        subject: 'Reset your RoomReport password',
+        text,
+        html,
+      }).catch((e) => console.error('forgot-password email error:', e));
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Same generic response — don't surface internal errors back.
+    return res.json({ ok: true });
+  }
+});
+
+// GET /api/auth/reset-password/:token — token validity check
+router.get('/reset-password/:token', async (req, res) => {
+  try {
+    const tok = await prisma.passwordResetToken.findUnique({
+      where: { token: req.params.token },
+    });
+    const valid = tok && !tok.usedAt && new Date(tok.expiresAt) > new Date();
+    return res.json({ valid: !!valid });
+  } catch (error) {
+    console.error('Reset-password token check error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/reset-password — { token, password }
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+    if (!token || !password) {
+      return res.status(400).json({ error: 'token and password are required' });
+    }
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    const tok = await prisma.passwordResetToken.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+    if (!tok || tok.usedAt || new Date(tok.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'Reset link is invalid or expired' });
+    }
+    if (!tok.user || tok.user.deletedAt) {
+      return res.status(400).json({ error: 'Reset link is invalid or expired' });
+    }
+
+    const hashedPassword = await hash(password, {
+      memoryCost: 19456,
+      timeCost: 2,
+      outputLen: 32,
+      parallelism: 1,
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: tok.userId },
+        data: { hashedPassword },
+      });
+      await tx.passwordResetToken.update({
+        where: { id: tok.id },
+        data: { usedAt: new Date() },
+      });
+      // Invalidate any other unused tokens for this user.
+      await tx.passwordResetToken.updateMany({
+        where: { userId: tok.userId, usedAt: null, id: { not: tok.id } },
+        data: { usedAt: new Date() },
+      });
+      // Wipe existing sessions so the password change takes effect everywhere.
+      await tx.session.deleteMany({ where: { userId: tok.userId } });
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Reset password error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
