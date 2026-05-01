@@ -110,6 +110,9 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
         method: 'POST',
         body: JSON.stringify({}),
       });
+      // Stay on the detail panel — refresh its state so the Reactivate
+      // button disappears and the status reflects OPEN.
+      await fetchDetail();
       onUpdated?.();
     } catch { /* ignore */ }
     finally { setReactivating(false); }
@@ -125,7 +128,14 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated }) {
         { method: 'POST', body: JSON.stringify({}) },
       );
       onUpdated?.();
-      if (!isArchived) onClose?.();
+      if (isArchived) {
+        // Unarchiving keeps the panel open — refresh its state so the
+        // archive label flips back.
+        await fetchDetail();
+      } else {
+        // Archiving sends the user back to the kanban.
+        onClose?.();
+      }
     } catch { /* ignore */ }
     finally { setArchiving(false); }
   };

@@ -515,7 +515,15 @@ export default function Maintenance() {
           itemId={detailId}
           onClose={() => setDetailId(null)}
           onUpdated={(updated) => {
-            setItems((prev) => prev.map((i) => i.id === updated.id ? { ...i, ...updated } : i));
+            // Optimistic merge if a full item is provided (from /save).
+            // Defer / archive / reactivate call without an arg — for
+            // those, fall back to a full re-fetch so the kanban
+            // reflects status changes (e.g. ticket leaving the board
+            // when it goes to DEFERRED or ARCHIVED).
+            if (updated && updated.id) {
+              setItems((prev) => prev.map((i) => i.id === updated.id ? { ...i, ...updated } : i));
+            }
+            fetchItems();
           }}
         />
       )}
