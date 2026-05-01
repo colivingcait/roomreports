@@ -26,6 +26,12 @@ function fmtCurrency(n) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
+// Currency formatting that always returns a value (used for read-only
+// sums where 0 still wants to render as "$0.00").
+function fmtCost(n) {
+  return Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
 function fmtDateTime(d) {
   if (!d) return '';
   return new Date(d).toLocaleString('en-US', {
@@ -345,7 +351,7 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated, onNaviga
               {data.children?.length > 0 && (
                 <button
                   type="button"
-                  className="btn-secondary-sm"
+                  className="btn-danger-sm"
                   onClick={async () => {
                     if (!confirm(`Split this back into ${data.children.length} separate tickets?`)) return;
                     setUnmerging(true);
@@ -359,7 +365,7 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated, onNaviga
                   }}
                   disabled={unmerging}
                 >
-                  {unmerging ? 'Unmerging…' : 'Unmerge'}
+                  {unmerging ? 'Unmerging…' : `Unmerge (${data.children.length})`}
                 </button>
               )}
             </div>
@@ -425,40 +431,60 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated, onNaviga
                     onBlur={() => draft.vendor !== (data.item.vendor || '') && save({ vendor: draft.vendor || null })}
                   />
                 </label>
-                <label className="detail-label">
-                  Estimated cost
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="maint-input"
-                    autoComplete="off"
-                    name="maintenance-estimated-cost-no-autofill"
-                    value={draft.estimatedCost}
-                    placeholder="0.00"
-                    onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })}
-                    onBlur={() => {
-                      const n = draft.estimatedCost === '' ? null : Number(draft.estimatedCost);
-                      if (n !== data.item.estimatedCost) save({ estimatedCost: n });
-                    }}
-                  />
-                </label>
-                <label className="detail-label">
-                  Actual cost
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="maint-input"
-                    autoComplete="off"
-                    name="maintenance-actual-cost-no-autofill"
-                    value={draft.actualCost}
-                    placeholder="0.00"
-                    onChange={(e) => setDraft({ ...draft, actualCost: e.target.value })}
-                    onBlur={() => {
-                      const n = draft.actualCost === '' ? null : Number(draft.actualCost);
-                      if (n !== data.item.actualCost) save({ actualCost: n });
-                    }}
-                  />
-                </label>
+                {(data.children?.length || 0) > 0 ? (
+                  // Parent costs are read-only sums of children — entered
+                  // per child below in the Merged items section.
+                  <div className="md-cost-summary">
+                    <div>
+                      <label>Total estimated</label>
+                      <span>{fmtCost(data.children.reduce((s, c) => s + (Number(c.estimatedCost) || 0), 0))}</span>
+                    </div>
+                    <div>
+                      <label>Total actual</label>
+                      <span>{fmtCost(data.children.reduce((s, c) => s + (Number(c.actualCost) || 0), 0))}</span>
+                    </div>
+                    <div className="md-cost-summary-note">
+                      Costs are tracked per merged item below.
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label className="detail-label">
+                      Estimated cost
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="maint-input"
+                        autoComplete="off"
+                        name="maintenance-estimated-cost-no-autofill"
+                        value={draft.estimatedCost}
+                        placeholder="0.00"
+                        onChange={(e) => setDraft({ ...draft, estimatedCost: e.target.value })}
+                        onBlur={() => {
+                          const n = draft.estimatedCost === '' ? null : Number(draft.estimatedCost);
+                          if (n !== data.item.estimatedCost) save({ estimatedCost: n });
+                        }}
+                      />
+                    </label>
+                    <label className="detail-label">
+                      Actual cost
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="maint-input"
+                        autoComplete="off"
+                        name="maintenance-actual-cost-no-autofill"
+                        value={draft.actualCost}
+                        placeholder="0.00"
+                        onChange={(e) => setDraft({ ...draft, actualCost: e.target.value })}
+                        onBlur={() => {
+                          const n = draft.actualCost === '' ? null : Number(draft.actualCost);
+                          if (n !== data.item.actualCost) save({ actualCost: n });
+                        }}
+                      />
+                    </label>
+                  </>
+                )}
               </div>
             </section>
 
@@ -745,10 +771,18 @@ export default function MaintenanceDetail({ itemId, onClose, onUpdated, onNaviga
 }
 
 function MergedChildrenSection({ items, onChange }) {
-  const [expanded, setExpanded] = useState(() => new Set());
-  const [costDrafts, setCostDrafts] = useState(() => {
+  const [expanded, setExpanded] = useState(() => {
+    // Default to all expanded so cost inputs are immediately visible.
+    return new Set(items.map((c) => c.id));
+  });
+  const [drafts, setDrafts] = useState(() => {
     const m = {};
-    for (const c of items) m[c.id] = c.actualCost == null ? '' : String(c.actualCost);
+    for (const c of items) {
+      m[c.id] = {
+        estimatedCost: c.estimatedCost == null ? '' : String(c.estimatedCost),
+        actualCost: c.actualCost == null ? '' : String(c.actualCost),
+      };
+    }
     return m;
   });
   const [savingFor, setSavingFor] = useState(null);
@@ -760,19 +794,25 @@ function MergedChildrenSection({ items, onChange }) {
       return next;
     });
   };
-  const saveCost = async (childId) => {
-    setSavingFor(childId);
+  const saveCost = async (childId, field) => {
+    setSavingFor(`${childId}-${field}`);
     try {
+      const raw = drafts[childId]?.[field];
+      const value = raw === '' || raw == null ? null : Number(raw);
       await api(`/api/maintenance/children/${childId}/cost`, {
         method: 'PUT',
-        body: JSON.stringify({ actualCost: costDrafts[childId] === '' ? null : Number(costDrafts[childId]) }),
+        body: JSON.stringify({ [field]: value }),
       });
       onChange?.();
     } catch { /* ignore */ }
     finally { setSavingFor(null); }
   };
+  const setDraftField = (id, field, val) => {
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: val } }));
+  };
 
-  const total = items.reduce((s, c) => s + (Number(c.actualCost) || 0), 0);
+  const totalEst = items.reduce((s, c) => s + (Number(c.estimatedCost) || 0), 0);
+  const totalAct = items.reduce((s, c) => s + (Number(c.actualCost) || 0), 0);
 
   return (
     <section className="md-section">
@@ -809,18 +849,30 @@ function MergedChildrenSection({ items, onChange }) {
                   )}
                   <div className="md-merged-cost-row">
                     <label>
-                      Cost
+                      Estimated cost
                       <input
                         type="number"
                         step="0.01"
                         min="0"
                         className="maint-input"
-                        value={costDrafts[c.id] ?? ''}
-                        onChange={(e) => setCostDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
-                        onBlur={() => saveCost(c.id)}
+                        value={drafts[c.id]?.estimatedCost ?? ''}
+                        onChange={(e) => setDraftField(c.id, 'estimatedCost', e.target.value)}
+                        onBlur={() => saveCost(c.id, 'estimatedCost')}
                       />
                     </label>
-                    {savingFor === c.id && <span className="md-dim">Saving…</span>}
+                    <label>
+                      Actual cost
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="maint-input"
+                        value={drafts[c.id]?.actualCost ?? ''}
+                        onChange={(e) => setDraftField(c.id, 'actualCost', e.target.value)}
+                        onBlur={() => saveCost(c.id, 'actualCost')}
+                      />
+                    </label>
+                    {savingFor?.startsWith(c.id) && <span className="md-dim">Saving…</span>}
                   </div>
                 </div>
               )}
@@ -829,7 +881,8 @@ function MergedChildrenSection({ items, onChange }) {
         })}
       </ul>
       <div className="md-merged-total">
-        Total cost: <strong>${total.toFixed(2)}</strong>
+        <span>Total estimated: <strong>{fmtCost(totalEst)}</strong></span>
+        <span>Total actual: <strong>{fmtCost(totalAct)}</strong></span>
       </div>
     </section>
   );
