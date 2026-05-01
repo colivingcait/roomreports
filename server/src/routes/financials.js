@@ -650,6 +650,7 @@ router.get('/dashboard', async (req, res) => {
       const fallbackRent = fallbackRentByProperty[propKeyForFallback] || 0;
       let propVacancyDays = 0;
       let propVacancyCost = 0;
+      let propTotalDays = 0;
 
       const rooms = Object.values(p.rooms).map((room) => {
         const maintenanceCost = maintByRoom[room.roomId] || 0;
@@ -661,6 +662,7 @@ router.get('/dashboard', async (req, res) => {
         // selected month, every month for "all time").
         let vacantDaysTotal = 0;
         let vacancyCostTotal = 0;
+        let totalDaysTotal = 0;
         let expectedRent = typicalRent || fallbackRent;
         let dailyRate = 0;
         for (const m of allMonthsForVacancy) {
@@ -675,10 +677,12 @@ router.get('/dashboard', async (req, res) => {
           });
           vacantDaysTotal += v.vacantDays;
           vacancyCostTotal += v.vacancyCost;
+          totalDaysTotal += daysInMonth(m);
           dailyRate = v.dailyRate;
         }
         propVacancyDays += vacantDaysTotal;
         propVacancyCost += vacancyCostTotal;
+        propTotalDays += totalDaysTotal;
 
         return {
           roomNumber: room.roomNumber,
@@ -704,6 +708,9 @@ router.get('/dashboard', async (req, res) => {
       const sumDues = rooms.reduce((a, r) => a + r.gross, 0);
       const avgRent = roomsWithCollections > 0 ? sumDues / roomsWithCollections : 0;
       const collectionRate = p.billedDues > 0 ? (p.collectedDues / p.billedDues) * 100 : null;
+      const occupancyRate = propTotalDays > 0
+        ? Math.max(0, Math.min(100, ((propTotalDays - propVacancyDays) / propTotalDays) * 100))
+        : null;
       return {
         propertyId: p.propertyId,
         propertyName: p.property?.name || p.padsplitAddress,
@@ -714,6 +721,7 @@ router.get('/dashboard', async (req, res) => {
         transactionFee: round2(p.transactionFee),
         hostEarnings: round2(p.hostEarnings),
         collectionRate: collectionRate != null ? round2(collectionRate) : null,
+        occupancyRate: occupancyRate != null ? round2(occupancyRate) : null,
         vacancy: round2(propVacancyCost),
         vacantDays: propVacancyDays,
         lateFees: round2(p.lateFees),
