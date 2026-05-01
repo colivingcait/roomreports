@@ -33,6 +33,21 @@ function healthBarColor(count) {
   return '#6B8F71';
 }
 
+function fmtMoneyShort(n) {
+  if (n == null || isNaN(n)) return '$0';
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0,
+  });
+}
+
+// Extract a room number ("3") from a RoomReport label like "Room 3",
+// "Cedar (Room 3)", or just "3" — used to join with PadSplit data.
+function roomNumberFromLabel(label) {
+  if (!label) return null;
+  const m = String(label).match(/(?:room\s*)?(\d+)/i);
+  return m ? m[1] : null;
+}
+
 export default function PropertyOverview() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -50,6 +65,7 @@ export default function PropertyOverview() {
   const [maintItems, setMaintItems] = useState([]);
   const [violations, setViolations] = useState([]);
   const [deferredByRoom, setDeferredByRoom] = useState({});
+  const [financial, setFinancial] = useState(null); // { hasData, rooms, latestMonth }
   const [maintFilter, setMaintFilter] = useState('active'); // active | all
   const [violationFilter, setViolationFilter] = useState('active'); // active | all
 
@@ -77,6 +93,11 @@ export default function PropertyOverview() {
         setDeferredByRoom(byRoom);
       })
       .catch(() => {});
+    // Per-room financial detail for this property (latest uploaded month).
+    fetch(`/api/financials/property/${id}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setFinancial)
+      .catch(() => setFinancial({ hasData: false }));
   }, [id]);
 
   const openTurnoverModal = async (room) => {
@@ -189,6 +210,8 @@ export default function PropertyOverview() {
             const viol = room.activeViolationCount || 0;
             const deferred = deferredByRoom[room.id] || [];
             const tone = (open > 0 && viol > 0) ? 'red' : (open > 0 || viol > 0) ? 'yellow' : 'green';
+            const roomNum = roomNumberFromLabel(room.label);
+            const finRoom = financial?.hasData && roomNum ? financial.rooms?.[roomNum] : null;
             return (
               <Fragment key={room.id}>
                 <div
@@ -222,6 +245,16 @@ export default function PropertyOverview() {
                     {deferred.length > 0 && (
                       <span className="po-count-badge po-count-badge-deferred" title="Deferred maintenance">
                         {deferred.length} <span className="po-count-label">deferred</span>
+                      </span>
+                    )}
+                    {finRoom && (
+                      <span className="po-fin-badge" title={`Host earnings ${financial.latestMonth}`}>
+                        {fmtMoneyShort(finRoom.host)}
+                      </span>
+                    )}
+                    {finRoom && finRoom.vacantDays > 0 && (
+                      <span className="po-fin-badge po-fin-badge-warn" title="Vacant days this month">
+                        {finRoom.vacantDays}d vacant
                       </span>
                     )}
                     <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
@@ -278,6 +311,36 @@ export default function PropertyOverview() {
                         </button>
                       </div>
                     </div>
+                    {finRoom && (
+                      <div className="po-fin-detail">
+                        <div className="po-fin-detail-grid">
+                          <div className="po-fin-stat">
+                            <label>Resident</label>
+                            <span>{finRoom.residentName || <span className="po-dim">vacant</span>}</span>
+                          </div>
+                          <div className="po-fin-stat">
+                            <label>Collected this month</label>
+                            <span>{fmtMoneyShort(finRoom.gross)}</span>
+                          </div>
+                          <div className="po-fin-stat">
+                            <label>Host earnings</label>
+                            <span>{fmtMoneyShort(finRoom.host)}</span>
+                          </div>
+                          <div className="po-fin-stat">
+                            <label>Vacant days</label>
+                            <span>{finRoom.vacantDays}</span>
+                          </div>
+                          <div className="po-fin-stat">
+                            <label>Daily rate</label>
+                            <span>{fmtMoneyShort(finRoom.dailyRate)}</span>
+                          </div>
+                          <div className="po-fin-stat">
+                            <label>Maintenance (all-time)</label>
+                            <span>{fmtMoneyShort(finRoom.maintenanceCost)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {deferred.length > 0 && (
                       <div className="po-room-deferred">
                         <div className="po-room-deferred-heading">Deferred</div>

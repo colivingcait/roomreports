@@ -1205,6 +1205,393 @@ router.get('/timeseries', async (req, res) => {
   }
 });
 
+// ─── GET /api/financials/portfolio-summary ───────────────
+// Compact summary for the dashboard widget: latest month's host
+// earnings + portfolio occupancy, MoM trend, and a 6-month sparkline.
+
+router.get('/portfolio-summary', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const months = await prisma.financialUpload.findMany({
+      where: { organizationId: orgId },
+      orderBy: { earningsMonth: 'desc' },
+      take: 6,
+      select: { earningsMonth: true },
+    });
+    if (months.length === 0) {
+      return res.json({ hasData: false });
+    }
+    const latestMonth = months[0].earningsMonth;
+    const last6 = months.slice(0, 6).map((m) => m.earningsMonth).reverse();
+    const prevMonth = months[1]?.earningsMonth || null;
+
+    const records = await prisma.financialRecord.findMany({
+      where: {
+        organizationId: orgId,
+        earningsMonth: { in: last6 },
+        recordType: 'COLLECTED',
+      },
+      select: { earningsMonth: true, hostEarnings: true },
+    });
+
+    // Per-month host earnings for sparkline + latest/prev totals.
+    const hostByMonth = {};
+    for (const r of records) {
+      hostByMonth[r.earningsMonth] = (hostByMonth[r.earningsMonth] || 0) + (r.hostEarnings || 0);
+    }
+    const sparkline = last6.map((m) => ({
+      month: m,
+      host: round2(hostByMonth[m] || 0),
+    }));
+    const hostEarnings = round2(hostByMonth[latestMonth] || 0);
+    const prevHost = prevMonth ? (hostByMonth[prevMonth] || 0) : null;
+    const hostTrend = prevMonth ? deltaPct(hostEarnings, prevHost) : null;
+
+    // Portfolio occupancy for the latest month — reuse the dashboard
+    // logic by calling our occupancy machinery for that month only.
+    // To avoid duplication, we issue a sub-query for the relevant data.
+    const allCollectedHistory = await prisma.financialRecord.findMany({
+      where: { organizationId: orgId, recordType: 'COLLECTED' },
+      select: {
+        earningsMonth: true,
+        propertyAddress: true,
+        roomNumber: true,
+        roomId: true,
+        memberId: true,
+        billType: true,
+        grossAmount: true,
+        recordDate: true,
+      },
+    });
+
+    const intervalsByRoom = {};
+    const firstMonthByRoom = {};
+    {
+      const grouped = {};
+      for (const r of allCollectedHistory) {
+        if (!r.propertyAddress) continue;
+        const norm = normalizeAddress(r.propertyAddress);
+        if (!norm || norm === 'unknown') continue;
+        const memberId = (r.memberId || '').toString().trim();
+        if (!memberId) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        const k = `${norm}|${roomKey}`;
+        if (!firstMonthByRoom[k] || r.earningsMonth < firstMonthByRoom[k]) {
+          firstMonthByRoom[k] = r.earningsMonth;
+        }
+        if (!grouped[k]) grouped[k] = {};
+        if (!grouped[k][memberId]) grouped[k][memberId] = {};
+        if (!grouped[k][memberId][r.earningsMonth]) {
+          grouped[k][memberId][r.earningsMonth] = { net: 0, firstPos: null, lastPos: null };
+        }
+        const slot = grouped[k][memberId][r.earningsMonth];
+        slot.net += (r.grossAmount || 0);
+        if ((r.grossAmount || 0) > 0 && r.recordDate) {
+          const d = new Date(r.recordDate);
+          if (!isNaN(d.getTime())) {
+            if (!slot.firstPos || d < slot.firstPos) slot.firstPos = d;
+            if (!slot.lastPos || d > slot.lastPos) slot.lastPos = d;
+          }
+        }
+      }
+      for (const k of Object.keys(grouped)) {
+        const intervals = [];
+        for (const memberId of Object.keys(grouped[k])) {
+          const months2 = grouped[k][memberId];
+          let firstDate = null, lastDate = null;
+          const positiveMonths = new Set();
+          for (const month of Object.keys(months2)) {
+            const m2 = months2[month];
+            const netRounded = Math.round(m2.net * 100) / 100;
+            if (netRounded > 1) {
+              positiveMonths.add(month);
+              if (m2.firstPos && (!firstDate || m2.firstPos < firstDate)) firstDate = m2.firstPos;
+              if (m2.lastPos && (!lastDate || m2.lastPos > lastDate)) lastDate = m2.lastPos;
+            }
+          }
+          if (positiveMonths.size === 0) continue;
+          if (!firstDate) {
+            const earliest = [...positiveMonths].sort()[0];
+            const [y, mo] = earliest.split('-').map(Number);
+            firstDate = new Date(Date.UTC(y, mo - 1, 1));
+          }
+          if (!lastDate) {
+            const latest = [...positiveMonths].sort().pop();
+            const [y, mo] = latest.split('-').map(Number);
+            lastDate = new Date(Date.UTC(y, mo - 1, daysInMonth(latest)));
+          }
+          intervals.push({ memberId, firstDate, lastDate });
+        }
+        intervals.sort((a, b) => a.firstDate - b.firstDate);
+        intervalsByRoom[k] = intervals;
+      }
+    }
+
+    let totalRoomDays = 0;
+    let totalVacantDays = 0;
+    const dim = daysInMonth(latestMonth);
+    for (const k of Object.keys(intervalsByRoom)) {
+      const fm = firstMonthByRoom[k];
+      if (fm && latestMonth < fm) continue;
+      totalRoomDays += dim;
+      totalVacantDays += vacantDaysInMonthForRoom(intervalsByRoom[k], latestMonth, fm);
+    }
+    const occupancy = totalRoomDays > 0
+      ? round2(((totalRoomDays - totalVacantDays) / totalRoomDays) * 100)
+      : null;
+
+    return res.json({
+      hasData: true,
+      latestMonth,
+      hostEarnings,
+      hostEarningsTrend: hostTrend,
+      portfolioOccupancy: occupancy,
+      sparkline,
+    });
+  } catch (err) {
+    console.error('portfolio-summary error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/financials/property/:propertyId ────────────
+// Per-room financial detail for a single RoomReport property using
+// the most recent month of uploaded data.
+
+router.get('/property/:propertyId', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const property = await prisma.property.findFirst({
+      where: { id: req.params.propertyId, organizationId: orgId, deletedAt: null },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    const months = await prisma.financialUpload.findMany({
+      where: { organizationId: orgId },
+      orderBy: { earningsMonth: 'desc' },
+      take: 1,
+      select: { earningsMonth: true },
+    });
+    if (months.length === 0) return res.json({ hasData: false });
+    const latestMonth = months[0].earningsMonth;
+
+    // Resolve PadSplit address(es) that map to this property.
+    const mappings = await prisma.padSplitPropertyMapping.findMany({
+      where: { organizationId: orgId, propertyId: property.id },
+    });
+    const mappedNorms = new Set(mappings.map((m) => m.padsplitAddress));
+
+    // If no explicit mapping, fuzzy-match.
+    if (mappedNorms.size === 0) {
+      const distinct = await prisma.financialRecord.findMany({
+        where: { organizationId: orgId, propertyAddress: { not: null } },
+        select: { propertyAddress: true },
+        distinct: ['propertyAddress'],
+      });
+      let bestNorm = null, bestScore = 0;
+      for (const r of distinct) {
+        const s = matchScore(r.propertyAddress, property);
+        if (s > bestScore) { bestScore = s; bestNorm = normalizeAddress(r.propertyAddress); }
+      }
+      if (bestNorm && bestScore >= 1) mappedNorms.add(bestNorm);
+    }
+    if (mappedNorms.size === 0) return res.json({ hasData: false });
+
+    // Pull all collected history for these address(es).
+    const allHistory = await prisma.financialRecord.findMany({
+      where: {
+        organizationId: orgId,
+        recordType: 'COLLECTED',
+      },
+      select: {
+        earningsMonth: true,
+        propertyAddress: true,
+        roomNumber: true,
+        roomId: true,
+        memberId: true,
+        memberName: true,
+        billType: true,
+        grossAmount: true,
+        hostEarnings: true,
+        recordDate: true,
+      },
+    });
+    const history = allHistory.filter((r) => {
+      const norm = normalizeAddress(r.propertyAddress);
+      return mappedNorms.has(norm);
+    });
+    if (history.length === 0) return res.json({ hasData: false });
+
+    // Build per-room intervals + per-room latest-month totals.
+    const grouped = {}; // roomKey → memberId → month → slot
+    const firstMonthByRoom = {};
+    const latestMonthRoomTotals = {}; // roomKey → { gross, host, residentName, dailyRateSamples }
+    const dailyRateSums = {}; // roomKey → { sum, count } for typical daily rate
+    for (const r of history) {
+      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+      if (!roomKey) continue;
+      const memberId = (r.memberId || '').toString().trim();
+      if (!firstMonthByRoom[roomKey] || r.earningsMonth < firstMonthByRoom[roomKey]) {
+        firstMonthByRoom[roomKey] = r.earningsMonth;
+      }
+      if (memberId) {
+        if (!grouped[roomKey]) grouped[roomKey] = {};
+        if (!grouped[roomKey][memberId]) grouped[roomKey][memberId] = {};
+        if (!grouped[roomKey][memberId][r.earningsMonth]) {
+          grouped[roomKey][memberId][r.earningsMonth] = {
+            net: 0, firstPos: null, lastPos: null, name: r.memberName || null,
+          };
+        }
+        const slot = grouped[roomKey][memberId][r.earningsMonth];
+        slot.net += (r.grossAmount || 0);
+        if (r.memberName && !slot.name) slot.name = r.memberName;
+        if ((r.grossAmount || 0) > 0 && r.recordDate) {
+          const d = new Date(r.recordDate);
+          if (!isNaN(d.getTime())) {
+            if (!slot.firstPos || d < slot.firstPos) slot.firstPos = d;
+            if (!slot.lastPos || d > slot.lastPos) slot.lastPos = d;
+          }
+        }
+      }
+      if (r.earningsMonth === latestMonth) {
+        if (!latestMonthRoomTotals[roomKey]) {
+          latestMonthRoomTotals[roomKey] = { gross: 0, host: 0, residentName: null, residentLastSeen: null };
+        }
+        latestMonthRoomTotals[roomKey].gross += r.grossAmount || 0;
+        latestMonthRoomTotals[roomKey].host += r.hostEarnings || 0;
+      }
+      // Typical daily rate per room across history (membership dues only).
+      if (isDuesBillType(r.billType)) {
+        const dim2 = daysInMonth(r.earningsMonth);
+        const monthKey = `${roomKey}|${r.earningsMonth}`;
+        if (!dailyRateSums[roomKey]) dailyRateSums[roomKey] = { byMonth: {}, sumDaily: 0, count: 0 };
+        dailyRateSums[roomKey].byMonth[monthKey] = (dailyRateSums[roomKey].byMonth[monthKey] || 0) + (r.grossAmount || 0);
+      }
+    }
+    // Finalize daily-rate averages.
+    for (const roomKey of Object.keys(dailyRateSums)) {
+      const obj = dailyRateSums[roomKey];
+      let sumDaily = 0, count = 0;
+      for (const monthKey of Object.keys(obj.byMonth)) {
+        const total = obj.byMonth[monthKey];
+        if (total <= 0) continue;
+        const month = monthKey.split('|')[1];
+        sumDaily += total / daysInMonth(month);
+        count += 1;
+      }
+      obj.dailyRate = count > 0 ? sumDaily / count : 0;
+    }
+
+    // Per-room maintenance (this property, all-time + last 30d).
+    const maintAll = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: orgId,
+        propertyId: property.id,
+        deletedAt: null,
+        actualCost: { not: null },
+      },
+      select: { roomId: true, actualCost: true },
+    });
+    const maintByRoom = {};
+    for (const m of maintAll) {
+      if (!m.roomId) continue;
+      maintByRoom[m.roomId] = (maintByRoom[m.roomId] || 0) + (m.actualCost || 0);
+    }
+
+    // Build occupancy intervals + the resident name for latest month.
+    const intervalsByRoom = {};
+    const residentByRoom = {};
+    for (const roomKey of Object.keys(grouped)) {
+      const intervals = [];
+      for (const memberId of Object.keys(grouped[roomKey])) {
+        const months2 = grouped[roomKey][memberId];
+        let firstDate = null, lastDate = null;
+        let memberName = null;
+        const positiveMonths = new Set();
+        for (const month of Object.keys(months2)) {
+          const m2 = months2[month];
+          if (!memberName && m2.name) memberName = m2.name;
+          const netRounded = Math.round(m2.net * 100) / 100;
+          if (netRounded > 1) {
+            positiveMonths.add(month);
+            if (m2.firstPos && (!firstDate || m2.firstPos < firstDate)) firstDate = m2.firstPos;
+            if (m2.lastPos && (!lastDate || m2.lastPos > lastDate)) lastDate = m2.lastPos;
+            if (month === latestMonth) {
+              residentByRoom[roomKey] = memberName || (m2.name || null);
+            }
+          }
+        }
+        if (positiveMonths.size === 0) continue;
+        if (!firstDate) {
+          const earliest = [...positiveMonths].sort()[0];
+          const [y, mo] = earliest.split('-').map(Number);
+          firstDate = new Date(Date.UTC(y, mo - 1, 1));
+        }
+        if (!lastDate) {
+          const latest = [...positiveMonths].sort().pop();
+          const [y, mo] = latest.split('-').map(Number);
+          lastDate = new Date(Date.UTC(y, mo - 1, daysInMonth(latest)));
+        }
+        intervals.push({ memberId, memberName, firstDate, lastDate });
+      }
+      intervals.sort((a, b) => a.firstDate - b.firstDate);
+      intervalsByRoom[roomKey] = intervals;
+    }
+
+    // Get RoomReport's room IDs so we can join maintenance by RR room id.
+    const rrRooms = await prisma.room.findMany({
+      where: { propertyId: property.id, deletedAt: null },
+      select: { id: true, label: true },
+    });
+    // Map RR-room-label → roomId for joining (best-effort).
+    const rrRoomByLabel = {};
+    for (const r of rrRooms) {
+      const label = (r.label || '').toString().trim();
+      // Try common patterns: "Room 3", "3", "Cedar (Room 3)"
+      const m = label.match(/(?:room\s*)?(\d+)/i);
+      if (m) rrRoomByLabel[m[1]] = r.id;
+    }
+
+    const dim = daysInMonth(latestMonth);
+    const rooms = {};
+    const allRoomKeys = new Set([
+      ...Object.keys(latestMonthRoomTotals),
+      ...Object.keys(intervalsByRoom),
+      ...Object.keys(firstMonthByRoom),
+    ]);
+    for (const roomKey of allRoomKeys) {
+      const fm = firstMonthByRoom[roomKey];
+      if (fm && latestMonth < fm) continue; // room not yet onboarded
+      const totals = latestMonthRoomTotals[roomKey] || { gross: 0, host: 0 };
+      const dailyRate = dailyRateSums[roomKey]?.dailyRate || 0;
+      const vacantDays = vacantDaysInMonthForRoom(intervalsByRoom[roomKey] || [], latestMonth, fm);
+      const rrRoomId = rrRoomByLabel[roomKey];
+      const maintenanceCost = rrRoomId ? (maintByRoom[rrRoomId] || 0) : 0;
+      rooms[roomKey] = {
+        roomNumber: roomKey,
+        rrRoomId: rrRoomId || null,
+        residentName: residentByRoom[roomKey] || null,
+        gross: round2(totals.gross),
+        host: round2(totals.host),
+        vacantDays,
+        dailyRate: round2(dailyRate),
+        maintenanceCost: round2(maintenanceCost),
+      };
+    }
+
+    return res.json({
+      hasData: true,
+      latestMonth,
+      daysInMonth: dim,
+      rooms,
+    });
+  } catch (err) {
+    console.error('property financial detail error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/financials/property-summary ────────────────
 // Per-property avg-of-last-3-months stats for the Properties cards.
 

@@ -31,29 +31,23 @@ function fmtMoneyShort(n) {
 }
 
 function PropertyFinancialFooter({ summary, hasData }) {
-  if (!summary) {
-    return (
-      <div className="prop-card-financials">
-        <span className="pcf-empty">
-          {hasData ? 'No financial match yet' : 'No financial data — upload in Financials tab'}
-        </span>
-      </div>
-    );
-  }
+  // Hide entirely if no financial data uploaded yet, OR this property
+  // doesn't have a match — keeps the regular card uncluttered.
+  if (!hasData || !summary) return null;
   const netClass = summary.netMonthly > 0 ? 'pcf-value-good'
     : summary.netMonthly < 0 ? 'pcf-value-bad' : '';
   return (
     <div className="prop-card-financials">
       <div className="pcf-row">
-        <span className="pcf-label">Avg monthly revenue</span>
+        <span className="pcf-label">Avg monthly</span>
         <span className="pcf-value">{fmtMoneyShort(summary.avgRevenue)}</span>
       </div>
       <div className="pcf-row">
-        <span className="pcf-label">Avg monthly maintenance</span>
+        <span className="pcf-label">Maintenance</span>
         <span className="pcf-value">{fmtMoneyShort(summary.avgMaintenance)}</span>
       </div>
       <div className="pcf-row">
-        <span className="pcf-label">Net monthly</span>
+        <span className="pcf-label">Net</span>
         <span className={`pcf-value ${netClass}`}>{fmtMoneyShort(summary.netMonthly)}</span>
       </div>
     </div>
