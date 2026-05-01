@@ -471,6 +471,108 @@ router.delete('/:userId', requireRole('OWNER'), async (req, res) => {
   }
 });
 
+// ─── POST /api/team/:userId/reactivate — restore a deactivated user ─
+
+router.post('/:userId/reactivate', requireRole('OWNER'), async (req, res) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.params.userId,
+        organizationId: req.user.organizationId,
+        deletedAt: { not: null },
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Deactivated user not found' });
+    }
+
+    // Plan-limit check: re-adding this user must not push us past the cap.
+    const org = await prisma.organization.findUnique({
+      where: { id: req.user.organizationId },
+      select: { id: true, plan: true, isBeta: true },
+    });
+    const activeMembers = await prisma.user.count({
+      where: { organizationId: req.user.organizationId, deletedAt: null },
+    });
+    if (wouldExceed(org, 'teamMembers', activeMembers)) {
+      return res.status(403).json({
+        error: 'Team member limit reached for your plan',
+        code: 'PLAN_LIMIT_TEAM',
+        limit: planLimit(org, 'teamMembers'),
+        currentCount: activeMembers,
+      });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        customRole: true,
+        deletedAt: true,
+        propertyAssignments: {
+          include: { property: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    return res.json({ user: updated });
+  } catch (error) {
+    console.error('Reactivate user error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── DELETE /api/team/:userId/permanent — hard-delete user ──────────
+// Owner only. Removes the user record entirely along with their
+// dependent rows (sessions, property assignments, notifications,
+// notification preferences, and any pending invitations they sent).
+// Historical inspection / maintenance / event records reference the
+// user via nullable FKs or text snapshots, so they remain intact.
+
+router.delete('/:userId/permanent', requireRole('OWNER'), async (req, res) => {
+  try {
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete yourself' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.params.userId,
+        organizationId: req.user.organizationId,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'OWNER') {
+      return res.status(400).json({ error: 'Cannot delete an OWNER' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.session.deleteMany({ where: { userId: user.id } });
+      await tx.propertyAssignment.deleteMany({ where: { userId: user.id } });
+      await tx.notification.deleteMany({ where: { userId: user.id } });
+      await tx.notificationPreference.deleteMany({ where: { userId: user.id } });
+      // Pending invitations sent by this user must be revoked first since
+      // Invitation.invitedById is required (non-null).
+      await tx.invitation.deleteMany({ where: { invitedById: user.id } });
+      await tx.user.delete({ where: { id: user.id } });
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Permanent delete user error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── POST /api/team/:userId/reset-password ──────────────
 
 router.post('/:userId/reset-password', requireRole('OWNER'), async (req, res) => {
