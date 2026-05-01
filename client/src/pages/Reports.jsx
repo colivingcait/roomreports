@@ -714,6 +714,368 @@ function ViolationReports() {
   );
 }
 
+// ─── Financial Reports tab ─────────────────────────────
+
+const FIN_PRESETS = [
+  { value: 'last3', label: 'Last 3 months' },
+  { value: 'last6', label: 'Last 6 months' },
+  { value: 'last12', label: 'Last 12 months' },
+  { value: 'all', label: 'All time' },
+  { value: 'custom', label: 'Custom range' },
+];
+
+function fmtFinMoney(n) {
+  if (n == null || isNaN(n)) return '$0.00';
+  return Number(n).toLocaleString('en-US', {
+    style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+function fmtFinMonth(s) {
+  if (!s) return '';
+  const [y, m] = s.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function applyPreset(preset, allMonths) {
+  if (!allMonths || allMonths.length === 0) return { from: '', to: '' };
+  const sorted = [...allMonths].sort();
+  const last = sorted[sorted.length - 1];
+  const trimmed = (n) => sorted.slice(Math.max(0, sorted.length - n));
+  if (preset === 'last3')  { const arr = trimmed(3);  return { from: arr[0], to: last }; }
+  if (preset === 'last6')  { const arr = trimmed(6);  return { from: arr[0], to: last }; }
+  if (preset === 'last12') { const arr = trimmed(12); return { from: arr[0], to: last }; }
+  if (preset === 'all')    return { from: sorted[0], to: last };
+  return { from: '', to: '' }; // custom
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((r) =>
+    r.map((cell) => {
+      const s = cell == null ? '' : String(cell);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(','),
+  ).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function FinancialReports() {
+  const [pnl, setPnl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [propertyId, setPropertyId] = useState('all');
+  const [preset, setPreset] = useState('last6');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [allMonths, setAllMonths] = useState([]);
+  const [sortBy, setSortBy] = useState('month');
+  const [sortDir, setSortDir] = useState('desc');
+
+  // Bootstrap: fetch with no filter to learn allMonths.
+  useEffect(() => {
+    api('/api/financials/pnl')
+      .then((d) => {
+        setAllMonths(d.allMonths || []);
+        if ((d.allMonths || []).length > 0 && !from && !to) {
+          const r = applyPreset('last6', d.allMonths);
+          setFrom(r.from); setTo(r.to);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError('');
+    const qs = new URLSearchParams();
+    if (propertyId) qs.set('propertyId', propertyId);
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    api(`/api/financials/pnl?${qs.toString()}`)
+      .then(setPnl)
+      .catch((err) => setError(err.message || 'Failed to load'))
+      .finally(() => setLoading(false));
+  }, [propertyId, from, to]);
+
+  useEffect(() => {
+    if (allMonths.length > 0 && from && to) load();
+  }, [load, allMonths.length, from, to]);
+
+  const onPresetChange = (val) => {
+    setPreset(val);
+    if (val !== 'custom') {
+      const r = applyPreset(val, allMonths);
+      setFrom(r.from); setTo(r.to);
+    }
+  };
+
+  const sortedRows = useMemo(() => {
+    if (!pnl?.byMonth) return [];
+    const rows = [...pnl.byMonth];
+    rows.sort((a, b) => {
+      const av = a[sortBy], bv = b[sortBy];
+      if (typeof av === 'number' && typeof bv === 'number') {
+        return sortDir === 'asc' ? av - bv : bv - av;
+      }
+      const r = String(av || '').localeCompare(String(bv || ''));
+      return sortDir === 'asc' ? r : -r;
+    });
+    return rows;
+  }, [pnl, sortBy, sortDir]);
+
+  const totals = useMemo(() => {
+    if (!pnl?.byMonth) return null;
+    const t = pnl.byMonth.reduce((acc, m) => {
+      acc.gross += m.gross; acc.bookingFees += m.bookingFees;
+      acc.serviceFees += m.serviceFees; acc.transactionFees += m.transactionFees;
+      acc.totalFees += m.totalFees; acc.host += m.hostEarnings;
+      acc.maint += m.maintenance; acc.netPL += m.netPL;
+      acc.turnovers += m.turnovers;
+      return acc;
+    }, { gross: 0, bookingFees: 0, serviceFees: 0, transactionFees: 0, totalFees: 0, host: 0, maint: 0, netPL: 0, turnovers: 0 });
+    const valid = pnl.byMonth.filter((m) => m.occupancy != null);
+    t.occupancy = valid.length > 0
+      ? valid.reduce((s, m) => s + m.occupancy, 0) / valid.length
+      : null;
+    return t;
+  }, [pnl]);
+
+  const handleSort = (key) => {
+    if (sortBy === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(key); setSortDir('desc'); }
+  };
+
+  const headerCell = (key, label, align = 'right') => (
+    <th
+      className={sortBy === key ? 'fin-th-sorted' : ''}
+      onClick={() => handleSort(key)}
+      style={{ cursor: 'pointer', textAlign: align }}
+    >
+      {label} {sortBy === key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+    </th>
+  );
+
+  const handleCsv = () => {
+    const head = ['Month', 'Gross Collected', 'Booking Fees', 'Service Fees', 'Transaction Fees', 'Total Fees', 'Host Earnings', 'Maintenance', 'Net P&L', 'Occupancy %', 'Turnovers'];
+    const rows = sortedRows.map((m) => [
+      fmtFinMonth(m.month), m.gross, m.bookingFees, m.serviceFees, m.transactionFees,
+      m.totalFees, m.hostEarnings, m.maintenance, m.netPL,
+      m.occupancy != null ? m.occupancy.toFixed(1) : '', m.turnovers,
+    ]);
+    if (totals) {
+      rows.push([
+        'TOTAL', totals.gross, totals.bookingFees, totals.serviceFees, totals.transactionFees,
+        totals.totalFees, totals.host, totals.maint, totals.netPL,
+        totals.occupancy != null ? totals.occupancy.toFixed(1) : '', totals.turnovers,
+      ]);
+    }
+    downloadCsv(`financial-pnl-${propertyId}-${Date.now()}.csv`, [head, ...rows]);
+  };
+  const handlePdf = () => {
+    const qs = new URLSearchParams();
+    if (propertyId) qs.set('propertyId', propertyId);
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    window.open(`/api/financials/report.pdf?${qs.toString()}`, '_blank');
+  };
+
+  if (loading && !pnl) return <div className="page-loading">Loading…</div>;
+  if (!loading && pnl && !pnl.hasData) {
+    return (
+      <div className="empty-state">
+        <p>No financial data uploaded yet.</p>
+        <a href="/financials" className="btn-primary-sm">Upload PadSplit reports</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="reports-tab-content">
+      {/* Filter bar */}
+      <div className="report-filter-bar" style={{ flexWrap: 'wrap' }}>
+        <select
+          className="filter-select"
+          value={propertyId}
+          onChange={(e) => setPropertyId(e.target.value)}
+        >
+          <option value="all">All properties</option>
+          {(pnl?.properties || []).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <select
+          className="filter-select"
+          value={preset}
+          onChange={(e) => onPresetChange(e.target.value)}
+        >
+          {FIN_PRESETS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        {preset === 'custom' && (
+          <>
+            <select className="filter-select" value={from} onChange={(e) => setFrom(e.target.value)}>
+              <option value="">From…</option>
+              {allMonths.map((m) => (
+                <option key={m} value={m}>{fmtFinMonth(m)}</option>
+              ))}
+            </select>
+            <select className="filter-select" value={to} onChange={(e) => setTo(e.target.value)}>
+              <option value="">To…</option>
+              {allMonths.map((m) => (
+                <option key={m} value={m}>{fmtFinMonth(m)}</option>
+              ))}
+            </select>
+          </>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+          <button className="btn-secondary-sm" onClick={handleCsv}>Download CSV</button>
+          <button className="btn-primary-sm" onClick={handlePdf}>Download PDF</button>
+        </div>
+      </div>
+
+      {error && <div className="auth-error">{error}</div>}
+
+      {/* Monthly P&L table */}
+      <div className="reports-tab-header">
+        <span className="reports-tab-count">
+          {sortedRows.length} month{sortedRows.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div className="fin-table-wrap">
+        <table className="fin-table">
+          <thead>
+            <tr>
+              {headerCell('month', 'Month', 'left')}
+              {headerCell('gross', 'Gross collected')}
+              {headerCell('bookingFees', 'Booking fees')}
+              {headerCell('serviceFees', 'Service fees')}
+              {headerCell('transactionFees', 'Txn fees')}
+              {headerCell('totalFees', 'Total fees')}
+              {headerCell('hostEarnings', 'Host earnings')}
+              {headerCell('maintenance', 'Maintenance')}
+              {headerCell('netPL', 'Net P&L')}
+              {headerCell('occupancy', 'Occupancy %')}
+              {headerCell('turnovers', 'Turnovers')}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.length === 0 ? (
+              <tr><td colSpan="11" className="fin-empty">No months in range.</td></tr>
+            ) : sortedRows.map((m) => {
+              const tone = m.netPL > 0 ? 'good' : m.netPL < 0 ? 'bad' : 'warn';
+              return (
+                <tr key={m.month}>
+                  <td>{fmtFinMonth(m.month)}</td>
+                  <td>{fmtFinMoney(m.gross)}</td>
+                  <td>{fmtFinMoney(m.bookingFees)}</td>
+                  <td>{fmtFinMoney(m.serviceFees)}</td>
+                  <td>{fmtFinMoney(m.transactionFees)}</td>
+                  <td>{fmtFinMoney(m.totalFees)}</td>
+                  <td>{fmtFinMoney(m.hostEarnings)}</td>
+                  <td>{fmtFinMoney(m.maintenance)}</td>
+                  <td className={`fin-pl fin-pl-${tone}`}>{fmtFinMoney(m.netPL)}</td>
+                  <td>{m.occupancy != null ? `${m.occupancy.toFixed(1)}%` : '—'}</td>
+                  <td>{m.turnovers}</td>
+                </tr>
+              );
+            })}
+            {totals && sortedRows.length > 0 && (
+              <tr className="fin-totals-row">
+                <td><strong>Total</strong></td>
+                <td><strong>{fmtFinMoney(totals.gross)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.bookingFees)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.serviceFees)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.transactionFees)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.totalFees)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.host)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.maint)}</strong></td>
+                <td><strong>{fmtFinMoney(totals.netPL)}</strong></td>
+                <td><strong>{totals.occupancy != null ? `${totals.occupancy.toFixed(1)}%` : '—'}</strong></td>
+                <td><strong>{totals.turnovers}</strong></td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Per-property breakdown */}
+      {propertyId === 'all' && pnl?.byProperty?.length > 0 && (
+        <>
+          <h2 className="md-section-title" style={{ marginTop: '1.5rem' }}>Per-property P&L</h2>
+          <div className="fin-table-wrap">
+            <table className="fin-table">
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th style={{ textAlign: 'right' }}>Gross collected</th>
+                  <th style={{ textAlign: 'right' }}>Total fees</th>
+                  <th style={{ textAlign: 'right' }}>Host earnings</th>
+                  <th style={{ textAlign: 'right' }}>Maintenance</th>
+                  <th style={{ textAlign: 'right' }}>Net P&L</th>
+                  <th style={{ textAlign: 'right' }}>Occupancy %</th>
+                  <th style={{ textAlign: 'right' }}>Turnovers</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pnl.byProperty.map((p) => {
+                  const tone = p.netPL > 0 ? 'good' : p.netPL < 0 ? 'bad' : 'warn';
+                  return (
+                    <tr key={p.propertyId}>
+                      <td>{p.propertyName}</td>
+                      <td>{fmtFinMoney(p.gross)}</td>
+                      <td>{fmtFinMoney(p.totalFees)}</td>
+                      <td>{fmtFinMoney(p.hostEarnings)}</td>
+                      <td>{fmtFinMoney(p.maintenance)}</td>
+                      <td className={`fin-pl fin-pl-${tone}`}>{fmtFinMoney(p.netPL)}</td>
+                      <td>{p.occupancy != null ? `${p.occupancy.toFixed(1)}%` : '—'}</td>
+                      <td>{p.turnovers}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Per-room breakdown when a single property is selected */}
+      {propertyId !== 'all' && pnl?.rooms?.length > 0 && (
+        <>
+          <h2 className="md-section-title" style={{ marginTop: '1.5rem' }}>Room-level P&L</h2>
+          <div className="fin-table-wrap">
+            <table className="fin-table">
+              <thead>
+                <tr>
+                  <th>Room</th>
+                  <th style={{ textAlign: 'right' }}>Gross collected</th>
+                  <th style={{ textAlign: 'right' }}>Total fees</th>
+                  <th style={{ textAlign: 'right' }}>Host earnings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pnl.rooms.map((r) => (
+                  <tr key={r.roomNumber}>
+                    <td>{r.roomNumber}</td>
+                    <td>{fmtFinMoney(r.gross)}</td>
+                    <td>{fmtFinMoney(r.totalFees)}</td>
+                    <td>{fmtFinMoney(r.hostEarnings)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Reports page (tabs) ──────────────────────────
 
 export default function Reports() {
@@ -747,10 +1109,17 @@ export default function Reports() {
         >
           Lease Violations {!canViolations && <LockGlyph />}
         </button>
+        <button
+          className={`reports-tab ${tab === 'financial' ? 'active' : ''}`}
+          onClick={() => setTab('financial')}
+        >
+          Financial Reports
+        </button>
       </div>
       {tab === 'inspections' && <InspectionReports />}
       {tab === 'maintenance' && <MaintenanceReports />}
       {tab === 'violations' && <ViolationReports />}
+      {tab === 'financial' && <FinancialReports />}
     </div>
   );
 }

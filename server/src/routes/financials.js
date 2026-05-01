@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import PDFDocument from 'pdfkit';
 import prisma from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
@@ -1355,9 +1356,537 @@ router.get('/portfolio-summary', async (req, res) => {
   }
 });
 
+// ─── GET /api/financials/pnl ─────────────────────────────
+// Monthly P&L table for the Financial Reports tab. Optional filters:
+//   ?from=YYYY-MM  ?to=YYYY-MM  ?propertyId=<id|all>
+// Returns per-month aggregates + per-property breakdown for the range.
+// Per-room rows included when a single property is selected.
+
+router.get('/pnl', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const propertyIdFilter = req.query.propertyId && req.query.propertyId !== 'all'
+      ? req.query.propertyId : null;
+    const fromMonth = req.query.from && /^\d{4}-\d{2}$/.test(req.query.from) ? req.query.from : null;
+    const toMonth = req.query.to && /^\d{4}-\d{2}$/.test(req.query.to) ? req.query.to : null;
+
+    const [allMonthsRows, mappings, properties, allCollectedHistory, maintenance] = await Promise.all([
+      prisma.financialUpload.findMany({
+        where: { organizationId: orgId },
+        orderBy: { earningsMonth: 'desc' },
+        select: { earningsMonth: true },
+      }),
+      prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
+      prisma.property.findMany({
+        where: { organizationId: orgId, deletedAt: null },
+        select: { id: true, name: true, address: true },
+      }),
+      prisma.financialRecord.findMany({
+        where: { organizationId: orgId, recordType: 'COLLECTED' },
+        select: {
+          earningsMonth: true,
+          propertyAddress: true,
+          roomNumber: true,
+          roomId: true,
+          memberId: true,
+          memberName: true,
+          billType: true,
+          grossAmount: true,
+          bookingFee: true,
+          serviceFee: true,
+          transactionFee: true,
+          hostEarnings: true,
+          recordDate: true,
+        },
+      }),
+      prisma.maintenanceItem.findMany({
+        where: { organizationId: orgId, deletedAt: null, actualCost: { not: null } },
+        select: { propertyId: true, actualCost: true, createdAt: true },
+      }),
+    ]);
+
+    const allMonths = allMonthsRows.map((m) => m.earningsMonth).sort();
+    if (allMonths.length === 0) {
+      return res.json({
+        hasData: false, months: [], byMonth: [], byProperty: [], rooms: [],
+        properties: properties.map((p) => ({ id: p.id, name: p.name })),
+      });
+    }
+    const months = allMonths.filter((m) => {
+      if (fromMonth && m < fromMonth) return false;
+      if (toMonth && m > toMonth) return false;
+      return true;
+    });
+
+    const mappingByAddr = {};
+    for (const m of mappings) mappingByAddr[m.padsplitAddress] = m.propertyId;
+    // Auto-fuzzy-match unmapped addresses.
+    const distinctAddrs = [...new Set(allCollectedHistory.map((r) => r.propertyAddress).filter(Boolean))];
+    for (const addr of distinctAddrs) {
+      const norm = normalizeAddress(addr);
+      if (mappingByAddr[norm]) continue;
+      let bestId = null, bestScore = 0;
+      for (const p of properties) {
+        const s = matchScore(addr, p);
+        if (s > bestScore) { bestScore = s; bestId = p.id; }
+      }
+      if (bestScore >= 1 && bestId) mappingByAddr[norm] = bestId;
+    }
+    const propertyById = {};
+    for (const p of properties) propertyById[p.id] = p;
+
+    // Build per-room occupancy intervals + first month (used for
+    // occupancy % and turnovers per month).
+    const intervalsByRoom = {};
+    const firstMonthByRoom = {};
+    const allRoomsByPropId = {};
+    {
+      const grouped = {};
+      for (const r of allCollectedHistory) {
+        if (!r.propertyAddress) continue;
+        const norm = normalizeAddress(r.propertyAddress);
+        if (!norm || norm === 'unknown') continue;
+        const memberId = (r.memberId || '').toString().trim();
+        if (!memberId) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        const k = `${norm}|${roomKey}`;
+        if (!firstMonthByRoom[k] || r.earningsMonth < firstMonthByRoom[k]) {
+          firstMonthByRoom[k] = r.earningsMonth;
+        }
+        const propId = mappingByAddr[norm] || norm;
+        if (!allRoomsByPropId[propId]) allRoomsByPropId[propId] = new Set();
+        allRoomsByPropId[propId].add(k);
+        if (!grouped[k]) grouped[k] = {};
+        if (!grouped[k][memberId]) grouped[k][memberId] = {};
+        if (!grouped[k][memberId][r.earningsMonth]) {
+          grouped[k][memberId][r.earningsMonth] = { net: 0, firstPos: null, lastPos: null };
+        }
+        const slot = grouped[k][memberId][r.earningsMonth];
+        slot.net += (r.grossAmount || 0);
+        if ((r.grossAmount || 0) > 0 && r.recordDate) {
+          const d = new Date(r.recordDate);
+          if (!isNaN(d.getTime())) {
+            if (!slot.firstPos || d < slot.firstPos) slot.firstPos = d;
+            if (!slot.lastPos || d > slot.lastPos) slot.lastPos = d;
+          }
+        }
+      }
+      for (const k of Object.keys(grouped)) {
+        const intervals = [];
+        for (const memberId of Object.keys(grouped[k])) {
+          const ms = grouped[k][memberId];
+          let firstDate = null, lastDate = null;
+          const positiveMonths = new Set();
+          for (const month of Object.keys(ms)) {
+            const m2 = ms[month];
+            const netRounded = Math.round(m2.net * 100) / 100;
+            if (netRounded > 1) {
+              positiveMonths.add(month);
+              if (m2.firstPos && (!firstDate || m2.firstPos < firstDate)) firstDate = m2.firstPos;
+              if (m2.lastPos && (!lastDate || m2.lastPos > lastDate)) lastDate = m2.lastPos;
+            }
+          }
+          if (positiveMonths.size === 0) continue;
+          if (!firstDate) {
+            const earliest = [...positiveMonths].sort()[0];
+            const [y, mo] = earliest.split('-').map(Number);
+            firstDate = new Date(Date.UTC(y, mo - 1, 1));
+          }
+          if (!lastDate) {
+            const latest = [...positiveMonths].sort().pop();
+            const [y, mo] = latest.split('-').map(Number);
+            lastDate = new Date(Date.UTC(y, mo - 1, daysInMonth(latest)));
+          }
+          intervals.push({ memberId, firstDate, lastDate });
+        }
+        intervals.sort((a, b) => a.firstDate - b.firstDate);
+        intervalsByRoom[k] = intervals;
+      }
+    }
+
+    // Filter records to the property and date range.
+    function recordPropertyId(r) {
+      const norm = normalizeAddress(r.propertyAddress);
+      return mappingByAddr[norm] || null;
+    }
+    const filteredRecords = allCollectedHistory.filter((r) => {
+      if (!months.includes(r.earningsMonth)) return false;
+      if (propertyIdFilter && recordPropertyId(r) !== propertyIdFilter) return false;
+      return true;
+    });
+
+    // Per-month aggregates (across selected properties).
+    const byMonth = months.map((month) => {
+      let gross = 0, booking = 0, service = 0, txn = 0, host = 0;
+      for (const r of filteredRecords) {
+        if (r.earningsMonth !== month) continue;
+        gross += r.grossAmount || 0;
+        booking += Math.abs(r.bookingFee || 0);
+        service += Math.abs(r.serviceFee || 0);
+        txn += Math.abs(r.transactionFee || 0);
+        host += r.hostEarnings || 0;
+      }
+      const dim = daysInMonth(month);
+      // Occupancy + turnovers across rooms in scope.
+      const propIdsInScope = propertyIdFilter
+        ? [propertyIdFilter]
+        : Object.keys(allRoomsByPropId);
+      let totalDays = 0, vacantDays = 0, turnovers = 0;
+      for (const pid of propIdsInScope) {
+        const roomKeys = [...(allRoomsByPropId[pid] || [])];
+        for (const k of roomKeys) {
+          const fm = firstMonthByRoom[k];
+          if (fm && month < fm) continue;
+          totalDays += dim;
+          vacantDays += vacantDaysInMonthForRoom(intervalsByRoom[k] || [], month, fm);
+          turnovers += turnoversInMonthForRoom(intervalsByRoom[k] || [], month);
+        }
+      }
+      const occupancy = totalDays > 0 ? round2(((totalDays - vacantDays) / totalDays) * 100) : null;
+      // Maintenance for the month, scoped to property if filtering.
+      let maint = 0;
+      for (const m of maintenance) {
+        if (!m.createdAt) continue;
+        const d = new Date(m.createdAt);
+        if (isNaN(d)) continue;
+        const mkey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        if (mkey !== month) continue;
+        if (propertyIdFilter && m.propertyId !== propertyIdFilter) continue;
+        maint += m.actualCost || 0;
+      }
+      const totalFees = booking + service + txn;
+      return {
+        month,
+        gross: round2(gross),
+        bookingFees: round2(booking),
+        serviceFees: round2(service),
+        transactionFees: round2(txn),
+        totalFees: round2(totalFees),
+        hostEarnings: round2(host),
+        maintenance: round2(maint),
+        netPL: round2(host - maint),
+        occupancy,
+        turnovers,
+      };
+    });
+
+    // Per-property aggregates across the selected range.
+    const propIdsInPlay = propertyIdFilter
+      ? [propertyIdFilter]
+      : Object.keys(allRoomsByPropId).filter((id) => propertyById[id]);
+    const byProperty = propIdsInPlay.map((pid) => {
+      const propRecords = filteredRecords.filter((r) => recordPropertyId(r) === pid);
+      let gross = 0, booking = 0, service = 0, txn = 0, host = 0;
+      for (const r of propRecords) {
+        gross += r.grossAmount || 0;
+        booking += Math.abs(r.bookingFee || 0);
+        service += Math.abs(r.serviceFee || 0);
+        txn += Math.abs(r.transactionFee || 0);
+        host += r.hostEarnings || 0;
+      }
+      // Occupancy / turnovers across rooms in this property over months.
+      const roomKeys = [...(allRoomsByPropId[pid] || [])];
+      let totalDays = 0, vacantDays = 0, turnovers = 0;
+      for (const m of months) {
+        const dim = daysInMonth(m);
+        for (const k of roomKeys) {
+          const fm = firstMonthByRoom[k];
+          if (fm && m < fm) continue;
+          totalDays += dim;
+          vacantDays += vacantDaysInMonthForRoom(intervalsByRoom[k] || [], m, fm);
+          turnovers += turnoversInMonthForRoom(intervalsByRoom[k] || [], m);
+        }
+      }
+      const occupancy = totalDays > 0 ? round2(((totalDays - vacantDays) / totalDays) * 100) : null;
+      let maint = 0;
+      for (const mi of maintenance) {
+        if (mi.propertyId !== pid) continue;
+        if (!mi.createdAt) continue;
+        const d = new Date(mi.createdAt);
+        if (isNaN(d)) continue;
+        const mkey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        if (!months.includes(mkey)) continue;
+        maint += mi.actualCost || 0;
+      }
+      const totalFees = booking + service + txn;
+      return {
+        propertyId: pid,
+        propertyName: propertyById[pid]?.name || pid,
+        gross: round2(gross),
+        bookingFees: round2(booking),
+        serviceFees: round2(service),
+        transactionFees: round2(txn),
+        totalFees: round2(totalFees),
+        hostEarnings: round2(host),
+        maintenance: round2(maint),
+        netPL: round2(host - maint),
+        occupancy,
+        turnovers,
+      };
+    });
+
+    // Per-room rows when a single property is selected.
+    let rooms = [];
+    if (propertyIdFilter) {
+      const roomTotals = {};
+      for (const r of filteredRecords) {
+        const pid = recordPropertyId(r);
+        if (pid !== propertyIdFilter) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        if (!roomTotals[roomKey]) {
+          roomTotals[roomKey] = {
+            roomNumber: roomKey, gross: 0, bookingFees: 0, serviceFees: 0,
+            transactionFees: 0, hostEarnings: 0,
+          };
+        }
+        const t = roomTotals[roomKey];
+        t.gross += r.grossAmount || 0;
+        t.bookingFees += Math.abs(r.bookingFee || 0);
+        t.serviceFees += Math.abs(r.serviceFee || 0);
+        t.transactionFees += Math.abs(r.transactionFee || 0);
+        t.hostEarnings += r.hostEarnings || 0;
+      }
+      rooms = Object.values(roomTotals).map((t) => ({
+        roomNumber: t.roomNumber,
+        gross: round2(t.gross),
+        bookingFees: round2(t.bookingFees),
+        serviceFees: round2(t.serviceFees),
+        transactionFees: round2(t.transactionFees),
+        totalFees: round2(t.bookingFees + t.serviceFees + t.transactionFees),
+        hostEarnings: round2(t.hostEarnings),
+      }));
+      rooms.sort((a, b) => {
+        const an = parseInt(a.roomNumber, 10);
+        const bn = parseInt(b.roomNumber, 10);
+        if (!isNaN(an) && !isNaN(bn) && an !== bn) return an - bn;
+        return String(a.roomNumber).localeCompare(String(b.roomNumber));
+      });
+    }
+
+    return res.json({
+      hasData: true,
+      months,
+      allMonths,
+      byMonth,
+      byProperty,
+      rooms,
+      properties: properties.map((p) => ({ id: p.id, name: p.name })),
+    });
+  } catch (err) {
+    console.error('financial pnl error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/financials/report.pdf ──────────────────────
+// Branded multi-page PDF version of the P&L report.
+
+router.get('/report.pdf', async (req, res) => {
+  try {
+    // Reuse the JSON endpoint by calling its handler logic via fetch
+    // would be silly — reuse the data by inlining a minimal repeat.
+    // We'll just hit the same dataset using existing helpers.
+    const orgId = req.user.organizationId;
+    const propertyIdFilter = req.query.propertyId && req.query.propertyId !== 'all'
+      ? req.query.propertyId : null;
+    const fromMonth = req.query.from && /^\d{4}-\d{2}$/.test(req.query.from) ? req.query.from : null;
+    const toMonth = req.query.to && /^\d{4}-\d{2}$/.test(req.query.to) ? req.query.to : null;
+
+    // Re-use the /pnl endpoint via internal call for data parity.
+    const pnlReq = { user: req.user, query: { propertyId: propertyIdFilter || 'all', from: fromMonth || undefined, to: toMonth || undefined } };
+    let pnl = null;
+    await new Promise((resolve) => {
+      const fakeRes = {
+        json(payload) { pnl = payload; resolve(); },
+        status() { return this; },
+      };
+      // Look up the route handler from router.stack.
+      const layer = router.stack.find((l) => l.route && l.route.path === '/pnl' && l.route.methods.get);
+      if (!layer) return resolve();
+      layer.route.stack[0].handle(pnlReq, fakeRes, () => resolve());
+    });
+    if (!pnl || !pnl.hasData) {
+      return res.status(400).json({ error: 'No financial data available' });
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { name: true },
+    });
+    const propLabel = propertyIdFilter
+      ? (pnl.byProperty.find((p) => p.propertyId === propertyIdFilter)?.propertyName || 'Property')
+      : 'All properties';
+    const dateLabel = pnl.months.length > 0
+      ? `${monthLabel(pnl.months[0])} – ${monthLabel(pnl.months[pnl.months.length - 1])}`
+      : '—';
+
+    const filename = `financial-report-${propLabel.replace(/[^A-Za-z0-9]/g, '_')}-${Date.now()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+    doc.pipe(res);
+
+    const SAGE = '#6B8F71';
+    const TEXT = '#2C2C2C';
+    const MUTED = '#8A8580';
+
+    function drawHeader(doc) {
+      // Sage green bar at the top
+      doc.save();
+      doc.rect(0, 0, doc.page.width, 36).fill(SAGE);
+      doc.fillColor('#fff').font('Helvetica-Bold').fontSize(14)
+        .text('RoomReport', 48, 11, { width: doc.page.width - 96, align: 'left' });
+      doc.fontSize(10).font('Helvetica')
+        .text(org?.name || '', 48, 13, { width: doc.page.width - 96, align: 'right' });
+      doc.restore();
+      doc.y = 60;
+    }
+
+    function fmtMoney(n) {
+      if (n == null || isNaN(n)) return '$0';
+      return Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+    }
+
+    // ── Page 1: Portfolio Summary ──
+    drawHeader(doc);
+    doc.fillColor(TEXT).font('Helvetica-Bold').fontSize(20).text('Financial report');
+    doc.moveDown(0.2);
+    doc.fontSize(11).font('Helvetica').fillColor(MUTED).text(`${propLabel} · ${dateLabel}`);
+    doc.moveDown(1);
+
+    // Portfolio totals (sum byMonth)
+    const totals = pnl.byMonth.reduce((acc, m) => {
+      acc.gross += m.gross; acc.totalFees += m.totalFees;
+      acc.host += m.hostEarnings; acc.maint += m.maintenance;
+      acc.netPL += m.netPL; acc.turnovers += m.turnovers;
+      return acc;
+    }, { gross: 0, totalFees: 0, host: 0, maint: 0, netPL: 0, turnovers: 0 });
+    const avgOccupancy = (() => {
+      const valid = pnl.byMonth.filter((m) => m.occupancy != null);
+      if (!valid.length) return null;
+      return valid.reduce((s, m) => s + m.occupancy, 0) / valid.length;
+    })();
+
+    const summaryRows = [
+      ['Gross collected',   fmtMoney(totals.gross)],
+      ['Platform fees',     fmtMoney(totals.totalFees)],
+      ['Host earnings',     fmtMoney(totals.host)],
+      ['Maintenance costs', fmtMoney(totals.maint)],
+      ['Net P&L',           fmtMoney(totals.netPL)],
+      ['Avg occupancy',     avgOccupancy != null ? `${avgOccupancy.toFixed(1)}%` : '—'],
+      ['Turnovers',         String(totals.turnovers)],
+    ];
+    doc.fillColor(TEXT).font('Helvetica-Bold').fontSize(12).text('Portfolio summary');
+    doc.moveDown(0.4);
+    doc.font('Helvetica').fontSize(11);
+    for (const [k, v] of summaryRows) {
+      doc.text(k, { continued: true, width: 220 });
+      doc.fillColor(TEXT).text(v, { align: 'right' });
+      doc.fillColor(TEXT);
+    }
+    doc.moveDown(1);
+
+    // Monthly breakdown table
+    doc.font('Helvetica-Bold').fontSize(12).text('Monthly breakdown');
+    doc.moveDown(0.4);
+    const cols = ['Month', 'Gross', 'Fees', 'Host', 'Maint', 'Net P&L', 'Occ', 'Turn'];
+    const colW = [70, 70, 60, 70, 60, 70, 50, 40];
+    let x = doc.x;
+    let y = doc.y;
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(MUTED);
+    for (let i = 0; i < cols.length; i++) {
+      doc.text(cols[i], x + colW.slice(0, i).reduce((a, b) => a + b, 0), y, { width: colW[i], align: i === 0 ? 'left' : 'right' });
+    }
+    y += 16;
+    doc.font('Helvetica').fontSize(10).fillColor(TEXT);
+    for (const m of pnl.byMonth) {
+      const row = [
+        monthLabel(m.month), fmtMoney(m.gross), fmtMoney(m.totalFees),
+        fmtMoney(m.hostEarnings), fmtMoney(m.maintenance), fmtMoney(m.netPL),
+        m.occupancy != null ? `${m.occupancy.toFixed(1)}%` : '—',
+        String(m.turnovers),
+      ];
+      for (let i = 0; i < row.length; i++) {
+        doc.text(row[i], x + colW.slice(0, i).reduce((a, b) => a + b, 0), y, { width: colW[i], align: i === 0 ? 'left' : 'right' });
+      }
+      y += 14;
+      if (y > doc.page.height - 60) { doc.addPage(); drawHeader(doc); y = doc.y; }
+    }
+
+    // ── Pages per property ──
+    const propsToRender = propertyIdFilter
+      ? pnl.byProperty.filter((p) => p.propertyId === propertyIdFilter)
+      : pnl.byProperty;
+    for (const p of propsToRender) {
+      doc.addPage();
+      drawHeader(doc);
+      doc.fillColor(TEXT).font('Helvetica-Bold').fontSize(18).text(p.propertyName);
+      doc.moveDown(0.2);
+      doc.font('Helvetica').fontSize(11).fillColor(MUTED).text(dateLabel);
+      doc.moveDown(0.8);
+
+      const propRows = [
+        ['Gross collected',   fmtMoney(p.gross)],
+        ['Platform fees',     fmtMoney(p.totalFees)],
+        ['Host earnings',     fmtMoney(p.hostEarnings)],
+        ['Maintenance',       fmtMoney(p.maintenance)],
+        ['Net P&L',           fmtMoney(p.netPL)],
+        ['Occupancy',         p.occupancy != null ? `${p.occupancy.toFixed(1)}%` : '—'],
+        ['Turnovers',         String(p.turnovers)],
+      ];
+      doc.font('Helvetica').fontSize(11).fillColor(TEXT);
+      for (const [k, v] of propRows) {
+        doc.text(k, { continued: true, width: 220 });
+        doc.text(v, { align: 'right' });
+      }
+
+      // Per-room when this is a single-property report.
+      if (propertyIdFilter && pnl.rooms.length > 0) {
+        doc.moveDown(0.8);
+        doc.font('Helvetica-Bold').fontSize(12).text('Room-level detail');
+        doc.moveDown(0.3);
+        const rcols = ['Room', 'Gross', 'Fees', 'Host'];
+        const rcolW = [80, 100, 100, 100];
+        let rx = doc.x, ry = doc.y;
+        doc.font('Helvetica-Bold').fontSize(10).fillColor(MUTED);
+        for (let i = 0; i < rcols.length; i++) {
+          doc.text(rcols[i], rx + rcolW.slice(0, i).reduce((a, b) => a + b, 0), ry,
+            { width: rcolW[i], align: i === 0 ? 'left' : 'right' });
+        }
+        ry += 16;
+        doc.font('Helvetica').fontSize(10).fillColor(TEXT);
+        for (const r of pnl.rooms) {
+          const row = [
+            r.roomNumber, fmtMoney(r.gross), fmtMoney(r.totalFees), fmtMoney(r.hostEarnings),
+          ];
+          for (let i = 0; i < row.length; i++) {
+            doc.text(row[i], rx + rcolW.slice(0, i).reduce((a, b) => a + b, 0), ry,
+              { width: rcolW[i], align: i === 0 ? 'left' : 'right' });
+          }
+          ry += 14;
+          if (ry > doc.page.height - 60) { doc.addPage(); drawHeader(doc); ry = doc.y; }
+        }
+      }
+    }
+
+    doc.end();
+  } catch (err) {
+    console.error('pnl pdf error:', err);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+});
+
+function monthLabel(s) {
+  if (!s) return '';
+  const [y, m] = s.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
 // ─── GET /api/financials/property/:propertyId ────────────
-// Per-room financial detail for a single RoomReport property using
-// the most recent month of uploaded data.
 
 router.get('/property/:propertyId', async (req, res) => {
   try {
