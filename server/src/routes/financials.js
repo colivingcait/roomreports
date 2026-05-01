@@ -345,7 +345,7 @@ router.get('/dashboard', async (req, res) => {
         }
       }
     }
-    const totalUncollected = Math.max(0, totalBilledDues - totalCollectedDues);
+    const totalVacancy = Math.max(0, totalBilledDues - totalCollectedDues);
 
     // Per-property + per-room breakdown — keyed by the PadSplit address
     // (normalized). We don't require a RoomReport property match for
@@ -565,7 +565,7 @@ router.get('/dashboard', async (req, res) => {
           transactionFee: round2(room.transactionFee),
           hostEarnings: round2(room.hostEarnings),
           billed: round2(room.billed),
-          uncollected: round2(Math.max(0, room.billed - room.gross)),
+          vacancy: round2(Math.max(0, room.billed - room.gross)),
           turnover: !!room.turnover,
           maintenanceCost: round2(maintenanceCost),
           netPL: round2(room.hostEarnings - maintenanceCost),
@@ -574,12 +574,6 @@ router.get('/dashboard', async (req, res) => {
       const roomsWithCollections = rooms.filter((r) => r.gross > 0).length;
       const sumDues = rooms.reduce((a, r) => a + r.gross, 0);
       const avgRent = roomsWithCollections > 0 ? sumDues / roomsWithCollections : 0;
-      // Vacancy estimate: for any room in this property with billed
-      // membership but $0 collected, assume the billed amount is lost.
-      let vacancyCost = 0;
-      for (const r of rooms) {
-        if (r.gross === 0 && r.billed > 0) vacancyCost += r.billed;
-      }
       const collectionRate = p.billedDues > 0 ? (p.collectedDues / p.billedDues) * 100 : null;
       return {
         propertyId: p.propertyId,
@@ -591,9 +585,8 @@ router.get('/dashboard', async (req, res) => {
         transactionFee: round2(p.transactionFee),
         hostEarnings: round2(p.hostEarnings),
         collectionRate: collectionRate != null ? round2(collectionRate) : null,
-        uncollectedRent: round2(Math.max(0, p.billedDues - p.collectedDues)),
+        vacancy: round2(Math.max(0, p.billedDues - p.collectedDues)),
         lateFees: round2(p.lateFees),
-        vacancyCost: round2(vacancyCost),
         avgRentPerRoom: round2(avgRent),
         turnoversThisMonth: turnoversThisMonthByProperty[p.propertyKey] || 0,
         maintenanceCost: round2(p.propertyId ? (maintByProperty[p.propertyId] || 0) : 0),
@@ -621,12 +614,12 @@ router.get('/dashboard', async (req, res) => {
           pBilled += Math.abs(r.grossAmount || 0);
         }
       }
-      const pUncollected = Math.max(0, pBilled - pCollectedDues);
+      const pVacancy = Math.max(0, pBilled - pCollectedDues);
       trends = {
         collected: deltaPct(totalCollected, pCollected),
         fees: deltaPct(totalPlatformFees, pFees),
         hostEarnings: deltaPct(totalHostEarnings, pHost),
-        uncollected: deltaPct(totalUncollected, pUncollected),
+        vacancy: deltaPct(totalVacancy, pVacancy),
       };
     }
 
@@ -636,7 +629,7 @@ router.get('/dashboard', async (req, res) => {
         collected: round2(totalCollected),
         platformFees: round2(totalPlatformFees),
         hostEarnings: round2(totalHostEarnings),
-        uncollected: round2(totalUncollected),
+        vacancy: round2(totalVacancy),
       },
       trends,
       propertyBreakdown,

@@ -244,7 +244,7 @@ function TrendArrow({ delta, invert = false }) {
     return <span className="fin-trend fin-trend-flat">±0%</span>;
   }
   const positive = delta > 0;
-  // For "fees" + "uncollected", down = good. For revenue, up = good.
+  // For "fees" + "vacancy", down = good. For revenue, up = good.
   const good = invert ? !positive : positive;
   return (
     <span className={`fin-trend ${good ? 'fin-trend-good' : 'fin-trend-bad'}`}>
@@ -363,9 +363,8 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
             <div className="fin-prop-stat"><label>Service fees (8%)</label><span>{fmtMoney(p.serviceFee)}</span></div>
             <div className="fin-prop-stat"><label>Transaction fees</label><span>{fmtMoney(p.transactionFee)}</span></div>
             <div className="fin-prop-stat"><label>Net host earnings</label><span>{fmtMoney(p.hostEarnings)}</span></div>
-            <div className="fin-prop-stat"><label>Uncollected rent</label><span>{fmtMoney(p.uncollectedRent)}</span></div>
+            <div className="fin-prop-stat"><label>Vacancy</label><span>{fmtMoney(p.vacancy)}</span></div>
             <div className="fin-prop-stat"><label>Late fees collected</label><span>{fmtMoney(p.lateFees)}</span></div>
-            <div className="fin-prop-stat"><label>Vacancy cost (est.)</label><span>{fmtMoney(p.vacancyCost)}</span></div>
             <div className="fin-prop-stat"><label>Avg rent / room</label><span>{fmtMoney(p.avgRentPerRoom)}</span></div>
             <div className="fin-prop-stat"><label>Turnovers this month</label><span>{p.turnoversThisMonth}</span></div>
             <div className="fin-prop-stat"><label>Maintenance cost</label><span>{fmtMoney(p.maintenanceCost)}</span></div>
@@ -384,7 +383,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                   {headerCell('transactionFee', 'Txn fee')}
                   {headerCell('hostEarnings', 'Host earn')}
                   {headerCell('billed', 'Billed')}
-                  {headerCell('uncollected', 'Uncollected')}
+                  {headerCell('vacancy', 'Vacancy')}
                   {headerCell('turnover', 'Turn?')}
                   {headerCell('maintenanceCost', 'Maint')}
                   {headerCell('netPL', 'Net P&L')}
@@ -406,7 +405,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                       <td>{fmtMoney(r.transactionFee)}</td>
                       <td>{fmtMoney(r.hostEarnings)}</td>
                       <td>{fmtMoney(r.billed)}</td>
-                      <td>{fmtMoney(r.uncollected)}</td>
+                      <td>{fmtMoney(r.vacancy)}</td>
                       <td>{r.turnover ? <span className="fin-turn-yes">Yes</span> : '—'}</td>
                       <td>{fmtMoney(r.maintenanceCost)}</td>
                       <td className={`fin-pl fin-pl-${tone}`}>{fmtMoney(r.netPL)}</td>
@@ -692,9 +691,9 @@ export default function Financials() {
                 <TrendArrow delta={trends?.hostEarnings} />
               </div>
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Uncollected rent</div>
-                <div className="fin-metric-value fin-metric-value-terra">{fmtMoney(totals?.uncollected)}</div>
-                <TrendArrow delta={trends?.uncollected} invert />
+                <div className="fin-metric-label">Vacancy</div>
+                <div className="fin-metric-value fin-metric-value-terra">{fmtMoney(totals?.vacancy)}</div>
+                <TrendArrow delta={trends?.vacancy} invert />
               </div>
             </div>
           </section>
