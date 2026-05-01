@@ -439,10 +439,12 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
-    // Typical monthly rent per (normalized address, room number).
-    // Average across months where the room collected ANY membership dues
-    // — months at $0 don't drag the average down. Used for vacancy calc.
-    const typicalRentByRoom = (() => {
+    // Typical DAILY rate per (normalized address, room number).
+    // PadSplit prorates per day, so a room that earns $25/day collects
+    // $700 in a 28-day month and $775 in a 31-day month — both fully
+    // occupied. We normalize each month's collection by daysInMonth so
+    // varying month lengths don't show up as phantom vacancy.
+    const typicalDailyRateByRoom = (() => {
       const monthlyTotals = {}; // key = "addr|room|month" → membership dues
       for (const r of allCollectedHistory) {
         if (!isDuesBillType(r.billType)) continue;
@@ -452,31 +454,32 @@ router.get('/dashboard', async (req, res) => {
         const k = `${norm}|${roomKey}|${r.earningsMonth}`;
         monthlyTotals[k] = (monthlyTotals[k] || 0) + (r.grossAmount || 0);
       }
-      const totalsByRoom = {}; // "addr|room" → { sum, count }
+      const totalsByRoom = {}; // "addr|room" → { sumDaily, count }
       for (const k of Object.keys(monthlyTotals)) {
         const v = monthlyTotals[k];
         if (v <= 0) continue;
-        const [norm, room] = k.split('|');
+        const [norm, room, month] = k.split('|');
         const roomKey = `${norm}|${room}`;
-        if (!totalsByRoom[roomKey]) totalsByRoom[roomKey] = { sum: 0, count: 0 };
-        totalsByRoom[roomKey].sum += v;
+        const dim = daysInMonth(month) || 30;
+        const dailyForMonth = v / dim;
+        if (!totalsByRoom[roomKey]) totalsByRoom[roomKey] = { sumDaily: 0, count: 0 };
+        totalsByRoom[roomKey].sumDaily += dailyForMonth;
         totalsByRoom[roomKey].count += 1;
       }
       const out = {};
       for (const k of Object.keys(totalsByRoom)) {
-        out[k] = totalsByRoom[k].sum / totalsByRoom[k].count;
+        out[k] = totalsByRoom[k].sumDaily / totalsByRoom[k].count;
       }
       return out;
     })();
 
-    // Property-level fallback rent (avg of room rents) for rooms with no
-    // history yet (e.g. brand-new room with no collections so far).
-    const fallbackRentByProperty = (() => {
+    // Property-level fallback daily rate for rooms with no history yet.
+    const fallbackDailyRateByProperty = (() => {
       const sums = {};
-      for (const k of Object.keys(typicalRentByRoom)) {
+      for (const k of Object.keys(typicalDailyRateByRoom)) {
         const [norm] = k.split('|');
         if (!sums[norm]) sums[norm] = { sum: 0, count: 0 };
-        sums[norm].sum += typicalRentByRoom[k];
+        sums[norm].sum += typicalDailyRateByRoom[k];
         sums[norm].count += 1;
       }
       const out = {};
@@ -600,46 +603,43 @@ router.get('/dashboard', async (req, res) => {
     }
 
     // Vacancy computation. PadSplit only bills when a room is occupied,
-    // so "billed - collected" misses true vacancy (empty room = no bill).
-    // Instead: use each room's typical monthly rent (averaged across the
-    // months it actually collected dues) and figure how much of the
-    // selected month was empty.
+    // so "billed - collected" misses true vacancy. Instead we use each
+    // room's typical DAILY rate (collected / daysInMonth, averaged
+    // across months with revenue) so 28- vs 31-day months don't
+    // register as phantom vacancy.
     //
-    //   typicalRent  = avg of months where the room collected > $0
-    //   thisMonthDues = membership dues collected for this room this month
-    //   vacantFraction = max(0, 1 - thisMonthDues / typicalRent)
-    //   vacantDays   = round(daysInMonth * vacantFraction)
-    //   vacancyCost  = typicalRent * vacantFraction
+    //   typicalDailyRate = avg of (collected_month / daysInMonth_month)
+    //                       over months where the room collected > $0
+    //   expected_month   = typicalDailyRate * daysInMonth(month)
+    //   ratio            = collected_month / expected_month
+    //   vacantFraction   = ratio >= OCCUPIED_THRESHOLD ? 0 : (1 - ratio)
+    //   vacantDays       = round(daysInMonth * vacantFraction)
+    //   vacancyCost      = typicalDailyRate * vacantDays
     //
     // For "all time" we sum the per-month per-room vacancy across history.
 
-    // A room is considered fully occupied for the month if it earned at
-    // least this fraction of its typical rent. Below that, the shortfall
-    // is treated as partial-month vacancy. 0.85 absorbs the normal
-    // month-to-month dollar variation (different number of pay periods,
-    // late-fee timing, prorations) so a continuously-occupied room
-    // doesn't show phantom vacancy from a $593 / $643 dip.
+    // Fully occupied if collected ≥ this fraction of expected for the
+    // month. 0.85 absorbs minor noise (late-fee timing, partial credits)
+    // beyond the days-in-month variation that's already accounted for.
     const OCCUPIED_THRESHOLD = 0.85;
 
-    function vacancyForRoom({ propertyKey, roomKey, monthStr, collectedThisMonth, typicalRent, fallbackRent }) {
-      const expected = typicalRent > 0 ? typicalRent : (fallbackRent || 0);
-      if (expected <= 0) {
+    function vacancyForRoom({ propertyKey, roomKey, monthStr, collectedThisMonth, typicalDailyRate, fallbackDailyRate }) {
+      const dailyRate = typicalDailyRate > 0 ? typicalDailyRate : (fallbackDailyRate || 0);
+      if (dailyRate <= 0) {
         return { vacantDays: 0, vacantFraction: 0, vacancyCost: 0, dailyRate: 0, expectedRent: 0 };
       }
       const dim = monthStr ? daysInMonth(monthStr) : 30;
-      const dailyRate = expected / dim;
+      // Expected rent for this specific month = daily rate × days in month.
+      const expected = dailyRate * dim;
       const ratio = collectedThisMonth / expected;
       let vacantFraction;
       if (ratio >= OCCUPIED_THRESHOLD) {
-        // Fully occupied — minor under-collection is just monthly noise.
         vacantFraction = 0;
       } else {
-        // Partial occupancy: shortfall is proportional to how far below
-        // typical rent the room came in. Capped at 1 (fully vacant).
         vacantFraction = Math.max(0, Math.min(1, 1 - ratio));
       }
       const vacantDays = Math.round(dim * vacantFraction);
-      const vacancyCost = expected * vacantFraction;
+      const vacancyCost = dailyRate * vacantDays;
       return { vacantDays, vacantFraction, vacancyCost, dailyRate, expectedRent: expected };
     }
 
@@ -664,7 +664,7 @@ router.get('/dashboard', async (req, res) => {
     // Finalize property breakdowns
     const propertyBreakdown = Object.values(byProperty).map((p) => {
       const propKeyForFallback = p.propertyKey;
-      const fallbackRent = fallbackRentByProperty[propKeyForFallback] || 0;
+      const fallbackDailyRate = fallbackDailyRateByProperty[propKeyForFallback] || 0;
       let propVacancyDays = 0;
       let propVacancyCost = 0;
       let propTotalDays = 0;
@@ -673,15 +673,15 @@ router.get('/dashboard', async (req, res) => {
         const maintenanceCost = maintByRoom[room.roomId] || 0;
         const roomKey = (room.roomNumber || room.roomId || '').toString().trim();
         const rentKey = `${propKeyForFallback}|${roomKey}`;
-        const typicalRent = typicalRentByRoom[rentKey] || 0;
+        const typicalDailyRate = typicalDailyRateByRoom[rentKey] || 0;
 
         // Sum vacancy across all months in scope (one month for a
         // selected month, every month for "all time").
         let vacantDaysTotal = 0;
         let vacancyCostTotal = 0;
         let totalDaysTotal = 0;
-        let expectedRent = typicalRent || fallbackRent;
-        let dailyRate = 0;
+        let dailyRate = typicalDailyRate || fallbackDailyRate;
+        let expectedRent = 0;
         for (const m of allMonthsForVacancy) {
           const collectedThisMonth = collectedByRoomMonth[`${propKeyForFallback}|${roomKey}|${m}`] || 0;
           const v = vacancyForRoom({
@@ -689,13 +689,14 @@ router.get('/dashboard', async (req, res) => {
             roomKey,
             monthStr: m,
             collectedThisMonth,
-            typicalRent,
-            fallbackRent,
+            typicalDailyRate,
+            fallbackDailyRate,
           });
           vacantDaysTotal += v.vacantDays;
           vacancyCostTotal += v.vacancyCost;
           totalDaysTotal += daysInMonth(m);
           dailyRate = v.dailyRate;
+          expectedRent = v.expectedRent;
         }
         propVacancyDays += vacantDaysTotal;
         propVacancyCost += vacancyCostTotal;
@@ -712,7 +713,7 @@ router.get('/dashboard', async (req, res) => {
           transactionFee: round2(room.transactionFee),
           hostEarnings: round2(room.hostEarnings),
           billed: round2(room.billed),
-          typicalRent: round2(expectedRent),
+          typicalRent: round2(dailyRate * 30),
           dailyRate: round2(dailyRate),
           vacantDays: vacantDaysTotal,
           vacancy: round2(vacancyCostTotal),
@@ -783,16 +784,16 @@ router.get('/dashboard', async (req, res) => {
       }
       for (const k of prevRoomKeys) {
         const [norm, roomKey] = k.split('|');
-        const typicalRent = typicalRentByRoom[k] || 0;
-        const fallback = fallbackRentByProperty[norm] || 0;
+        const typicalDailyRate = typicalDailyRateByRoom[k] || 0;
+        const fallbackDailyRate = fallbackDailyRateByProperty[norm] || 0;
         const collectedThisMonth = collectedByRoomMonth[`${norm}|${roomKey}|${prev}`] || 0;
         const v = vacancyForRoom({
           propertyKey: norm,
           roomKey,
           monthStr: prev,
           collectedThisMonth,
-          typicalRent,
-          fallbackRent: fallback,
+          typicalDailyRate,
+          fallbackDailyRate,
         });
         pVacancy += v.vacancyCost;
       }
