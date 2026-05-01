@@ -28,6 +28,7 @@ export default function QuarterlyReview() {
   const [itemSelections, setItemSelections] = useState({}); // itemId -> { createTask, description, pmNote }
   const [approving, setApproving] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState('');
+  const [followUpFor, setFollowUpFor] = useState(null);
   const [reopening, setReopening] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -146,8 +147,13 @@ export default function QuarterlyReview() {
   const totalTasksToCreate = Object.values(itemSelections).filter((s) => s.createTask).length;
 
   // Find any partial reasons across rooms
+  // Show the Partial banner only when a room is ACTUALLY incomplete
+  // by today's rules (Maintenance items unanswered). Inspections
+  // submitted under the older "everything required" rule may still
+  // carry a stored _PartialReason; those count as complete now and
+  // shouldn't keep flashing the banner.
   const partialReasons = data.rooms
-    .filter((r) => r.partialReason)
+    .filter((r) => r.partialReason && r.completedItems < r.totalItems)
     .map((r) => ({ roomLabel: r.roomLabel, reason: r.partialReason }));
 
   return (
@@ -355,6 +361,24 @@ export default function QuarterlyReview() {
                                   <span>Record lease violation</span>
                                 </label>
                               </div>
+
+                              {sel.createViolation && (
+                                <button
+                                  type="button"
+                                  className="review-followup-btn"
+                                  onClick={() => setFollowUpFor({
+                                    inspectionId: room.inspectionId,
+                                    inspectionItemId: item.id,
+                                    violationDescription: item.text,
+                                    violationCategory: item.flagCategory || 'Lease Compliance',
+                                    note: item.note || '',
+                                    roomLabel: room.roomLabel,
+                                    completedAt: room.completedAt,
+                                  })}
+                                >
+                                  + Create follow-up ticket
+                                </button>
+                              )}
                               {sel.createTask && (
                                 <div className="review-task-fields">
                                   <label className="review-field-label">
@@ -513,6 +537,111 @@ export default function QuarterlyReview() {
       />
 
       {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl('')} />}
+
+      {followUpFor && (
+        <FollowUpModal
+          spec={followUpFor}
+          onClose={() => setFollowUpFor(null)}
+          onCreated={() => setFollowUpFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FollowUpModal({ spec, onClose, onCreated }) {
+  const defaultDue = new Date();
+  defaultDue.setDate(defaultDue.getDate() + 7);
+  const defaultDueIso = defaultDue.toISOString().slice(0, 10);
+
+  const [title, setTitle] = useState(
+    `Follow-up: ${spec.violationDescription}${spec.roomLabel ? ` — ${spec.roomLabel}` : ''}`,
+  );
+  const [priority, setPriority] = useState('Medium');
+  const [dueAt, setDueAt] = useState(defaultDueIso);
+  const [note, setNote] = useState(
+    `Lease violation recorded${spec.completedAt ? ` on ${new Date(spec.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}. Follow up to ensure compliance.`,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCreate = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(
+        `/api/inspections/${spec.inspectionId}/items/${spec.inspectionItemId}/follow-up`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title.trim(), priority, dueAt, note }),
+        },
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Failed to create follow-up');
+      onCreated?.(body.item);
+    } catch (e) {
+      setError(e.message || 'Failed to create follow-up');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={() => !busy && onClose()}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Create lease follow-up</h3>
+          <button className="modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="modal-form">
+          <label>
+            Title
+            <input
+              type="text"
+              className="maint-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          </label>
+          <label>
+            Priority
+            <select className="form-select" value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </label>
+          <label>
+            Due date
+            <input
+              type="date"
+              className="maint-input"
+              value={dueAt}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setDueAt(e.target.value)}
+            />
+          </label>
+          <label>
+            Notes
+            <textarea
+              className="detail-textarea"
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose} disabled={busy}>Cancel</button>
+            <button className="btn-primary" onClick={handleCreate} disabled={busy || !title.trim()}>
+              {busy ? 'Creating…' : 'Create follow-up'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

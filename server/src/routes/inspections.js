@@ -881,15 +881,15 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
 
     const rooms = inspections.map((insp) => {
       const visible = insp.items.filter((i) => !i.zone.startsWith('_'));
-      // An item counts as flagged if it has a category OR is flagged as
-      // maintenance OR recorded as a lease violation. Compliance pills
-      // store isLeaseViolation=true with no flagCategory, so the old
-      // "flagCategory only" rule missed them.
       const flags = visible.filter(
         (i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation,
       ).length;
       const maint = visible.filter((i) => i.isMaintenance).length;
-      const answered = visible.filter((i) => i.status).length;
+      // For Skipped/Partial badges we ONLY count Maintenance-zone items
+      // — Compliance pills are opt-in and Misc is bonus, so neither
+      // should affect the "X/Y items" denominator on the review page.
+      const required = insp.items.filter((i) => i.zone === 'Maintenance');
+      const answered = required.filter((i) => i.status).length;
       totalFlags += flags;
       totalMaintenance += maint;
       allItemsCount += answered;
@@ -905,8 +905,8 @@ router.get('/quarterly-group/:propertyId/:date', async (req, res) => {
         completedAt: insp.completedAt,
         flagCount: flags,
         maintenanceCount: maint,
-        totalItems: visible.length,
-        completedItems: visible.filter((i) => i.status).length,
+        totalItems: required.length,
+        completedItems: answered,
         partialReason: partialItem?.note || null,
         flaggedItems: visible.filter((i) => i.flagCategory || i.isMaintenance || i.isLeaseViolation).map((item) => ({
           id: item.id,
