@@ -10238,6 +10238,14 @@ img,
 .fin-tt-limited { color: var(--ds-text-muted); }
 .fin-tt-limited-tag { font-size: 11px; color: var(--ds-text-muted); }
 
+/* Totals row in financial reports table */
+.fin-totals-row td {
+  background: #FAF7F2;
+  border-top: 2px solid var(--ds-divider);
+  font-weight: 600;
+}
+.fin-totals-row:hover td { background: #FAF7F2; }
+
 /* Net P&L coloring */
 .fin-pl { font-weight: 600; }
 .fin-pl-good { color: #4A7B52; }
