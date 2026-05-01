@@ -527,52 +527,6 @@ router.post('/:userId/reactivate', requireRole('OWNER'), async (req, res) => {
   }
 });
 
-// ─── DELETE /api/team/:userId/permanent — hard-delete user ──────────
-// Owner only. Removes the user record entirely along with their
-// dependent rows (sessions, property assignments, notifications,
-// notification preferences, and any pending invitations they sent).
-// Historical inspection / maintenance / event records reference the
-// user via nullable FKs or text snapshots, so they remain intact.
-
-router.delete('/:userId/permanent', requireRole('OWNER'), async (req, res) => {
-  try {
-    if (req.params.userId === req.user.id) {
-      return res.status(400).json({ error: 'Cannot delete yourself' });
-    }
-
-    const user = await prisma.user.findFirst({
-      where: {
-        id: req.params.userId,
-        organizationId: req.user.organizationId,
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (user.role === 'OWNER') {
-      return res.status(400).json({ error: 'Cannot delete an OWNER' });
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.session.deleteMany({ where: { userId: user.id } });
-      await tx.propertyAssignment.deleteMany({ where: { userId: user.id } });
-      await tx.notification.deleteMany({ where: { userId: user.id } });
-      await tx.notificationPreference.deleteMany({ where: { userId: user.id } });
-      // Pending invitations sent by this user must be revoked first since
-      // Invitation.invitedById is required (non-null).
-      await tx.invitation.deleteMany({ where: { invitedById: user.id } });
-      await tx.user.delete({ where: { id: user.id } });
-    });
-
-    return res.json({ success: true });
-  } catch (error) {
-    console.error('Permanent delete user error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // ─── POST /api/team/:userId/reset-password ──────────────
 
 router.post('/:userId/reset-password', requireRole('OWNER'), async (req, res) => {
