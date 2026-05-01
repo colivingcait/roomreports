@@ -34,25 +34,6 @@ function MemberMenu({ member, onEdit, onReset, onRemove, onClose }) {
   );
 }
 
-function DeactivatedMenu({ member, isOwner, onReactivate, onPermanentDelete, onClose }) {
-  const ref = useRef();
-  useEffect(() => {
-    const handler = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
-    setTimeout(() => document.addEventListener('click', handler), 0);
-    return () => document.removeEventListener('click', handler);
-  }, [onClose]);
-  return (
-    <div className="member-menu" ref={ref}>
-      <button className="member-menu-item" onClick={() => { onReactivate(member); onClose(); }}>Reactivate</button>
-      {isOwner && (
-        <button className="member-menu-item member-menu-danger" onClick={() => { onPermanentDelete(member); onClose(); }}>
-          Delete permanently
-        </button>
-      )}
-    </div>
-  );
-}
-
 function InviteMenu({ invite, onResend, onRevoke, onClose }) {
   const ref = useRef();
   useEffect(() => {
@@ -117,12 +98,8 @@ export default function Team() {
   const [resetting, setResetting] = useState(false);
   const [copied, setCopied] = useState('');
 
-  const [deactivatedMenuFor, setDeactivatedMenuFor] = useState(null);
   const [reactivateTarget, setReactivateTarget] = useState(null);
   const [reactivating, setReactivating] = useState(false);
-  const [permDeleteTarget, setPermDeleteTarget] = useState(null);
-  const [permDeleteConfirm, setPermDeleteConfirm] = useState('');
-  const [permDeleting, setPermDeleting] = useState(false);
 
   const isOwnerOrPM = user?.role === 'OWNER' || user?.role === 'PM';
   const isOwner = user?.role === 'OWNER';
@@ -273,22 +250,6 @@ export default function Team() {
       setNotification(err.message || 'Failed to reactivate');
     } finally {
       setReactivating(false);
-    }
-  };
-
-  const handlePermDelete = async () => {
-    if (!permDeleteTarget) return;
-    setPermDeleting(true);
-    try {
-      await api(`/api/team/${permDeleteTarget.id}/permanent`, { method: 'DELETE' });
-      setNotification(`${permDeleteTarget.name} permanently deleted.`);
-      setPermDeleteTarget(null);
-      setPermDeleteConfirm('');
-      await fetchData();
-    } catch (err) {
-      setNotification(err.message || 'Failed to delete user');
-    } finally {
-      setPermDeleting(false);
     }
   };
 
@@ -475,32 +436,12 @@ export default function Team() {
                       {roleLabel(m.role, m.customRole)}
                     </span>
                     {isOwner && (
-                      <>
-                        <button
-                          className="btn-secondary-sm"
-                          onClick={() => setReactivateTarget(m)}
-                        >
-                          Reactivate
-                        </button>
-                        <div className="team-menu-wrap">
-                          <button
-                            className="team-menu-btn"
-                            onClick={() => setDeactivatedMenuFor(deactivatedMenuFor === m.id ? null : m.id)}
-                            aria-label="Open menu"
-                          >
-                            &#8942;
-                          </button>
-                          {deactivatedMenuFor === m.id && (
-                            <DeactivatedMenu
-                              member={m}
-                              isOwner={isOwner}
-                              onReactivate={(mem) => setReactivateTarget(mem)}
-                              onPermanentDelete={(mem) => { setPermDeleteTarget(mem); setPermDeleteConfirm(''); }}
-                              onClose={() => setDeactivatedMenuFor(null)}
-                            />
-                          )}
-                        </div>
-                      </>
+                      <button
+                        className="btn-secondary-sm"
+                        onClick={() => setReactivateTarget(m)}
+                      >
+                        Reactivate
+                      </button>
                     )}
                   </div>
                 </div>
@@ -738,51 +679,6 @@ export default function Team() {
               </button>
               <button className="btn-primary" onClick={handleReactivate} disabled={reactivating}>
                 {reactivating ? 'Reactivating...' : 'Reactivate'}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={!!permDeleteTarget}
-        onClose={() => { if (!permDeleting) { setPermDeleteTarget(null); setPermDeleteConfirm(''); } }}
-        title="Permanently delete user"
-      >
-        {permDeleteTarget && (
-          <div className="modal-form">
-            <p>
-              <strong>This will permanently delete this user and cannot be undone.</strong>
-            </p>
-            <p>
-              {permDeleteTarget.name} ({permDeleteTarget.email}) will be removed entirely.
-              Historical inspection and maintenance records that reference them by name
-              will remain, but the user record itself will be gone.
-            </p>
-            <label>
-              Type <strong>DELETE</strong> to confirm
-              <input
-                type="text"
-                className="maint-input"
-                value={permDeleteConfirm}
-                onChange={(e) => setPermDeleteConfirm(e.target.value)}
-                autoFocus
-              />
-            </label>
-            <div className="modal-actions">
-              <button
-                className="btn-secondary"
-                onClick={() => { setPermDeleteTarget(null); setPermDeleteConfirm(''); }}
-                disabled={permDeleting}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-danger"
-                onClick={handlePermDelete}
-                disabled={permDeleting || permDeleteConfirm !== 'DELETE'}
-              >
-                {permDeleting ? 'Deleting...' : 'Permanently delete'}
               </button>
             </div>
           </div>
