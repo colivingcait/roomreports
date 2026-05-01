@@ -504,6 +504,7 @@ export default function Financials() {
   const [dashboard, setDashboard] = useState(null);
   const [timeseries, setTimeseries] = useState(null);
   const [chartMetric, setChartMetric] = useState('host');
+  const [hiddenSeries, setHiddenSeries] = useState(() => new Set());
   const [expandedProps, setExpandedProps] = useState({});
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -746,13 +747,14 @@ export default function Financials() {
             </select>
           </div>
 
-          {/* Portfolio overview */}
+          {/* Portfolio overview — 4 cards: Host earnings, Platform fees,
+              Portfolio occupancy, Turnovers. */}
           <section className="fin-section">
-            <div className="fin-metric-row">
+            <div className="fin-metric-row fin-metric-row-4">
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Total collected</div>
-                <div className="fin-metric-value">{fmtMoney(totals?.collected)}</div>
-                <TrendArrow delta={trends?.collected} />
+                <div className="fin-metric-label">Host earnings</div>
+                <div className="fin-metric-value fin-metric-value-sage">{fmtMoney(totals?.hostEarnings)}</div>
+                <TrendArrow delta={trends?.hostEarnings} />
               </div>
               <div className="fin-metric-card">
                 <div className="fin-metric-label">Platform fees</div>
@@ -760,19 +762,16 @@ export default function Financials() {
                 <TrendArrow delta={trends?.fees} invert />
               </div>
               <div className="fin-metric-card">
-                <div className="fin-metric-label">Host earnings</div>
-                <div className="fin-metric-value fin-metric-value-sage">{fmtMoney(totals?.hostEarnings)}</div>
-                <TrendArrow delta={trends?.hostEarnings} />
-              </div>
-              <div className="fin-metric-card">
-                <div className="fin-metric-label">Vacancy</div>
-                <div className="fin-metric-value fin-metric-value-terra">{fmtMoney(totals?.vacancy)}</div>
+                <div className="fin-metric-label">Portfolio occupancy</div>
+                <div className="fin-metric-value">
+                  {totals?.occupancy != null ? `${totals.occupancy.toFixed(1)}%` : '—'}
+                </div>
                 {totals?.vacantDays != null && (
                   <div className="fin-metric-sub">
                     {totals.vacantDays} {totals.vacantDays === 1 ? 'day' : 'days'} vacant
                   </div>
                 )}
-                <TrendArrow delta={trends?.vacancy} invert />
+                <TrendArrow delta={trends?.occupancy} />
               </div>
               <div className="fin-metric-card">
                 <div className="fin-metric-label">Turnovers</div>
@@ -802,7 +801,44 @@ export default function Financials() {
               ) : (() => {
                 const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
                 const ChartCmp = cfg.kind === 'bar' ? BarChart : LineChart;
-                const SeriesCmp = cfg.kind === 'bar' ? Bar : Line;
+                const allSeries = timeseries?.series || [];
+
+                // Click handler — toggle a series; never let the user
+                // hide the last visible one.
+                const toggleSeries = (name) => {
+                  setHiddenSeries((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(name)) {
+                      next.delete(name);
+                    } else {
+                      const visibleCount = allSeries.length - next.size;
+                      if (visibleCount <= 1) return prev; // would hide last
+                      next.add(name);
+                    }
+                    return next;
+                  });
+                };
+
+                const renderLegend = () => (
+                  <ul className="fin-chart-legend">
+                    {allSeries.map((s, idx) => {
+                      const color = PALETTE[idx % PALETTE.length];
+                      const hidden = hiddenSeries.has(s.propertyName);
+                      return (
+                        <li
+                          key={s.propertyId || s.propertyName}
+                          className={`fin-chart-legend-item ${hidden ? 'fin-chart-legend-hidden' : ''}`}
+                          onClick={() => toggleSeries(s.propertyName)}
+                          title={hidden ? 'Click to show' : 'Click to hide'}
+                        >
+                          <span className="fin-chart-legend-dot" style={{ background: color }} />
+                          <span>{s.propertyName}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+
                 return (
                   <ResponsiveContainer width="100%" height={320}>
                     <ChartCmp data={chartData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
@@ -823,8 +859,9 @@ export default function Financials() {
                         labelFormatter={(m) => fmtMonth(m)}
                         contentStyle={{ background: '#fff', border: '1px solid #F0EDE8', borderRadius: 8 }}
                       />
-                      <Legend />
-                      {(timeseries?.series || []).map((s, idx) => {
+                      <Legend content={renderLegend} />
+                      {allSeries.map((s, idx) => {
+                        if (hiddenSeries.has(s.propertyName)) return null;
                         const color = PALETTE[idx % PALETTE.length];
                         return cfg.kind === 'bar' ? (
                           <Bar key={s.propertyId || s.propertyName} dataKey={s.propertyName} fill={color} />
