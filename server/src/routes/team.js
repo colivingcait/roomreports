@@ -92,6 +92,45 @@ async function sendInviteEmail({ invite, org, inviter, req }) {
   });
 }
 
+// Friendly reminder / reactivation email — points to the login page.
+// `kind` controls the headline: 'reminder' for active-member nudge,
+// 'reactivated' for a just-reactivated user.
+async function sendLoginLinkEmail({ user, org, kind, req }) {
+  const origin = appUrl(req);
+  const link = `${origin}/login`;
+  const orgName = org?.name || 'your team';
+  const headline = kind === 'reactivated'
+    ? `You've been reactivated on ${orgName}`
+    : `You have access to ${orgName} on RoomReport`;
+  const intro = kind === 'reactivated'
+    ? `Your access to <strong>${escapeHtml(orgName)}</strong> on RoomReport has been restored. You can sign in with your existing email and password.`
+    : `You have access to <strong>${escapeHtml(orgName)}</strong> on RoomReport. Sign in to view your tasks and properties.`;
+  const subject = kind === 'reactivated'
+    ? `You've been reactivated on ${orgName}`
+    : `Your RoomReport access — ${orgName}`;
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#3B3634;background:#FAF8F5;">
+      <h1 style="margin:0 0 12px;font-size:22px;color:#3B3634;">${escapeHtml(headline)}</h1>
+      <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">${intro}</p>
+      <p style="margin:0 0 32px;">
+        <a href="${link}" style="display:inline-block;background:#6B8F71;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;">Log in</a>
+      </p>
+      <p style="margin:0 0 8px;font-size:13px;color:#8A8583;">
+        Forgot your password? Use the "Forgot password?" link on the login page.
+      </p>
+      <p style="margin:32px 0 0;font-size:12px;color:#8A8583;border-top:1px solid #E6E2DE;padding-top:16px;">RoomReport — roomreport.co</p>
+    </div>
+  `;
+  const text =
+    `${headline}.\n\n` +
+    `Log in at ${link}\n\n` +
+    `Forgot your password? Use the "Forgot password?" link on the login page.\n\n` +
+    `RoomReport — roomreport.co`;
+
+  await sendEmail({ to: user.email, subject, text, html });
+}
+
 function escapeHtml(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
@@ -520,9 +559,45 @@ router.post('/:userId/reactivate', requireRole('OWNER'), async (req, res) => {
       },
     });
 
+    // Best-effort welcome-back email pointing at the login page.
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: req.user.organizationId },
+        select: { name: true },
+      });
+      await sendLoginLinkEmail({ user: updated, org, kind: 'reactivated', req });
+    } catch (e) {
+      console.error('reactivate email error:', e);
+    }
+
     return res.json({ user: updated });
   } catch (error) {
     console.error('Reactivate user error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/team/:userId/send-login-link — friendly reminder ─
+
+router.post('/:userId/send-login-link', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.params.userId,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: req.user.organizationId },
+      select: { name: true },
+    });
+    await sendLoginLinkEmail({ user, org, kind: 'reminder', req });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Send login link error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

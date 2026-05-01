@@ -118,6 +118,7 @@ model User {
   assignedMaintenance MaintenanceItem[]    @relation("AssignedUser")
   notifications       Notification[]
   notificationPreferences NotificationPreference[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([organizationId])
   @@map("users")
@@ -732,6 +733,24 @@ model PadSplitPropertyMapping {
   @@index([organizationId])
   @@index([propertyId])
   @@map("padsplit_property_mappings")
+}
+
+// ─── PasswordResetToken ─────────────────────────────────
+// Single-use, time-limited tokens for the forgot-password flow.
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
 }
 
 // ─── NotificationPreference ─────────────────────────────
