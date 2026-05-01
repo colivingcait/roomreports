@@ -606,9 +606,48 @@ router.post('/:id/reopen', async (req, res) => {
 
 // ─── POST /api/inspections/:id/submit ───────────────────
 
+// ─── POST /api/inspections/notify-batch ──────────────────
+// Used by batch flows (Quarterly room-by-room) to send ONE summary
+// notification covering every inspection that just got submitted.
+// Body: { inspectionIds: [...] }
+
+router.post('/notify-batch', async (req, res) => {
+  try {
+    const { inspectionIds } = req.body || {};
+    if (!Array.isArray(inspectionIds) || inspectionIds.length === 0) {
+      return res.status(400).json({ error: 'inspectionIds[] required' });
+    }
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        id: { in: inspectionIds },
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        items: true,
+        property: { select: { id: true, name: true } },
+        room: { select: { id: true, label: true } },
+        inspector: { select: { name: true, role: true, customRole: true } },
+      },
+    });
+    if (inspections.length === 0) {
+      return res.status(404).json({ error: 'No inspections found' });
+    }
+    try {
+      await sendBatchInspectionNotification({ inspections });
+    } catch (e) {
+      console.error('notify-batch error:', e);
+    }
+    return res.json({ ok: true, count: inspections.length });
+  } catch (err) {
+    console.error('notify-batch handler error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/:id/submit', async (req, res) => {
   try {
-    const { partial, partialReason } = req.body || {};
+    const { partial, partialReason, silent } = req.body || {};
 
     const inspection = await prisma.inspection.findFirst({
       where: {
@@ -684,12 +723,18 @@ router.post('/:id/submit', async (req, res) => {
     const roomLabel = inspection.room?.label || '';
 
     try {
-      await sendInspectionSubmittedNotification({
-        inspection,
-        flaggedItems,
-        propertyName,
-        roomLabel,
-      });
+      // Submission paths that batch many inspections at once (Quarterly
+      // room-by-room) call /submit with `silent: true` and then make
+      // one POST /notify-batch when the whole batch is done so PMs
+      // receive ONE summary email instead of one per room.
+      if (!silent) {
+        await sendInspectionSubmittedNotification({
+          inspection,
+          flaggedItems,
+          propertyName,
+          roomLabel,
+        });
+      }
     } catch (e) {
       console.error('inspection submit notification error:', e);
     }
@@ -2347,6 +2392,95 @@ router.get('/quarterly-group/:propertyId/:date/pdf', async (req, res) => {
 
 // ─── Notification helpers ──────────────────────────────
 
+async function sendBatchInspectionNotification({ inspections }) {
+  if (!inspections || inspections.length === 0) return;
+  // Pull common context from the first inspection — all inspections in
+  // a batch belong to the same property, same inspector, same date.
+  const head = inspections[0];
+  const orgId = head.organizationId;
+  const propertyName = head.property?.name || 'Unknown';
+  const inspector = head.inspectorName || head.inspector?.name || 'Inspector';
+  const completedAt = head.completedAt || head.createdAt;
+  const dateLabel = new Date(completedAt).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+
+  // Aggregate counts across all inspections in the batch.
+  let totalFlagged = 0;
+  let totalMaintenance = 0;
+  let totalViolations = 0;
+  const perRoom = []; // { label, flagged, maint, viol }
+  for (const insp of inspections) {
+    const items = insp.items || [];
+    const flagged = items.filter((i) => i.flagCategory).length;
+    const maint = items.filter((i) => i.isMaintenance).length;
+    const viol = items.filter((i) => i.isLeaseViolation).length;
+    totalFlagged += flagged;
+    totalMaintenance += maint;
+    totalViolations += viol;
+    if (flagged > 0 || maint > 0 || viol > 0) {
+      perRoom.push({
+        label: insp.room?.label || 'Common areas',
+        maint, viol,
+      });
+    }
+  }
+  const totalRooms = inspections.length;
+
+  const ids = await pmAndOwnerIds(orgId);
+  if (ids.length === 0) return;
+
+  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  // Link to the grouped review page: /quarterly-review/:propertyId/:dateKey
+  const dateKey = String(completedAt).slice(0, 10);
+  const link = `/quarterly-review/${head.propertyId}/${dateKey}`;
+  const title = `Room inspection submitted — ${propertyName}`;
+  const message = `${inspector} submitted a room inspection for ${propertyName}. ${totalFlagged} flagged, ${totalMaintenance} maintenance, ${totalViolations} violations.`;
+
+  const summary = summaryList([
+    ['Property', propertyName],
+    ['Inspector', inspector],
+    ['Date', dateLabel],
+    ['Rooms inspected', `${totalRooms}/${totalRooms}`],
+    ['Flagged items', totalFlagged],
+    ['Maintenance items created', totalMaintenance],
+    ['Lease violations found', totalViolations],
+  ]);
+
+  const perRoomHtml = perRoom.length > 0
+    ? `<p style="margin:16px 0 6px;font-weight:600;color:#4A4543;">Rooms with issues</p>
+       <ul style="margin:0 0 12px;padding-left:20px;color:#4A4543;font-size:14px;line-height:1.5;">
+         ${perRoom.map((r) => {
+           const parts = [];
+           if (r.maint > 0) parts.push(`${r.maint} maintenance item${r.maint === 1 ? '' : 's'}`);
+           if (r.viol > 0) parts.push(`${r.viol} violation${r.viol === 1 ? '' : 's'}`);
+           return `<li><strong>${esc(r.label)}</strong>: ${parts.join(', ') || 'flagged'}</li>`;
+         }).join('')}
+       </ul>`
+    : '<p style="margin:16px 0;color:#4A7B52;font-size:14px;">No issues found.</p>';
+
+  await notifyMany({
+    userIds: ids,
+    organizationId: orgId,
+    type: 'INSPECTION_SUBMITTED',
+    title,
+    message,
+    link,
+    email: {
+      subject: title,
+      ctaLabel: 'View full inspection',
+      ctaHref: `${origin}${link}`,
+      bodyHtml: `
+        <p style="margin:0 0 12px;font-size:15px;color:#4A4543;">
+          ${esc(inspector)} submitted a room inspection for <strong>${esc(propertyName)}</strong> on ${dateLabel}.
+        </p>
+        ${summary}
+        ${perRoomHtml}
+      `,
+    },
+  });
+}
+
 async function sendInspectionSubmittedNotification({
   inspection,
   flaggedItems,
@@ -2480,4 +2614,81 @@ async function sendInspectionApprovedNotification({ inspection, feedback }) {
 }
 
 export { sendInspectionApprovedNotification };
+// ─── POST /api/inspections/:inspectionId/items/:itemId/follow-up ──
+// Creates a "Lease follow-up" maintenance ticket from an inspection
+// item that was recorded as a lease violation. Pre-fills from the
+// item; client supplies title/dueAt/priority/note.
+
+router.post('/:inspectionId/items/:itemId/follow-up', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const inspection = await prisma.inspection.findFirst({
+      where: {
+        id: req.params.inspectionId,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!inspection) return res.status(404).json({ error: 'Inspection not found' });
+    const item = await prisma.inspectionItem.findFirst({
+      where: { id: req.params.itemId, inspectionId: inspection.id },
+    });
+    if (!item) return res.status(404).json({ error: 'Inspection item not found' });
+
+    const { title, priority, note, dueAt } = req.body || {};
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    let parsedDueAt = null;
+    if (dueAt) {
+      const d = new Date(dueAt);
+      if (isNaN(d.getTime())) return res.status(400).json({ error: 'dueAt is invalid' });
+      parsedDueAt = d;
+    }
+
+    // Resolve the LeaseViolation row if one exists for this inspection
+    // item — gives us a clean back-reference for reports.
+    const violation = await prisma.leaseViolation.findUnique({
+      where: { inspectionItemId: item.id },
+    });
+
+    const ticket = await prisma.maintenanceItem.create({
+      data: {
+        organizationId: req.user.organizationId,
+        propertyId: inspection.propertyId,
+        roomId: inspection.roomId || null,
+        inspectionId: inspection.id,
+        inspectionItemId: item.id,
+        description: String(title).trim(),
+        zone: 'Lease follow-up',
+        flagCategory: item.flagCategory || violation?.category || 'Lease Compliance',
+        priority: priority || 'Medium',
+        status: 'OPEN',
+        note: note || `Lease violation recorded on ${new Date(inspection.completedAt || inspection.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Follow up to ensure compliance.`,
+        reportedById: req.user.id,
+        reportedByName: req.user.name,
+        reportedByRole: req.user.role,
+        isLeaseFollowUp: true,
+        leaseViolationId: violation?.id || null,
+        dueAt: parsedDueAt,
+      },
+    });
+
+    await prisma.maintenanceEvent.create({
+      data: {
+        maintenanceItemId: ticket.id,
+        type: 'created',
+        toValue: 'OPEN',
+        note: 'Created from lease violation follow-up',
+        byUserId: req.user.id,
+        byUserName: req.user.name,
+      },
+    });
+
+    return res.status(201).json({ item: ticket });
+  } catch (err) {
+    console.error('Inspection follow-up create error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

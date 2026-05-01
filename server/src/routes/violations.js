@@ -162,6 +162,72 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
 
 // ─── POST /api/violations/:id/actions ───────────────────
 
+// ─── POST /api/violations/:id/follow-up ─────────────────
+// Creates a maintenance ticket linked back to this violation. Tagged
+// `isLeaseFollowUp: true` so the kanban can mark it visually distinct.
+
+router.post('/:id/follow-up', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const v = await prisma.leaseViolation.findFirst({
+      where: {
+        id: req.params.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+    });
+    if (!v) return res.status(404).json({ error: 'Violation not found' });
+
+    const { title, priority, note, dueAt, flagCategory } = req.body || {};
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    let parsedDueAt = null;
+    if (dueAt) {
+      const d = new Date(dueAt);
+      if (isNaN(d.getTime())) return res.status(400).json({ error: 'dueAt is invalid' });
+      parsedDueAt = d;
+    }
+
+    const created = await prisma.maintenanceItem.create({
+      data: {
+        organizationId: req.user.organizationId,
+        propertyId: v.propertyId,
+        roomId: v.roomId || null,
+        inspectionId: v.inspectionId || null,
+        inspectionItemId: null,
+        description: String(title).trim(),
+        zone: 'Lease follow-up',
+        flagCategory: flagCategory || v.category || 'Lease Compliance',
+        priority: priority || 'Medium',
+        status: 'OPEN',
+        note: note || `Lease violation recorded${v.createdAt ? ` on ${new Date(v.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}. Follow up to ensure compliance.`,
+        reportedById: req.user.id,
+        reportedByName: req.user.name,
+        reportedByRole: req.user.role,
+        isLeaseFollowUp: true,
+        leaseViolationId: v.id,
+        dueAt: parsedDueAt,
+      },
+    });
+
+    await prisma.maintenanceEvent.create({
+      data: {
+        maintenanceItemId: created.id,
+        type: 'created',
+        toValue: 'OPEN',
+        note: 'Created from lease violation follow-up',
+        byUserId: req.user.id,
+        byUserName: req.user.name,
+      },
+    });
+
+    return res.status(201).json({ item: created });
+  } catch (err) {
+    console.error('Create violation follow-up error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/:id/actions', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
     const v = await prisma.leaseViolation.findFirst({
