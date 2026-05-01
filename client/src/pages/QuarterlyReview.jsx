@@ -498,23 +498,53 @@ export default function QuarterlyReview() {
                       </div>
                     )}
                     {r.status === 'Fail' && isReviewable && sel && (
-                      <div className="qr-item-action-row">
-                        <label className="qr-item-action-toggle">
-                          <input
-                            type="checkbox"
-                            checked={!!sel.createTask}
-                            onChange={(e) => updateSelection(r.id, { createTask: e.target.checked })}
-                          />
-                          <span>Create maintenance task</span>
-                        </label>
+                      <div className="review-task-box">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                          <label className="review-task-toggle">
+                            <input
+                              type="checkbox"
+                              checked={!!sel.createTask}
+                              onChange={(e) => updateSelection(r.id, { createTask: e.target.checked })}
+                            />
+                            <span>Create maintenance task</span>
+                          </label>
+                        </div>
                         {sel.createTask && (
-                          <input
-                            className="qr-item-action-input"
-                            type="text"
-                            value={sel.description || ''}
-                            onChange={(e) => updateSelection(r.id, { description: e.target.value })}
-                            placeholder="Task description"
-                          />
+                          <div className="review-task-fields">
+                            <label className="review-field-label">
+                              Task description
+                              <input
+                                type="text"
+                                className="maint-input"
+                                value={sel.description || ''}
+                                onChange={(e) => updateSelection(r.id, { description: e.target.value })}
+                              />
+                            </label>
+                            <label className="review-field-label">
+                              Priority
+                              <select
+                                className="form-select"
+                                value={sel.priority || 'Medium'}
+                                onChange={(e) => updateSelection(r.id, { priority: e.target.value })}
+                                style={{
+                                  color: PRIORITY_COLORS[sel.priority || 'Medium'],
+                                  borderColor: PRIORITY_COLORS[sel.priority || 'Medium'],
+                                }}
+                              >
+                                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            </label>
+                            <label className="review-field-label">
+                              PM notes <span className="form-optional">(optional)</span>
+                              <input
+                                type="text"
+                                className="maint-input"
+                                placeholder="Instructions for the maintenance team..."
+                                value={sel.pmNote || ''}
+                                onChange={(e) => updateSelection(r.id, { pmNote: e.target.value })}
+                              />
+                            </label>
+                          </div>
                         )}
                       </div>
                     )}
