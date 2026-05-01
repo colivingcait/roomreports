@@ -856,6 +856,7 @@ router.get('/dashboard', async (req, res) => {
         occupancyRate: occupancyRate != null ? round2(occupancyRate) : null,
         vacancy: round2(propVacancyCost),
         vacantDays: propVacancyDays,
+        roomDays: propTotalDays,
         lateFees: round2(p.lateFees),
         avgRentPerRoom: round2(avgRent),
         turnoversThisMonth: propTurnoversThisMonth,
@@ -868,7 +869,11 @@ router.get('/dashboard', async (req, res) => {
     // Portfolio vacancy = sum of per-property vacancy.
     const totalVacancyCost = propertyBreakdown.reduce((s, p) => s + (p.vacancy || 0), 0);
     const totalVacantDays = propertyBreakdown.reduce((s, p) => s + (p.vacantDays || 0), 0);
+    const totalRoomDays = propertyBreakdown.reduce((s, p) => s + (p.roomDays || 0), 0);
     const totalTurnovers = propertyBreakdown.reduce((s, p) => s + (p.turnoversThisMonth || 0), 0);
+    const portfolioOccupancy = totalRoomDays > 0
+      ? Math.max(0, Math.min(100, ((totalRoomDays - totalVacantDays) / totalRoomDays) * 100))
+      : null;
 
     // Month-over-month trend deltas for portfolio cards
     let trends = null;
@@ -889,22 +894,35 @@ router.get('/dashboard', async (req, res) => {
       // Prior-month vacancy: sum vacancy days × daily rate per room
       // using the same occupancy-interval model.
       let pVacancy = 0;
+      let pVacantDays = 0;
+      let pRoomDays = 0;
       let pTurnovers = 0;
+      const prevDim = daysInMonth(prev);
       for (const k of Object.keys(occupancyByRoom)) {
         const [norm] = k.split('|');
+        const fm = roomFirstMonth[k];
+        if (fm && prev < fm) continue; // room didn't exist in prev month
         const typicalDailyRate = typicalDailyRateByRoom[k] || 0;
         const fallbackDailyRate = fallbackDailyRateByProperty[norm] || 0;
         const dailyRate = typicalDailyRate || fallbackDailyRate;
-        const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev, roomFirstMonth[k]);
+        const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev, fm);
         pVacancy += dailyRate * vd;
+        pVacantDays += vd;
+        pRoomDays += prevDim;
         pTurnovers += turnoversInMonthForRoom(occupancyByRoom[k], prev);
       }
+      const pOccupancy = pRoomDays > 0
+        ? Math.max(0, Math.min(100, ((pRoomDays - pVacantDays) / pRoomDays) * 100))
+        : null;
 
       trends = {
         collected: deltaPct(totalCollected, pCollected),
         fees: deltaPct(totalPlatformFees, pFees),
         hostEarnings: deltaPct(totalHostEarnings, pHost),
         vacancy: deltaPct(totalVacancyCost, pVacancy),
+        occupancy: pOccupancy != null && portfolioOccupancy != null
+          ? round2(portfolioOccupancy - pOccupancy) // pp delta, not pct
+          : null,
         turnovers: deltaPct(totalTurnovers, pTurnovers),
       };
     }
@@ -917,6 +935,8 @@ router.get('/dashboard', async (req, res) => {
         hostEarnings: round2(totalHostEarnings),
         vacancy: round2(totalVacancyCost),
         vacantDays: totalVacantDays,
+        roomDays: totalRoomDays,
+        occupancy: portfolioOccupancy != null ? round2(portfolioOccupancy) : null,
         turnovers: totalTurnovers,
       },
       trends,
