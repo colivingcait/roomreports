@@ -210,6 +210,7 @@ router.post('/upload', async (req, res) => {
         totalPayout: r.totalPayout != null ? Number(r.totalPayout) : null,
         category: r.category || null,
         rowType: r.rowType || null,
+        recordDate: r.recordDate ? new Date(r.recordDate) : null,
       }));
       const CHUNK = 500;
       for (let i = 0; i < toInsert.length; i += CHUNK) {
@@ -274,8 +275,11 @@ router.get('/dashboard', async (req, res) => {
           propertyAddress: true,
           roomNumber: true,
           roomId: true,
+          memberId: true,
+          memberName: true,
           billType: true,
           grossAmount: true,
+          recordDate: true,
         },
       }),
       prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
@@ -489,6 +493,142 @@ router.get('/dashboard', async (req, res) => {
       return out;
     })();
 
+    // ─── Occupancy intervals per room ─────────────────────
+    // Filters out REJECTED members (those whose net collected per
+    // month is <= 0 — meaning their full payment was reversed because
+    // the host didn't accept them). Only ACTUAL OCCUPANTS contribute
+    // to vacancy + turnover calculations.
+    //
+    // Per (norm address, room): build a sorted list of intervals
+    //   { memberId, firstDate, lastDate, positiveMonths: Set<month> }
+    // where firstDate / lastDate are the earliest / latest Created
+    // dates among the member's positive-net months.
+    const occupancyByRoom = {};
+    const memberLabelByRoom = {}; // for resident-name display per (room, month)
+    const allRoomKeysByProperty = {}; // norm → Set<roomKey> for "include vacant rooms"
+    {
+      const grouped = {}; // "norm|room" → memberId → month → { net, firstDate, lastDate, name }
+      for (const r of allCollectedHistory) {
+        if (!isDuesBillType(r.billType)) continue;
+        const memberId = (r.memberId || '').toString().trim();
+        if (!memberId) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+        const k = `${norm}|${roomKey}`;
+        if (!allRoomKeysByProperty[norm]) allRoomKeysByProperty[norm] = new Set();
+        allRoomKeysByProperty[norm].add(roomKey);
+        if (!grouped[k]) grouped[k] = {};
+        if (!grouped[k][memberId]) grouped[k][memberId] = {};
+        if (!grouped[k][memberId][r.earningsMonth]) {
+          grouped[k][memberId][r.earningsMonth] = {
+            net: 0, firstDate: null, lastDate: null, name: r.memberName || null,
+          };
+        }
+        const slot = grouped[k][memberId][r.earningsMonth];
+        slot.net += (r.grossAmount || 0);
+        if (r.memberName && !slot.name) slot.name = r.memberName;
+        const d = r.recordDate ? new Date(r.recordDate) : null;
+        if (d && !isNaN(d.getTime())) {
+          if (!slot.firstDate || d < slot.firstDate) slot.firstDate = d;
+          if (!slot.lastDate || d > slot.lastDate) slot.lastDate = d;
+        }
+      }
+
+      for (const k of Object.keys(grouped)) {
+        const memberMonths = grouped[k];
+        const intervals = [];
+        const namesByMonth = {}; // month → memberName (the actual occupant for that month)
+        for (const memberId of Object.keys(memberMonths)) {
+          const months = memberMonths[memberId];
+          let firstDate = null, lastDate = null;
+          let memberName = null;
+          const positiveMonths = new Set();
+          for (const month of Object.keys(months)) {
+            const m = months[month];
+            if (!memberName && m.name) memberName = m.name;
+            if (m.net > 0) {
+              positiveMonths.add(month);
+              if (m.firstDate && (!firstDate || m.firstDate < firstDate)) firstDate = m.firstDate;
+              if (m.lastDate && (!lastDate || m.lastDate > lastDate)) lastDate = m.lastDate;
+              namesByMonth[month] = m.name || memberName;
+            }
+          }
+          if (positiveMonths.size === 0) continue; // rejected for every month
+          // Fallback dates when recordDate is missing on legacy data —
+          // assume the member was present for the full extent of their
+          // earliest / latest positive month.
+          if (!firstDate) {
+            const earliest = [...positiveMonths].sort()[0];
+            const [y, m] = earliest.split('-').map(Number);
+            firstDate = new Date(Date.UTC(y, m - 1, 1));
+          }
+          if (!lastDate) {
+            const latest = [...positiveMonths].sort().pop();
+            const [y, m] = latest.split('-').map(Number);
+            lastDate = new Date(Date.UTC(y, m - 1, daysInMonth(latest)));
+          }
+          intervals.push({
+            memberId,
+            memberName,
+            firstDate,
+            lastDate,
+            positiveMonths,
+          });
+        }
+        intervals.sort((a, b) => a.firstDate - b.firstDate);
+        occupancyByRoom[k] = intervals;
+        memberLabelByRoom[k] = namesByMonth;
+      }
+    }
+
+    function vacantDaysInMonthForRoom(intervals, monthStr) {
+      const dim = daysInMonth(monthStr);
+      if (!intervals || intervals.length === 0) {
+        // No actual occupant ever seen for this room → fully vacant.
+        return dim;
+      }
+      const [y, m] = monthStr.split('-').map(Number);
+      // Only count vacancy WITHIN the room's lifetime of data: from
+      // the first ever firstDate to the last ever lastDate. Days
+      // outside that span are treated as "no data" (not vacant).
+      const span0 = intervals[0].firstDate;
+      const span1 = intervals[intervals.length - 1].lastDate;
+      const monthStart = new Date(Date.UTC(y, m - 1, 1));
+      const monthEnd = new Date(Date.UTC(y, m - 1, dim));
+      const winStart = monthStart < span0 ? span0 : monthStart;
+      const winEnd = monthEnd > span1 ? span1 : monthEnd;
+      if (winStart > winEnd) return 0;
+
+      let occupied = 0;
+      const oneDay = 24 * 60 * 60 * 1000;
+      for (let day = new Date(winStart); day <= winEnd; day = new Date(day.getTime() + oneDay)) {
+        for (const i of intervals) {
+          if (day >= i.firstDate && day <= i.lastDate) { occupied += 1; break; }
+        }
+      }
+      const windowDays = Math.round((winEnd - winStart) / oneDay) + 1;
+      // Vacant = days in the window not occupied.
+      const vacantWithinWindow = windowDays - occupied;
+      // Outside-window days in this month don't count (no data).
+      return vacantWithinWindow;
+    }
+
+    function turnoversInMonthForRoom(intervals, monthStr) {
+      if (!intervals || intervals.length < 2) return 0;
+      const [y, m] = monthStr.split('-').map(Number);
+      const monthStart = new Date(Date.UTC(y, m - 1, 1));
+      const monthEnd = new Date(Date.UTC(y, m - 1, daysInMonth(monthStr)));
+      let count = 0;
+      for (let i = 1; i < intervals.length; i++) {
+        const cur = intervals[i];
+        const prev = intervals[i - 1];
+        if (cur.memberId === prev.memberId) continue;
+        if (cur.firstDate >= monthStart && cur.firstDate <= monthEnd) count += 1;
+      }
+      return count;
+    }
+
     // Maintenance costs per property + per room (for the month)
     const maintByProperty = {};
     const maintByRoom = {};
@@ -499,108 +639,46 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
-    // Turnover tracker. Correct definition:
-    //   For each room (Property Address + Room Number), look at the SET
-    //   of distinct member IDs each month. A turnover counts each
-    //   month-to-month transition where the new month's set is fully
-    //   disjoint from the prior month's set (i.e. all old residents are
-    //   gone). Initial occupancy is NOT a turnover. Multiple payments
-    //   in a month from the same member are NOT turnovers.
-    const turnoverRecords = await prisma.financialRecord.findMany({
-      where: { organizationId: orgId, recordType: 'COLLECTED' },
-      select: { roomNumber: true, roomId: true, memberId: true, propertyAddress: true, earningsMonth: true },
-    });
+    // Turnover tracker — uses occupancyByRoom (rejected members already
+    // filtered out). A turnover is a transition between two consecutive
+    // ACTUAL OCCUPANTS in the same room.
+    const turnoverList = Object.keys(occupancyByRoom).map((k) => {
+      const intervals = occupancyByRoom[k];
+      const [norm, roomKey] = k.split('|');
+      const propId = mappingByAddr[norm];
+      const propertyName = propId
+        ? (propertyById[propId]?.name || norm)
+        : (allCollectedHistory.find((r) => (normalizeAddress(r.propertyAddress) || 'unknown') === norm)?.propertyAddress || norm);
 
-    // key = "<normalized addr>|<room number>" → { propertyName, byMonth: Map<month, Set<memberId>> }
-    const turnoverByRoom = {};
-    for (const r of turnoverRecords) {
-      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
-      if (!roomKey) continue;
-      const memberId = (r.memberId || '').toString().trim();
-      if (!memberId) continue;
-      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
-      const key = `${norm}|${roomKey}`;
-      if (!turnoverByRoom[key]) {
-        const propId = mappingByAddr[norm];
-        turnoverByRoom[key] = {
-          propertyId: propId || null,
-          propertyName: propId ? (propertyById[propId]?.name || r.propertyAddress) : (r.propertyAddress || '—'),
-          roomNumber: roomKey,
-          byMonth: new Map(),
-        };
-      }
-      const t = turnoverByRoom[key];
-      if (!t.byMonth.has(r.earningsMonth)) t.byMonth.set(r.earningsMonth, new Set());
-      t.byMonth.get(r.earningsMonth).add(memberId);
-    }
-
-    const turnoverList = Object.values(turnoverByRoom).map((t) => {
-      const months = [...t.byMonth.keys()].sort();
-      const allMembers = new Set();
-      for (const set of t.byMonth.values()) for (const m of set) allMembers.add(m);
-
+      // Distinct sequential members → count of memberId changes.
       let turnovers = 0;
-      for (let i = 1; i < months.length; i++) {
-        const prev = t.byMonth.get(months[i - 1]);
-        const curr = t.byMonth.get(months[i]);
-        if (!prev || prev.size === 0) continue;        // first occupancy
-        if (!curr || curr.size === 0) continue;        // vacant gap, not a turnover yet
-        let overlap = false;
-        for (const m of curr) if (prev.has(m)) { overlap = true; break; }
-        if (!overlap) turnovers += 1;
+      const seenMembers = new Set();
+      for (let i = 0; i < intervals.length; i++) {
+        seenMembers.add(intervals[i].memberId);
+        if (i > 0 && intervals[i].memberId !== intervals[i - 1].memberId) turnovers += 1;
       }
 
-      const occupiedMonths = [...t.byMonth.values()].filter((s) => s.size > 0).length;
-      const avgTenure = occupiedMonths / Math.max(1, turnovers + 1);
+      // Months of occupancy = union of all positiveMonths sets.
+      const occupiedMonths = new Set();
+      for (const i of intervals) {
+        for (const m of i.positiveMonths) occupiedMonths.add(m);
+      }
+      const avgTenure = occupiedMonths.size / Math.max(1, turnovers + 1);
 
       return {
-        propertyId: t.propertyId,
-        propertyName: t.propertyName,
-        roomNumber: t.roomNumber,
+        propertyId: propId || null,
+        propertyName,
+        roomNumber: roomKey,
         turnovers,
-        memberCount: allMembers.size,
+        memberCount: seenMembers.size,
         avgTenureMonths: Number(avgTenure.toFixed(2)),
       };
     });
     turnoverList.sort((a, b) => b.turnovers - a.turnovers);
 
-    // Turnovers this month (per property key = normalized address):
-    // count rooms whose current set is fully disjoint from prior month's.
-    const turnoversThisMonthByProperty = {};
-    if (month && month !== 'all') {
-      const prev = monthBefore(month);
-      const prevRecords = await prisma.financialRecord.findMany({
-        where: { organizationId: orgId, earningsMonth: prev, recordType: 'COLLECTED' },
-        select: { roomNumber: true, roomId: true, memberId: true, propertyAddress: true },
-      });
-      const prevByRoom = {}; // key = "<normAddr>|<roomNum>" → Set<memberId>
-      for (const r of prevRecords) {
-        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
-        const memberId = (r.memberId || '').toString().trim();
-        if (!roomKey || !memberId) continue;
-        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
-        const k = `${norm}|${roomKey}`;
-        if (!prevByRoom[k]) prevByRoom[k] = new Set();
-        prevByRoom[k].add(memberId);
-      }
-      for (const propKey of Object.keys(byProperty)) {
-        const p = byProperty[propKey];
-        for (const roomKey of Object.keys(p.rooms)) {
-          const room = p.rooms[roomKey];
-          const k = `${propKey}|${roomKey}`;
-          const prevSet = prevByRoom[k];
-          const currentMembers = [...room.memberIds];
-          let isTurnover = false;
-          if (prevSet && prevSet.size > 0 && currentMembers.length > 0) {
-            isTurnover = !currentMembers.some((m) => prevSet.has(m));
-          }
-          room.turnover = !!isTurnover;
-          if (isTurnover) {
-            turnoversThisMonthByProperty[propKey] = (turnoversThisMonthByProperty[propKey] || 0) + 1;
-          }
-        }
-      }
-    }
+    // (Turnovers-this-month is computed inline per-room in the
+    // property breakdown below using the occupancy intervals — no
+    // separate prior-month query needed.)
 
     // Vacancy computation. PadSplit only bills when a room is occupied,
     // so "billed - collected" misses true vacancy. Instead we use each
@@ -618,89 +696,117 @@ router.get('/dashboard', async (req, res) => {
     //
     // For "all time" we sum the per-month per-room vacancy across history.
 
-    // Fully occupied if collected ≥ this fraction of expected for the
-    // month. 0.85 absorbs minor noise (late-fee timing, partial credits)
-    // beyond the days-in-month variation that's already accounted for.
-    const OCCUPIED_THRESHOLD = 0.85;
-
-    function vacancyForRoom({ propertyKey, roomKey, monthStr, collectedThisMonth, typicalDailyRate, fallbackDailyRate }) {
-      const dailyRate = typicalDailyRate > 0 ? typicalDailyRate : (fallbackDailyRate || 0);
-      if (dailyRate <= 0) {
-        return { vacantDays: 0, vacantFraction: 0, vacancyCost: 0, dailyRate: 0, expectedRent: 0 };
-      }
-      const dim = monthStr ? daysInMonth(monthStr) : 30;
-      // Expected rent for this specific month = daily rate × days in month.
-      const expected = dailyRate * dim;
-      const ratio = collectedThisMonth / expected;
-      let vacantFraction;
-      if (ratio >= OCCUPIED_THRESHOLD) {
-        vacantFraction = 0;
-      } else {
-        vacantFraction = Math.max(0, Math.min(1, 1 - ratio));
-      }
-      const vacantDays = Math.round(dim * vacantFraction);
-      const vacancyCost = dailyRate * vacantDays;
-      return { vacantDays, vacantFraction, vacancyCost, dailyRate, expectedRent: expected };
-    }
-
     // For "all time", per-room vacancy aggregates across all months.
     const isAllTime = !month || month === 'all';
     const allMonthsForVacancy = isAllTime
       ? [...new Set(allCollectedHistory.map((r) => r.earningsMonth))].sort()
       : [month];
 
-    // Pre-compute per-room collected dues for all months (so all-time
-    // vacancy can sum monthly shortfalls).
-    const collectedByRoomMonth = {}; // "addr|room|month" -> dues collected
-    for (const r of allCollectedHistory) {
-      if (!isDuesBillType(r.billType)) continue;
-      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
-      if (!roomKey) continue;
-      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
-      const k = `${norm}|${roomKey}|${r.earningsMonth}`;
-      collectedByRoomMonth[k] = (collectedByRoomMonth[k] || 0) + (r.grossAmount || 0);
+    // Finalize property breakdowns. We backfill rooms that have ever
+    // had history but no records in the current month so we can still
+    // count their vacancy.
+    for (const p of Object.values(byProperty)) {
+      const everSeen = allRoomKeysByProperty[p.propertyKey] || new Set();
+      for (const roomKey of everSeen) {
+        if (!p.rooms[roomKey]) {
+          p.rooms[roomKey] = {
+            roomNumber: roomKey,
+            roomId: null,
+            residentName: null,
+            residentMemberId: null,
+            gross: 0, lateFees: 0, bookingFee: 0, serviceFee: 0,
+            transactionFee: 0, hostEarnings: 0, billed: 0,
+            memberIds: new Set(),
+            lastSeen: null,
+          };
+        }
+      }
     }
 
-    // Finalize property breakdowns
+    // Make sure every property that has historical data shows up too
+    // — even if the selected month has no records at all (fully vacant).
+    for (const norm of Object.keys(allRoomKeysByProperty)) {
+      if (byProperty[norm]) continue;
+      const propId = mappingByAddr[norm];
+      const matchedProp = propId ? propertyById[propId] : null;
+      // Recover an address label if we have one in history.
+      let labelAddr = norm;
+      for (const r of allCollectedHistory) {
+        if ((normalizeAddress(r.propertyAddress) || 'unknown') === norm && r.propertyAddress) {
+          labelAddr = r.propertyAddress;
+          break;
+        }
+      }
+      byProperty[norm] = {
+        propertyKey: norm,
+        propertyId: propId || null,
+        property: matchedProp,
+        padsplitAddress: labelAddr,
+        gross: 0, bookingFee: 0, serviceFee: 0, transactionFee: 0,
+        hostEarnings: 0, billedDues: 0, collectedDues: 0, lateFees: 0,
+        rooms: {},
+        memberIds: new Set(),
+      };
+      for (const roomKey of allRoomKeysByProperty[norm]) {
+        byProperty[norm].rooms[roomKey] = {
+          roomNumber: roomKey, roomId: null,
+          residentName: null, residentMemberId: null,
+          gross: 0, lateFees: 0, bookingFee: 0, serviceFee: 0,
+          transactionFee: 0, hostEarnings: 0, billed: 0,
+          memberIds: new Set(), lastSeen: null,
+        };
+      }
+    }
+
     const propertyBreakdown = Object.values(byProperty).map((p) => {
       const propKeyForFallback = p.propertyKey;
       const fallbackDailyRate = fallbackDailyRateByProperty[propKeyForFallback] || 0;
       let propVacancyDays = 0;
       let propVacancyCost = 0;
       let propTotalDays = 0;
+      let propTurnoversThisMonth = 0;
 
       const rooms = Object.values(p.rooms).map((room) => {
         const maintenanceCost = maintByRoom[room.roomId] || 0;
         const roomKey = (room.roomNumber || room.roomId || '').toString().trim();
         const rentKey = `${propKeyForFallback}|${roomKey}`;
         const typicalDailyRate = typicalDailyRateByRoom[rentKey] || 0;
+        const dailyRate = typicalDailyRate || fallbackDailyRate;
+        const intervals = occupancyByRoom[rentKey] || [];
 
-        // Sum vacancy across all months in scope (one month for a
-        // selected month, every month for "all time").
+        // Sum vacancy + turnovers across all months in scope.
         let vacantDaysTotal = 0;
-        let vacancyCostTotal = 0;
         let totalDaysTotal = 0;
-        let dailyRate = typicalDailyRate || fallbackDailyRate;
-        let expectedRent = 0;
+        let turnoversTotal = 0;
+        let turnoverInSelectedMonth = false;
         for (const m of allMonthsForVacancy) {
-          const collectedThisMonth = collectedByRoomMonth[`${propKeyForFallback}|${roomKey}|${m}`] || 0;
-          const v = vacancyForRoom({
-            propertyKey: propKeyForFallback,
-            roomKey,
-            monthStr: m,
-            collectedThisMonth,
-            typicalDailyRate,
-            fallbackDailyRate,
-          });
-          vacantDaysTotal += v.vacantDays;
-          vacancyCostTotal += v.vacancyCost;
+          const vd = vacantDaysInMonthForRoom(intervals, m);
+          vacantDaysTotal += vd;
           totalDaysTotal += daysInMonth(m);
-          dailyRate = v.dailyRate;
-          expectedRent = v.expectedRent;
+          const tn = turnoversInMonthForRoom(intervals, m);
+          turnoversTotal += tn;
+          if (tn > 0) turnoverInSelectedMonth = true;
         }
+        const vacancyCostTotal = dailyRate * vacantDaysTotal;
+        const residentName = (() => {
+          // Pick the actual occupant for the selected month (or latest in scope).
+          if (intervals.length === 0) return null;
+          if (allMonthsForVacancy.length === 1) {
+            const m = allMonthsForVacancy[0];
+            const names = memberLabelByRoom[rentKey] || {};
+            if (names[m]) return names[m];
+            return null;
+          }
+          // All-time view: most recent occupant's name.
+          return intervals[intervals.length - 1].memberName || null;
+        })();
+
         propVacancyDays += vacantDaysTotal;
         propVacancyCost += vacancyCostTotal;
         propTotalDays += totalDaysTotal;
+        propTurnoversThisMonth += turnoversTotal;
+        room.turnover = turnoverInSelectedMonth;
+        room.residentName = residentName;
 
         return {
           roomNumber: room.roomNumber,
@@ -744,7 +850,7 @@ router.get('/dashboard', async (req, res) => {
         vacantDays: propVacancyDays,
         lateFees: round2(p.lateFees),
         avgRentPerRoom: round2(avgRent),
-        turnoversThisMonth: turnoversThisMonthByProperty[p.propertyKey] || 0,
+        turnoversThisMonth: propTurnoversThisMonth,
         maintenanceCost: round2(p.propertyId ? (maintByProperty[p.propertyId] || 0) : 0),
         rooms,
       };
@@ -771,31 +877,16 @@ router.get('/dashboard', async (req, res) => {
         }
       }
 
-      // Prior-month vacancy via the same model: sum of per-room
-      // (typicalRent - collected) across all rooms in the org.
+      // Prior-month vacancy: sum vacancy days × daily rate per room
+      // using the same occupancy-interval model.
       let pVacancy = 0;
-      const prevRoomKeys = new Set();
-      for (const r of allCollectedHistory) {
-        if (!isDuesBillType(r.billType)) continue;
-        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
-        if (!roomKey) continue;
-        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
-        prevRoomKeys.add(`${norm}|${roomKey}`);
-      }
-      for (const k of prevRoomKeys) {
-        const [norm, roomKey] = k.split('|');
+      for (const k of Object.keys(occupancyByRoom)) {
+        const [norm] = k.split('|');
         const typicalDailyRate = typicalDailyRateByRoom[k] || 0;
         const fallbackDailyRate = fallbackDailyRateByProperty[norm] || 0;
-        const collectedThisMonth = collectedByRoomMonth[`${norm}|${roomKey}|${prev}`] || 0;
-        const v = vacancyForRoom({
-          propertyKey: norm,
-          roomKey,
-          monthStr: prev,
-          collectedThisMonth,
-          typicalDailyRate,
-          fallbackDailyRate,
-        });
-        pVacancy += v.vacancyCost;
+        const dailyRate = typicalDailyRate || fallbackDailyRate;
+        const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev);
+        pVacancy += dailyRate * vd;
       }
 
       trends = {
