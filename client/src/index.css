@@ -1595,6 +1595,9 @@ body {
   z-index: 1000;
   padding: 1rem;
 }
+/* Defer modal opens from inside the maintenance slideover (z-index 100),
+   so it needs a stacking context above any sibling slideover content. */
+.defer-modal-overlay { z-index: 1200; }
 
 .modal-content {
   background: #fff;
