@@ -263,8 +263,21 @@ router.get('/dashboard', async (req, res) => {
     const where = { organizationId: orgId };
     if (month && month !== 'all') where.earningsMonth = month;
 
-    const [records, mappings, properties, maintenance] = await Promise.all([
+    const [records, allCollectedHistory, mappings, properties, maintenance] = await Promise.all([
       prisma.financialRecord.findMany({ where }),
+      // For computing typical monthly rent per room — pull every COLLECTED
+      // membership-dues row across all months we have data for.
+      prisma.financialRecord.findMany({
+        where: { organizationId: orgId, recordType: 'COLLECTED' },
+        select: {
+          earningsMonth: true,
+          propertyAddress: true,
+          roomNumber: true,
+          roomId: true,
+          billType: true,
+          grossAmount: true,
+        },
+      }),
       prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
       prisma.property.findMany({
         where: { organizationId: orgId, deletedAt: null },
@@ -328,24 +341,13 @@ router.get('/dashboard', async (req, res) => {
     let totalCollected = 0;
     let totalPlatformFees = 0;
     let totalHostEarnings = 0;
-    let totalBilledDues = 0;
-    let totalCollectedDues = 0;
     for (const r of enriched) {
       if (r.recordType === 'COLLECTED') {
         totalCollected += r.grossAmount || 0;
         totalPlatformFees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
         totalHostEarnings += r.hostEarnings || 0;
-        if (isDuesBillType(r.billType)) {
-          totalCollectedDues += r.grossAmount || 0;
-        }
-      }
-      if (r.recordType === 'BILLED') {
-        if (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason)) {
-          totalBilledDues += Math.abs(r.grossAmount || 0);
-        }
       }
     }
-    const totalVacancy = Math.max(0, totalBilledDues - totalCollectedDues);
 
     // Per-property + per-room breakdown — keyed by the PadSplit address
     // (normalized). We don't require a RoomReport property match for
@@ -436,6 +438,53 @@ router.get('/dashboard', async (req, res) => {
         }
       }
     }
+
+    // Typical monthly rent per (normalized address, room number).
+    // Average across months where the room collected ANY membership dues
+    // — months at $0 don't drag the average down. Used for vacancy calc.
+    const typicalRentByRoom = (() => {
+      const monthlyTotals = {}; // key = "addr|room|month" → membership dues
+      for (const r of allCollectedHistory) {
+        if (!isDuesBillType(r.billType)) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+        const k = `${norm}|${roomKey}|${r.earningsMonth}`;
+        monthlyTotals[k] = (monthlyTotals[k] || 0) + (r.grossAmount || 0);
+      }
+      const totalsByRoom = {}; // "addr|room" → { sum, count }
+      for (const k of Object.keys(monthlyTotals)) {
+        const v = monthlyTotals[k];
+        if (v <= 0) continue;
+        const [norm, room] = k.split('|');
+        const roomKey = `${norm}|${room}`;
+        if (!totalsByRoom[roomKey]) totalsByRoom[roomKey] = { sum: 0, count: 0 };
+        totalsByRoom[roomKey].sum += v;
+        totalsByRoom[roomKey].count += 1;
+      }
+      const out = {};
+      for (const k of Object.keys(totalsByRoom)) {
+        out[k] = totalsByRoom[k].sum / totalsByRoom[k].count;
+      }
+      return out;
+    })();
+
+    // Property-level fallback rent (avg of room rents) for rooms with no
+    // history yet (e.g. brand-new room with no collections so far).
+    const fallbackRentByProperty = (() => {
+      const sums = {};
+      for (const k of Object.keys(typicalRentByRoom)) {
+        const [norm] = k.split('|');
+        if (!sums[norm]) sums[norm] = { sum: 0, count: 0 };
+        sums[norm].sum += typicalRentByRoom[k];
+        sums[norm].count += 1;
+      }
+      const out = {};
+      for (const norm of Object.keys(sums)) {
+        out[norm] = sums[norm].count > 0 ? sums[norm].sum / sums[norm].count : 0;
+      }
+      return out;
+    })();
 
     // Maintenance costs per property + per room (for the month)
     const maintByProperty = {};
@@ -550,10 +599,87 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
+    // Vacancy computation. PadSplit only bills when a room is occupied,
+    // so "billed - collected" misses true vacancy (empty room = no bill).
+    // Instead: use each room's typical monthly rent (averaged across the
+    // months it actually collected dues) and figure how much of the
+    // selected month was empty.
+    //
+    //   typicalRent  = avg of months where the room collected > $0
+    //   thisMonthDues = membership dues collected for this room this month
+    //   vacantFraction = max(0, 1 - thisMonthDues / typicalRent)
+    //   vacantDays   = round(daysInMonth * vacantFraction)
+    //   vacancyCost  = typicalRent * vacantFraction
+    //
+    // For "all time" we sum the per-month per-room vacancy across history.
+
+    function vacancyForRoom({ propertyKey, roomKey, monthStr, collectedThisMonth, typicalRent, fallbackRent }) {
+      const expected = typicalRent > 0 ? typicalRent : (fallbackRent || 0);
+      if (expected <= 0) {
+        return { vacantDays: 0, vacantFraction: 0, vacancyCost: 0, dailyRate: 0, expectedRent: 0 };
+      }
+      const dim = monthStr ? daysInMonth(monthStr) : 30;
+      const dailyRate = expected / dim;
+      const vacantFraction = Math.max(0, Math.min(1, 1 - (collectedThisMonth / expected)));
+      const vacantDays = Math.round(dim * vacantFraction);
+      const vacancyCost = expected * vacantFraction;
+      return { vacantDays, vacantFraction, vacancyCost, dailyRate, expectedRent: expected };
+    }
+
+    // For "all time", per-room vacancy aggregates across all months.
+    const isAllTime = !month || month === 'all';
+    const allMonthsForVacancy = isAllTime
+      ? [...new Set(allCollectedHistory.map((r) => r.earningsMonth))].sort()
+      : [month];
+
+    // Pre-compute per-room collected dues for all months (so all-time
+    // vacancy can sum monthly shortfalls).
+    const collectedByRoomMonth = {}; // "addr|room|month" -> dues collected
+    for (const r of allCollectedHistory) {
+      if (!isDuesBillType(r.billType)) continue;
+      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+      if (!roomKey) continue;
+      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+      const k = `${norm}|${roomKey}|${r.earningsMonth}`;
+      collectedByRoomMonth[k] = (collectedByRoomMonth[k] || 0) + (r.grossAmount || 0);
+    }
+
     // Finalize property breakdowns
     const propertyBreakdown = Object.values(byProperty).map((p) => {
+      const propKeyForFallback = p.propertyKey;
+      const fallbackRent = fallbackRentByProperty[propKeyForFallback] || 0;
+      let propVacancyDays = 0;
+      let propVacancyCost = 0;
+
       const rooms = Object.values(p.rooms).map((room) => {
         const maintenanceCost = maintByRoom[room.roomId] || 0;
+        const roomKey = (room.roomNumber || room.roomId || '').toString().trim();
+        const rentKey = `${propKeyForFallback}|${roomKey}`;
+        const typicalRent = typicalRentByRoom[rentKey] || 0;
+
+        // Sum vacancy across all months in scope (one month for a
+        // selected month, every month for "all time").
+        let vacantDaysTotal = 0;
+        let vacancyCostTotal = 0;
+        let expectedRent = typicalRent || fallbackRent;
+        let dailyRate = 0;
+        for (const m of allMonthsForVacancy) {
+          const collectedThisMonth = collectedByRoomMonth[`${propKeyForFallback}|${roomKey}|${m}`] || 0;
+          const v = vacancyForRoom({
+            propertyKey: propKeyForFallback,
+            roomKey,
+            monthStr: m,
+            collectedThisMonth,
+            typicalRent,
+            fallbackRent,
+          });
+          vacantDaysTotal += v.vacantDays;
+          vacancyCostTotal += v.vacancyCost;
+          dailyRate = v.dailyRate;
+        }
+        propVacancyDays += vacantDaysTotal;
+        propVacancyCost += vacancyCostTotal;
+
         return {
           roomNumber: room.roomNumber,
           roomId: room.roomId,
@@ -565,7 +691,10 @@ router.get('/dashboard', async (req, res) => {
           transactionFee: round2(room.transactionFee),
           hostEarnings: round2(room.hostEarnings),
           billed: round2(room.billed),
-          vacancy: round2(Math.max(0, room.billed - room.gross)),
+          typicalRent: round2(expectedRent),
+          dailyRate: round2(dailyRate),
+          vacantDays: vacantDaysTotal,
+          vacancy: round2(vacancyCostTotal),
           turnover: !!room.turnover,
           maintenanceCost: round2(maintenanceCost),
           netPL: round2(room.hostEarnings - maintenanceCost),
@@ -585,7 +714,8 @@ router.get('/dashboard', async (req, res) => {
         transactionFee: round2(p.transactionFee),
         hostEarnings: round2(p.hostEarnings),
         collectionRate: collectionRate != null ? round2(collectionRate) : null,
-        vacancy: round2(Math.max(0, p.billedDues - p.collectedDues)),
+        vacancy: round2(propVacancyCost),
+        vacantDays: propVacancyDays,
         lateFees: round2(p.lateFees),
         avgRentPerRoom: round2(avgRent),
         turnoversThisMonth: turnoversThisMonthByProperty[p.propertyKey] || 0,
@@ -595,6 +725,10 @@ router.get('/dashboard', async (req, res) => {
     });
     propertyBreakdown.sort((a, b) => (b.hostEarnings || 0) - (a.hostEarnings || 0));
 
+    // Portfolio vacancy = sum of per-property vacancy.
+    const totalVacancyCost = propertyBreakdown.reduce((s, p) => s + (p.vacancy || 0), 0);
+    const totalVacantDays = propertyBreakdown.reduce((s, p) => s + (p.vacantDays || 0), 0);
+
     // Month-over-month trend deltas for portfolio cards
     let trends = null;
     if (month && month !== 'all') {
@@ -602,24 +736,47 @@ router.get('/dashboard', async (req, res) => {
       const prevRecords = await prisma.financialRecord.findMany({
         where: { organizationId: orgId, earningsMonth: prev },
       });
-      let pCollected = 0, pFees = 0, pHost = 0, pBilled = 0, pCollectedDues = 0;
+      let pCollected = 0, pFees = 0, pHost = 0;
       for (const r of prevRecords) {
         if (r.recordType === 'COLLECTED') {
           pCollected += r.grossAmount || 0;
           pFees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
           pHost += r.hostEarnings || 0;
-          if (isDuesBillType(r.billType)) pCollectedDues += r.grossAmount || 0;
-        }
-        if (r.recordType === 'BILLED' && (isDuesBillType(r.billType) || isDuesBillType(r.transactionReason))) {
-          pBilled += Math.abs(r.grossAmount || 0);
         }
       }
-      const pVacancy = Math.max(0, pBilled - pCollectedDues);
+
+      // Prior-month vacancy via the same model: sum of per-room
+      // (typicalRent - collected) across all rooms in the org.
+      let pVacancy = 0;
+      const prevRoomKeys = new Set();
+      for (const r of allCollectedHistory) {
+        if (!isDuesBillType(r.billType)) continue;
+        const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+        if (!roomKey) continue;
+        const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+        prevRoomKeys.add(`${norm}|${roomKey}`);
+      }
+      for (const k of prevRoomKeys) {
+        const [norm, roomKey] = k.split('|');
+        const typicalRent = typicalRentByRoom[k] || 0;
+        const fallback = fallbackRentByProperty[norm] || 0;
+        const collectedThisMonth = collectedByRoomMonth[`${norm}|${roomKey}|${prev}`] || 0;
+        const v = vacancyForRoom({
+          propertyKey: norm,
+          roomKey,
+          monthStr: prev,
+          collectedThisMonth,
+          typicalRent,
+          fallbackRent: fallback,
+        });
+        pVacancy += v.vacancyCost;
+      }
+
       trends = {
         collected: deltaPct(totalCollected, pCollected),
         fees: deltaPct(totalPlatformFees, pFees),
         hostEarnings: deltaPct(totalHostEarnings, pHost),
-        vacancy: deltaPct(totalVacancy, pVacancy),
+        vacancy: deltaPct(totalVacancyCost, pVacancy),
       };
     }
 
@@ -629,7 +786,8 @@ router.get('/dashboard', async (req, res) => {
         collected: round2(totalCollected),
         platformFees: round2(totalPlatformFees),
         hostEarnings: round2(totalHostEarnings),
-        vacancy: round2(totalVacancy),
+        vacancy: round2(totalVacancyCost),
+        vacantDays: totalVacantDays,
       },
       trends,
       propertyBreakdown,
@@ -919,6 +1077,12 @@ function monthBefore(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 2, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function daysInMonth(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  // Day 0 of next month = last day of current month.
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
 function monthAfter(monthStr) {

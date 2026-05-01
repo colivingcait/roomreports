@@ -363,7 +363,13 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
             <div className="fin-prop-stat"><label>Service fees (8%)</label><span>{fmtMoney(p.serviceFee)}</span></div>
             <div className="fin-prop-stat"><label>Transaction fees</label><span>{fmtMoney(p.transactionFee)}</span></div>
             <div className="fin-prop-stat"><label>Net host earnings</label><span>{fmtMoney(p.hostEarnings)}</span></div>
-            <div className="fin-prop-stat"><label>Vacancy</label><span>{fmtMoney(p.vacancy)}</span></div>
+            <div className="fin-prop-stat">
+              <label>Vacancy</label>
+              <span>{fmtMoney(p.vacancy)}</span>
+              <small className="fin-prop-stat-sub">
+                {p.vacantDays} {p.vacantDays === 1 ? 'day' : 'days'} vacant
+              </small>
+            </div>
             <div className="fin-prop-stat"><label>Late fees collected</label><span>{fmtMoney(p.lateFees)}</span></div>
             <div className="fin-prop-stat"><label>Avg rent / room</label><span>{fmtMoney(p.avgRentPerRoom)}</span></div>
             <div className="fin-prop-stat"><label>Turnovers this month</label><span>{p.turnoversThisMonth}</span></div>
@@ -383,6 +389,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                   {headerCell('transactionFee', 'Txn fee')}
                   {headerCell('hostEarnings', 'Host earn')}
                   {headerCell('billed', 'Billed')}
+                  {headerCell('vacantDays', 'Vacant days')}
                   {headerCell('vacancy', 'Vacancy')}
                   {headerCell('turnover', 'Turn?')}
                   {headerCell('maintenanceCost', 'Maint')}
@@ -405,6 +412,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                       <td>{fmtMoney(r.transactionFee)}</td>
                       <td>{fmtMoney(r.hostEarnings)}</td>
                       <td>{fmtMoney(r.billed)}</td>
+                      <td>{r.vacantDays || 0}</td>
                       <td>{fmtMoney(r.vacancy)}</td>
                       <td>{r.turnover ? <span className="fin-turn-yes">Yes</span> : '—'}</td>
                       <td>{fmtMoney(r.maintenanceCost)}</td>
@@ -413,7 +421,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                   );
                 })}
                 {rooms.length === 0 && (
-                  <tr><td colSpan="13" className="fin-empty">No room data for this month.</td></tr>
+                  <tr><td colSpan="14" className="fin-empty">No room data for this month.</td></tr>
                 )}
               </tbody>
             </table>
@@ -693,6 +701,11 @@ export default function Financials() {
               <div className="fin-metric-card">
                 <div className="fin-metric-label">Vacancy</div>
                 <div className="fin-metric-value fin-metric-value-terra">{fmtMoney(totals?.vacancy)}</div>
+                {totals?.vacantDays != null && (
+                  <div className="fin-metric-sub">
+                    {totals.vacantDays} {totals.vacantDays === 1 ? 'day' : 'days'} vacant
+                  </div>
+                )}
                 <TrendArrow delta={trends?.vacancy} invert />
               </div>
             </div>
