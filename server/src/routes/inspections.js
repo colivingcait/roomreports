@@ -1162,7 +1162,7 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
   let maintenanceCreated = 0;
   let violationsCreated = 0;
 
-  for (const { item, description, pmNote, pmPriority } of pairs) {
+  for (const { item, description, pmNote, pmPriority, followUp } of pairs) {
     const combinedNote = [item.note, pmNote ? `PM: ${pmNote}` : null].filter(Boolean).join('\n');
     const category = item.flagCategory || 'General';
     const priority = pmPriority
@@ -1225,8 +1225,9 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
           },
         });
         violationsCreated += 1;
-        // Backfill any follow-up tickets the PM created during the
-        // approval flow before this violation existed.
+        // Backfill any follow-up tickets the PM created earlier in the
+        // session (before this approval) so they're linked to the new
+        // violation row.
         await tx.maintenanceItem.updateMany({
           where: {
             isLeaseFollowUp: true,
@@ -1235,6 +1236,37 @@ async function createTicketsFromApproval(tx, inspection, pairs, user) {
           },
           data: { leaseViolationId: created.id },
         });
+        // Inline follow-up requested as part of THIS approval click.
+        if (followUp) {
+          let parsedDueAt = null;
+          if (followUp.dueAt) {
+            const d = new Date(followUp.dueAt);
+            if (!isNaN(d.getTime())) parsedDueAt = d;
+          }
+          const fallbackTitle = `Follow-up: ${item.text}`;
+          await tx.maintenanceItem.create({
+            data: {
+              organizationId: inspection.organizationId,
+              propertyId: inspection.propertyId,
+              roomId: inspection.roomId,
+              inspectionId: inspection.id,
+              inspectionItemId: item.id,
+              description: followUp.title || fallbackTitle,
+              zone: 'Lease follow-up',
+              flagCategory: category || 'Lease Compliance',
+              priority: followUp.priority || 'Medium',
+              status: 'OPEN',
+              note: followUp.note
+                || `Lease violation recorded on ${new Date(inspection.completedAt || inspection.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Follow up to ensure compliance.`,
+              reportedById: user.id,
+              reportedByName: user.name,
+              reportedByRole: user.role,
+              isLeaseFollowUp: true,
+              leaseViolationId: created.id,
+              dueAt: parsedDueAt,
+            },
+          });
+        }
       }
     }
   }
@@ -1288,6 +1320,14 @@ router.post('/:id/approve', requireRole('OWNER', 'PM'), async (req, res) => {
             || item.text,
           pmNote: sel.pmNote || null,
           pmPriority: PRIORITIES.includes(sel.priority) ? sel.priority : null,
+          // Inline follow-up created during approval — only honored when
+          // the violation is also being recorded.
+          followUp: (sel.createViolation && sel.followUp) ? {
+            title: (sel.followUp.title || '').trim() || null,
+            priority: PRIORITIES.includes(sel.followUp.priority) ? sel.followUp.priority : 'Medium',
+            dueAt: sel.followUp.dueAt || null,
+            note: sel.followUp.note || null,
+          } : null,
         });
       }
     } else {
