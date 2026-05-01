@@ -96,6 +96,24 @@ async function autoMatchAddresses(orgId, addresses) {
   return out;
 }
 
+// ─── POST /api/financials/reset — wipe all financial data for the org
+
+router.post('/reset', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const recordsDel = await prisma.financialRecord.deleteMany({ where: { organizationId: orgId } });
+    const uploadsDel = await prisma.financialUpload.deleteMany({ where: { organizationId: orgId } });
+    return res.json({
+      ok: true,
+      recordsDeleted: recordsDel.count,
+      uploadsDeleted: uploadsDel.count,
+    });
+  } catch (err) {
+    console.error('reset financials error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/financials/uploads — list all uploads ─────
 
 router.get('/uploads', async (req, res) => {
@@ -127,15 +145,23 @@ router.post('/upload', async (req, res) => {
 
     // Group records by their earningsMonth.
     const byMonth = new Map();
+    let dropped = 0;
     for (const r of records) {
       const m = (r.earningsMonth || '').slice(0, 7);
-      if (!/^\d{4}-\d{2}$/.test(m)) continue;
+      if (!/^\d{4}-\d{2}$/.test(m)) { dropped += 1; continue; }
       if (!byMonth.has(m)) byMonth.set(m, []);
       byMonth.get(m).push(r);
     }
     if (byMonth.size === 0) {
-      return res.status(400).json({ error: 'No records had a valid earningsMonth (YYYY-MM)' });
+      return res.status(400).json({
+        error: 'No records had a valid earningsMonth (YYYY-MM). Check that your CSVs have Payout Month / Created / Earnings Month columns.',
+        receivedRows: records.length,
+        droppedRows: dropped,
+      });
     }
+    console.log(
+      `[financials] upload: ${records.length} rows received, ${dropped} dropped, months=${[...byMonth.keys()].sort().join(',')}`,
+    );
 
     // Auto-match addresses once for the whole payload.
     const addressSet = new Set();
@@ -193,10 +219,15 @@ router.post('/upload', async (req, res) => {
       monthsAffected.push(month);
     }
 
+    const perMonthCounts = {};
+    for (const [m, rows] of byMonth.entries()) perMonthCounts[m] = rows.length;
     return res.json({
+      recordsReceived: records.length,
       recordsInserted: totalInserted,
+      droppedRows: dropped,
       monthsAffected: monthsAffected.length,
       months: monthsAffected.sort(),
+      perMonthCounts,
     });
   } catch (err) {
     console.error('upload financials error:', err);

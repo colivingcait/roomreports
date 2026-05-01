@@ -73,6 +73,18 @@ function rowGet(row, ...keys) {
   return undefined;
 }
 
+// PadSplit splits the property address across Street 1 / Street 2 in
+// some exports; the SUMMARY file gives a single "Address". Always
+// produce a non-empty address so the dashboard can aggregate by it.
+function rowAddress(r) {
+  const direct = rowGet(r, 'Address', 'Property Address');
+  if (direct && String(direct).trim()) return String(direct).trim();
+  const s1 = rowGet(r, 'Street 1', 'Street1', 'Address Line 1');
+  const s2 = rowGet(r, 'Street 2', 'Street2', 'Address Line 2');
+  const parts = [s1, s2].map((v) => (v == null ? '' : String(v).trim())).filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 // Extract a YYYY-MM month string from an arbitrary date-ish cell.
 // Handles "2026-04-01", "2026-04-01T00:00:00Z", "2026-04", "4/1/2026".
 function toYearMonth(v) {
@@ -112,8 +124,6 @@ function parseRows(kind, rows) {
     }
   } else if (kind === 'collected') {
     for (const r of rows) {
-      // Each row carries its own month — use Payout Month (preferred),
-      // fall back to Earnings Month, Created date.
       const month = toYearMonth(
         rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Payout Date'),
       );
@@ -126,8 +136,8 @@ function parseRows(kind, rows) {
         memberId: rowGet(r, 'Member ID'),
         memberName: rowGet(r, 'Member Name', 'Resident Name', 'Member'),
         billType: rowGet(r, 'Bill Type'),
-        propertyAddress: rowGet(r, 'Address', 'Property Address'),
-        propertyPSID: rowGet(r, 'PSID'),
+        propertyAddress: rowAddress(r),
+        propertyPSID: rowGet(r, 'PSID', 'Property ID'),
         grossAmount: num(rowGet(r, 'Gross Collected')),
         bookingFee: num(rowGet(r, 'Booking Fee Amount', 'Booking Fees Amount')),
         serviceFee: num(rowGet(r, 'Service Fee Amount', 'Service Fees Amount')),
@@ -138,7 +148,6 @@ function parseRows(kind, rows) {
     }
   } else if (kind === 'billed') {
     for (const r of rows) {
-      // billed.csv has a Created date — bucket the row to its created month.
       const month = toYearMonth(
         rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Created Date', 'Bill Date'),
       );
@@ -154,8 +163,8 @@ function parseRows(kind, rows) {
         roomId: rowGet(r, 'Room ID'),
         memberId: rowGet(r, 'Member ID'),
         memberName: rowGet(r, 'Member Name'),
-        propertyAddress: rowGet(r, 'Address', 'Property Address'),
-        propertyPSID: rowGet(r, 'PSID'),
+        propertyAddress: rowAddress(r),
+        propertyPSID: rowGet(r, 'PSID', 'Property ID'),
         grossAmount: num(rowGet(r, 'Amount')),
       });
     }
@@ -176,19 +185,41 @@ function parseRows(kind, rows) {
   return out;
 }
 
+// Clean a header cell: strip UTF-8 BOM and trailing whitespace.
+function cleanHeader(h) {
+  let s = String(h == null ? '' : h);
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  return s.replace(/^[\s ]+|[\s ]+$/g, '');
+}
+
 function parseFile(file) {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      // Strip UTF-8 BOM and trim whitespace from every header so column
+      // matching is reliable even when PadSplit ships exports with a BOM.
+      transformHeader: cleanHeader,
       complete: (result) => {
         const headers = result.meta.fields || [];
         const kind = detectKind(headers);
         if (kind === 'unknown') {
-          reject(new Error(`Could not identify ${file.name}. Headers: ${headers.slice(0, 5).join(', ')}`));
+          reject(new Error(`Could not identify ${file.name}. Headers: ${headers.slice(0, 8).join(', ')}`));
           return;
         }
-        resolve({ kind, fileName: file.name, rows: parseRows(kind, result.data) });
+        const rows = parseRows(kind, result.data);
+        const totalRaw = result.data.length;
+        const dropped = totalRaw - rows.length;
+        const months = new Set(rows.map((r) => r.earningsMonth));
+        resolve({
+          kind,
+          fileName: file.name,
+          rows,
+          headers,
+          totalRaw,
+          dropped,
+          monthCount: months.size,
+        });
       },
       error: (err) => reject(err),
     });
@@ -406,6 +437,8 @@ export default function Financials() {
   const [expandedProps, setExpandedProps] = useState({});
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [uploadInfo, setUploadInfo] = useState('');
+  const [resetting, setResetting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [roomDetail, setRoomDetail] = useState(null);
   const [mappings, setMappings] = useState({ mappings: [], unmatched: [] });
@@ -464,20 +497,42 @@ export default function Financials() {
   const handleUpload = async (files) => {
     setUploadBusy(true);
     setUploadError('');
+    setUploadInfo('');
     try {
       const parsedSets = [];
       for (const f of files) {
         const parsed = await parseFile(f);
         parsedSets.push(parsed);
       }
+      // Per-file parse summary so it's obvious if something is wrong.
+      const perFile = parsedSets
+        .map((s) => `${s.fileName}: ${s.rows.length}/${s.totalRaw} rows, ${s.monthCount} months${s.dropped ? `, ${s.dropped} dropped` : ''}`)
+        .join(' · ');
+      // Cross-file address resolution: SUMMARY rows always carry the
+      // street address + PSID. COLLECTED/BILLED sometimes only carry the
+      // Property ID (= PSID) with Street 1 / Street 2 columns. Build a
+      // PSID -> address map from any row that has both, then backfill
+      // missing addresses on the rest.
+      const psidToAddress = {};
+      for (const set of parsedSets) {
+        for (const row of set.rows) {
+          if (row.propertyPSID && row.propertyAddress && !psidToAddress[row.propertyPSID]) {
+            psidToAddress[row.propertyPSID] = row.propertyAddress;
+          }
+        }
+      }
       const records = [];
       for (const set of parsedSets) {
         for (const row of set.rows) {
-          if (row.earningsMonth) records.push(row);
+          if (!row.earningsMonth) continue;
+          if (!row.propertyAddress && row.propertyPSID && psidToAddress[row.propertyPSID]) {
+            row.propertyAddress = psidToAddress[row.propertyPSID];
+          }
+          records.push(row);
         }
       }
       if (records.length === 0) {
-        throw new Error('No rows could be assigned to an earnings month — check the date columns.');
+        throw new Error(`No rows could be assigned to an earnings month. ${perFile}`);
       }
       const monthsInUpload = uniqueMonths(parsedSets);
       const res = await api('/api/financials/upload', {
@@ -488,17 +543,36 @@ export default function Financials() {
         }),
       });
       await loadAll();
-      // Land on the most recent month in the upload by default.
       if (monthsInUpload.length > 0) {
         setSelectedMonth(monthsInUpload[monthsInUpload.length - 1]);
       }
-      if (res?.warnings?.length) {
-        setUploadError(`Uploaded ${res.recordsInserted} rows across ${res.monthsAffected} months. Warnings: ${res.warnings.join('; ')}`);
-      }
+      const monthList = (res?.months || []).join(', ');
+      setUploadInfo(
+        `Uploaded ${res.recordsInserted} rows across ${res.monthsAffected} month${res.monthsAffected === 1 ? '' : 's'}` +
+        (res.droppedRows ? ` (${res.droppedRows} dropped)` : '') +
+        ` — ${monthList}`,
+      );
     } catch (err) {
       setUploadError(err.message || 'Upload failed');
     } finally {
       setUploadBusy(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!confirm('Wipe all financial data for this organization? This cannot be undone.')) return;
+    setResetting(true);
+    setUploadError('');
+    setUploadInfo('');
+    try {
+      const res = await api('/api/financials/reset', { method: 'POST' });
+      setSelectedMonth(null);
+      await loadAll();
+      setUploadInfo(`Wiped ${res.recordsDeleted} records across ${res.uploadsDeleted} uploads.`);
+    } catch (err) {
+      setUploadError(err.message || 'Reset failed');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -535,9 +609,21 @@ export default function Financials() {
       <section className="fin-section">
         <UploadZone onUpload={handleUpload} busy={uploadBusy} error={uploadError} />
 
+        {uploadInfo && <div className="fin-info-banner">{uploadInfo}</div>}
+
         {uploads.length > 0 && (
           <div className="fin-uploads">
-            <h3 className="md-section-title">Upload history</h3>
+            <div className="fin-uploads-head">
+              <h3 className="md-section-title">Upload history</h3>
+              <button
+                type="button"
+                className="btn-text-sm fin-reset-btn"
+                onClick={handleReset}
+                disabled={resetting}
+              >
+                {resetting ? 'Resetting…' : 'Reset all financial data'}
+              </button>
+            </div>
             <ul className="fin-upload-list">
               {uploads.map((u) => (
                 <li key={u.id} className="fin-upload-row">
