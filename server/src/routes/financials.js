@@ -563,7 +563,23 @@ router.get('/dashboard', async (req, res) => {
         const memberMonths = grouped[k];
         const intervals = [];
         const namesByMonth = {}; // month → memberName (the actual occupant for that month)
+        // ── DEBUG: log Meadowchase Room 4 to confirm "first occupant ≠ turnover".
+      // Strip after verifying.
+      const isDbgRoom = k.toLowerCase().includes('meadowchase') && k.endsWith('|4');
+      if (isDbgRoom) {
+        console.log(`[fin-tt-debug] ROOM=${k} memberMonths:`);
         for (const memberId of Object.keys(memberMonths)) {
+          for (const month of Object.keys(memberMonths[memberId])) {
+            const m = memberMonths[memberId][month];
+            console.log(
+              `[fin-tt-debug]   member=${memberId} (${m.name || '?'}) month=${month} net=${m.net.toFixed(4)} ` +
+              `→ ${Math.round(m.net * 100) / 100 > 1 ? 'ACTUAL' : 'rejected'}`,
+            );
+          }
+        }
+      }
+
+      for (const memberId of Object.keys(memberMonths)) {
           const months = memberMonths[memberId];
           let firstDate = null, lastDate = null;
           let memberName = null;
@@ -571,11 +587,15 @@ router.get('/dashboard', async (req, res) => {
           for (const month of Object.keys(months)) {
             const m = months[month];
             if (!memberName && m.name) memberName = m.name;
-            // Member-month is an actual occupancy iff net is positive
-            // AFTER reversals. Use POSITIVE-row dates for the move-in /
-            // move-out approximation; reversal entries shouldn't extend
-            // the occupancy window.
-            if (m.net > 0) {
+            // Member-month is an actual occupancy iff net is meaningfully
+            // positive AFTER reversals. Round to cents to ignore floating
+            // point artifacts ($0.01 from 199.68 - 199.679999...) and
+            // require >$1 so trivial residuals (small admin fees not
+            // fully reversed) don't count as a real occupant. Use
+            // POSITIVE-row dates for the move-in / move-out approximation
+            // — reversal entries shouldn't extend the occupancy window.
+            const netRounded = Math.round(m.net * 100) / 100;
+            if (netRounded > 1) {
               positiveMonths.add(month);
               const fd = m.firstPositiveDate || m.firstDate;
               const ld = m.lastPositiveDate || m.lastDate;
@@ -607,6 +627,12 @@ router.get('/dashboard', async (req, res) => {
           });
         }
         intervals.sort((a, b) => a.firstDate - b.firstDate);
+        if (isDbgRoom) {
+          console.log(`[fin-tt-debug]   intervals: ${intervals.length}`);
+          for (const i of intervals) {
+            console.log(`[fin-tt-debug]     ${i.memberId} (${i.memberName || '?'}) [${i.firstDate.toISOString().slice(0, 10)} → ${i.lastDate.toISOString().slice(0, 10)}]`);
+          }
+        }
         occupancyByRoom[k] = intervals;
         memberLabelByRoom[k] = namesByMonth;
       }

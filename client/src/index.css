@@ -10235,6 +10235,8 @@ img,
 .fin-tt-table tbody tr:hover td { background: #F5F3F0; }
 .fin-tt-problem td { background: var(--ds-danger-light); }
 .fin-tt-problem:hover td { background: var(--ds-danger-light); }
+.fin-tt-limited { color: var(--ds-text-muted); }
+.fin-tt-limited-tag { font-size: 11px; color: var(--ds-text-muted); }
 
 /* Net P&L coloring */
 .fin-pl { font-weight: 600; }
