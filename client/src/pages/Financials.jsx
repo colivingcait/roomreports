@@ -73,11 +73,31 @@ function rowGet(row, ...keys) {
   return undefined;
 }
 
+// Extract a YYYY-MM month string from an arbitrary date-ish cell.
+// Handles "2026-04-01", "2026-04-01T00:00:00Z", "2026-04", "4/1/2026".
+function toYearMonth(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  // ISO-ish: YYYY-MM[-DD...]
+  const iso = s.match(/^(\d{4})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}`;
+  // US slash: M/D/YYYY or MM/DD/YYYY
+  const us = s.match(/^(\d{1,2})\/\d{1,2}\/(\d{4})/);
+  if (us) return `${us[2]}-${us[1].padStart(2, '0')}`;
+  // Fallback: try Date parsing
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 function parseRows(kind, rows) {
   const out = [];
   if (kind === 'summary') {
     for (const r of rows) {
-      const month = rowGet(r, 'Earnings Month');
+      const month = toYearMonth(rowGet(r, 'Earnings Month'));
+      if (!month) continue;
       out.push({
         recordType: 'SUMMARY',
         earningsMonth: month,
@@ -92,8 +112,15 @@ function parseRows(kind, rows) {
     }
   } else if (kind === 'collected') {
     for (const r of rows) {
+      // Each row carries its own month — use Payout Month (preferred),
+      // fall back to Earnings Month, Created date.
+      const month = toYearMonth(
+        rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Payout Date'),
+      );
+      if (!month) continue;
       out.push({
         recordType: 'COLLECTED',
+        earningsMonth: month,
         roomNumber: rowGet(r, 'Room Number'),
         roomId: rowGet(r, 'Room ID'),
         memberId: rowGet(r, 'Member ID'),
@@ -111,8 +138,14 @@ function parseRows(kind, rows) {
     }
   } else if (kind === 'billed') {
     for (const r of rows) {
+      // billed.csv has a Created date — bucket the row to its created month.
+      const month = toYearMonth(
+        rowGet(r, 'Payout Month', 'Earnings Month', 'Created', 'Created Date', 'Bill Date'),
+      );
+      if (!month) continue;
       out.push({
         recordType: 'BILLED',
+        earningsMonth: month,
         billId: rowGet(r, 'Bill ID'),
         transactionType: rowGet(r, 'Transaction Type'),
         transactionReason: rowGet(r, 'Transaction Reason'),
@@ -128,10 +161,12 @@ function parseRows(kind, rows) {
     }
   } else if (kind === 'earnings_table') {
     for (const r of rows) {
+      const month = toYearMonth(rowGet(r, 'month', 'Earnings Month'));
+      if (!month) continue;
       out.push({
         recordType: 'EARNINGS_TABLE',
         rowType: rowGet(r, 'row_type'),
-        earningsMonth: rowGet(r, 'month'),
+        earningsMonth: month,
         totalCollections: num(rowGet(r, 'total_collections')),
         totalExpenses: num(rowGet(r, 'total_expenses')),
         totalPayout: num(rowGet(r, 'total_payout')),
@@ -160,17 +195,14 @@ function parseFile(file) {
   });
 }
 
-function deriveMonth(parsedSets) {
-  for (const set of parsedSets) {
-    for (const r of set.rows) {
-      if (r.earningsMonth) {
-        // accept "YYYY-MM-DD" or "YYYY-MM"
-        const m = String(r.earningsMonth).match(/^(\d{4})-(\d{2})/);
-        if (m) return `${m[1]}-${m[2]}`;
-      }
+function uniqueMonths(parsedSets) {
+  const set = new Set();
+  for (const ps of parsedSets) {
+    for (const r of ps.rows) {
+      if (r.earningsMonth) set.add(r.earningsMonth);
     }
   }
-  return null;
+  return [...set].sort();
 }
 
 // ─── Trend arrow ────────────────────────────────────────
@@ -433,36 +465,36 @@ export default function Financials() {
     setUploadBusy(true);
     setUploadError('');
     try {
-      // Parse all files client-side
       const parsedSets = [];
       for (const f of files) {
         const parsed = await parseFile(f);
         parsedSets.push(parsed);
       }
-      // Determine month from data (or fallback to current)
-      let month = deriveMonth(parsedSets);
-      if (!month) {
-        const now = new Date();
-        month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      }
-      // Stamp each row with the month and flatten
       const records = [];
       for (const set of parsedSets) {
         for (const row of set.rows) {
-          if (!row.earningsMonth) row.earningsMonth = month;
-          records.push(row);
+          if (row.earningsMonth) records.push(row);
         }
       }
-      await api('/api/financials/upload', {
+      if (records.length === 0) {
+        throw new Error('No rows could be assigned to an earnings month — check the date columns.');
+      }
+      const monthsInUpload = uniqueMonths(parsedSets);
+      const res = await api('/api/financials/upload', {
         method: 'POST',
         body: JSON.stringify({
-          earningsMonth: month,
           fileNames: parsedSets.map((s) => s.fileName),
           records,
         }),
       });
       await loadAll();
-      setSelectedMonth(month);
+      // Land on the most recent month in the upload by default.
+      if (monthsInUpload.length > 0) {
+        setSelectedMonth(monthsInUpload[monthsInUpload.length - 1]);
+      }
+      if (res?.warnings?.length) {
+        setUploadError(`Uploaded ${res.recordsInserted} rows across ${res.monthsAffected} months. Warnings: ${res.warnings.join('; ')}`);
+      }
     } catch (err) {
       setUploadError(err.message || 'Upload failed');
     } finally {
