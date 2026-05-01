@@ -925,6 +925,7 @@ router.get('/dashboard', async (req, res) => {
     // Portfolio vacancy = sum of per-property vacancy.
     const totalVacancyCost = propertyBreakdown.reduce((s, p) => s + (p.vacancy || 0), 0);
     const totalVacantDays = propertyBreakdown.reduce((s, p) => s + (p.vacantDays || 0), 0);
+    const totalTurnovers = propertyBreakdown.reduce((s, p) => s + (p.turnoversThisMonth || 0), 0);
 
     // Month-over-month trend deltas for portfolio cards
     let trends = null;
@@ -945,6 +946,7 @@ router.get('/dashboard', async (req, res) => {
       // Prior-month vacancy: sum vacancy days × daily rate per room
       // using the same occupancy-interval model.
       let pVacancy = 0;
+      let pTurnovers = 0;
       for (const k of Object.keys(occupancyByRoom)) {
         const [norm] = k.split('|');
         const typicalDailyRate = typicalDailyRateByRoom[k] || 0;
@@ -952,6 +954,7 @@ router.get('/dashboard', async (req, res) => {
         const dailyRate = typicalDailyRate || fallbackDailyRate;
         const vd = vacantDaysInMonthForRoom(occupancyByRoom[k], prev, roomFirstMonth[k]);
         pVacancy += dailyRate * vd;
+        pTurnovers += turnoversInMonthForRoom(occupancyByRoom[k], prev);
       }
 
       trends = {
@@ -959,6 +962,7 @@ router.get('/dashboard', async (req, res) => {
         fees: deltaPct(totalPlatformFees, pFees),
         hostEarnings: deltaPct(totalHostEarnings, pHost),
         vacancy: deltaPct(totalVacancyCost, pVacancy),
+        turnovers: deltaPct(totalTurnovers, pTurnovers),
       };
     }
 
@@ -970,6 +974,7 @@ router.get('/dashboard', async (req, res) => {
         hostEarnings: round2(totalHostEarnings),
         vacancy: round2(totalVacancyCost),
         vacantDays: totalVacantDays,
+        turnovers: totalTurnovers,
       },
       trends,
       propertyBreakdown,
