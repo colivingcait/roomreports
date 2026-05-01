@@ -613,6 +613,14 @@ router.get('/dashboard', async (req, res) => {
     //
     // For "all time" we sum the per-month per-room vacancy across history.
 
+    // A room is considered fully occupied for the month if it earned at
+    // least this fraction of its typical rent. Below that, the shortfall
+    // is treated as partial-month vacancy. 0.85 absorbs the normal
+    // month-to-month dollar variation (different number of pay periods,
+    // late-fee timing, prorations) so a continuously-occupied room
+    // doesn't show phantom vacancy from a $593 / $643 dip.
+    const OCCUPIED_THRESHOLD = 0.85;
+
     function vacancyForRoom({ propertyKey, roomKey, monthStr, collectedThisMonth, typicalRent, fallbackRent }) {
       const expected = typicalRent > 0 ? typicalRent : (fallbackRent || 0);
       if (expected <= 0) {
@@ -620,7 +628,16 @@ router.get('/dashboard', async (req, res) => {
       }
       const dim = monthStr ? daysInMonth(monthStr) : 30;
       const dailyRate = expected / dim;
-      const vacantFraction = Math.max(0, Math.min(1, 1 - (collectedThisMonth / expected)));
+      const ratio = collectedThisMonth / expected;
+      let vacantFraction;
+      if (ratio >= OCCUPIED_THRESHOLD) {
+        // Fully occupied — minor under-collection is just monthly noise.
+        vacantFraction = 0;
+      } else {
+        // Partial occupancy: shortfall is proportional to how far below
+        // typical rent the room came in. Capped at 1 (fully vacant).
+        vacantFraction = Math.max(0, Math.min(1, 1 - ratio));
+      }
       const vacantDays = Math.round(dim * vacantFraction);
       const vacancyCost = expected * vacantFraction;
       return { vacantDays, vacantFraction, vacancyCost, dailyRate, expectedRent: expected };
