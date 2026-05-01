@@ -497,29 +497,6 @@ router.get('/dashboard', async (req, res) => {
       return out;
     })();
 
-    // ─── DEBUG: dataset sanity check ──────────────────────
-    {
-      const totalCollected = allCollectedHistory.length;
-      const withDate = allCollectedHistory.filter((r) => r.recordDate).length;
-      const meadowR3 = allCollectedHistory.filter((r) =>
-        (r.propertyAddress || '').toLowerCase().includes('meadowchase') &&
-        (r.roomNumber || '').toString().trim() === '3',
-      );
-      const meadowR3April = meadowR3.filter((r) => r.earningsMonth === '2026-04');
-      console.log(
-        `[fin-debug] history rows=${totalCollected} withRecordDate=${withDate} ` +
-        `meadowR3=${meadowR3.length} meadowR3-Apr2026=${meadowR3April.length}`,
-      );
-      for (const r of meadowR3April) {
-        console.log(
-          `[fin-debug]   raw  member=${(r.memberId || '').toString().trim()} ` +
-          `(${r.memberName || '?'}) gross=${(r.grossAmount || 0).toFixed(2)} ` +
-          `billType=${r.billType || ''} ` +
-          `recordDate=${r.recordDate ? new Date(r.recordDate).toISOString().slice(0, 10) : 'null'}`,
-        );
-      }
-    }
-
     // ─── Occupancy intervals per room ─────────────────────
     // Filters out REJECTED members (those whose net collected per
     // month is <= 0 — meaning their full payment was reversed because
@@ -582,31 +559,10 @@ router.get('/dashboard', async (req, res) => {
         }
       }
 
-      // ── DEBUG: focused logging for Meadowchase Room 3 in April 2026 ──
-      // Strip when the user confirms numbers look right.
-      const DEBUG_KEY_NEEDLE = 'meadowchase';
-      const DEBUG_ROOM = '3';
-      const DEBUG_MONTH = '2026-04';
-
       for (const k of Object.keys(grouped)) {
         const memberMonths = grouped[k];
         const intervals = [];
         const namesByMonth = {}; // month → memberName (the actual occupant for that month)
-        const isDebug = k.toLowerCase().includes(DEBUG_KEY_NEEDLE) && k.endsWith(`|${DEBUG_ROOM}`);
-        if (isDebug) {
-          console.log(`[fin-debug] ROOM=${k}`);
-          for (const memberId of Object.keys(memberMonths)) {
-            const aprilSlot = memberMonths[memberId][DEBUG_MONTH];
-            if (!aprilSlot) continue;
-            console.log(
-              `[fin-debug]   ${DEBUG_MONTH} member=${memberId} (${aprilSlot.name || '?'}) net=${aprilSlot.net.toFixed(2)} ` +
-              `firstDate=${aprilSlot.firstDate ? aprilSlot.firstDate.toISOString().slice(0, 10) : 'null'} ` +
-              `firstPositiveDate=${aprilSlot.firstPositiveDate ? aprilSlot.firstPositiveDate.toISOString().slice(0, 10) : 'null'} ` +
-              `lastPositiveDate=${aprilSlot.lastPositiveDate ? aprilSlot.lastPositiveDate.toISOString().slice(0, 10) : 'null'} ` +
-              `→ ${aprilSlot.net > 0 ? 'ACTUAL' : 'REJECTED'}`,
-            );
-          }
-        }
         for (const memberId of Object.keys(memberMonths)) {
           const months = memberMonths[memberId];
           let firstDate = null, lastDate = null;
@@ -651,16 +607,6 @@ router.get('/dashboard', async (req, res) => {
           });
         }
         intervals.sort((a, b) => a.firstDate - b.firstDate);
-        if (isDebug) {
-          console.log(`[fin-debug]   intervals (after rejection filter):`);
-          for (const i of intervals) {
-            console.log(
-              `[fin-debug]     ${i.memberId} (${i.memberName || '?'}) ` +
-              `[${i.firstDate.toISOString().slice(0, 10)} → ${i.lastDate.toISOString().slice(0, 10)}] ` +
-              `positiveMonths=${[...i.positiveMonths].sort().join(',')}`,
-            );
-          }
-        }
         occupancyByRoom[k] = intervals;
         memberLabelByRoom[k] = namesByMonth;
       }
@@ -854,7 +800,6 @@ router.get('/dashboard', async (req, res) => {
         let totalDaysTotal = 0;
         let turnoversTotal = 0;
         let turnoverInSelectedMonth = false;
-        const isRoomDebug = rentKey.toLowerCase().includes('meadowchase') && rentKey.endsWith('|3');
         for (const m of allMonthsForVacancy) {
           if (firstMonth && m < firstMonth) continue; // before room existed
           const vd = vacantDaysInMonthForRoom(intervals, m, firstMonth);
@@ -863,12 +808,6 @@ router.get('/dashboard', async (req, res) => {
           const tn = turnoversInMonthForRoom(intervals, m);
           turnoversTotal += tn;
           if (tn > 0) turnoverInSelectedMonth = true;
-          if (isRoomDebug) {
-            console.log(`[fin-debug]   vacancy month=${m} vacantDays=${vd}/${daysInMonth(m)} turnovers=${tn}`);
-          }
-        }
-        if (isRoomDebug) {
-          console.log(`[fin-debug]   ROOM TOTAL: ${vacantDaysTotal} vacant of ${totalDaysTotal} (intervals=${intervals.length}) dailyRate=${dailyRate.toFixed(2)} firstMonth=${firstMonth || '-'}`);
         }
         const vacancyCostTotal = dailyRate * vacantDaysTotal;
         const residentName = (() => {
