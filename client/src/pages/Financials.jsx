@@ -4,6 +4,8 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
@@ -46,6 +48,28 @@ function fmtMonth(s) {
   const d = new Date(Number(y), Number(m) - 1, 1);
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
+
+// Compact "Feb 25" / "Mar 25" / "Apr 26" for chart x-axis ticks.
+function fmtMonthShort(s) {
+  if (!s) return '';
+  const [y, m] = s.split('-');
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  const mon = d.toLocaleDateString('en-US', { month: 'short' });
+  return `${mon} ${y.slice(2)}`;
+}
+
+// Chart metric configs: which dataKey to render, what kind of chart,
+// how to format the Y-axis + tooltip, and which color category.
+const CHART_METRICS = {
+  host:        { label: 'Host earnings',   key: 'host',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
+  gross:       { label: 'Gross collected', key: 'gross',       kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
+  fees:        { label: 'Platform fees',   key: 'fees',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
+  occupancy:   { label: 'Occupancy %',     key: 'occupancy',   kind: 'line', yFmt: (v) => `${v}%`, yDomain: [0, 100],     valFmt: (v) => `${v}%` },
+  turnovers:   { label: 'Turnovers',       key: 'turnovers',   kind: 'bar',  yFmt: (v) => `${v}`, yAllowDecimals: false,  valFmt: (v) => `${v}` },
+  onboarded:   { label: 'Rooms onboarded', key: 'onboarded',   kind: 'line', yFmt: (v) => `${v}`, yAllowDecimals: false,  valFmt: (v) => `${v}` },
+  maintenance: { label: 'Maintenance costs', key: 'maintenance', kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
+};
+const CHART_METRIC_ORDER = ['host', 'gross', 'fees', 'occupancy', 'turnovers', 'onboarded', 'maintenance'];
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -628,10 +652,13 @@ export default function Financials() {
 
   const chartData = useMemo(() => {
     if (!timeseries || !timeseries.months || timeseries.months.length === 0) return [];
+    const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
     return timeseries.months.map((m) => {
       const obj = { month: m };
       for (const s of timeseries.series) {
-        obj[s.propertyName] = s.points.find((p) => p.month === m)?.[chartMetric] || 0;
+        const pt = s.points.find((p) => p.month === m);
+        const val = pt ? pt[cfg.key] : null;
+        obj[s.propertyName] = val == null ? 0 : val;
       }
       return obj;
     });
@@ -760,49 +787,64 @@ export default function Financials() {
             <div className="fin-section-head">
               <h2 className="fin-section-title">Portfolio over time</h2>
               <div className="fin-toggle-row">
-                <button
-                  className={`fin-toggle ${chartMetric === 'host' ? 'fin-toggle-active' : ''}`}
-                  onClick={() => setChartMetric('host')}
-                >Host earnings</button>
-                <button
-                  className={`fin-toggle ${chartMetric === 'gross' ? 'fin-toggle-active' : ''}`}
-                  onClick={() => setChartMetric('gross')}
-                >Gross collected</button>
-                <button
-                  className={`fin-toggle ${chartMetric === 'fees' ? 'fin-toggle-active' : ''}`}
-                  onClick={() => setChartMetric('fees')}
-                >Platform fees</button>
+                {CHART_METRIC_ORDER.map((key) => (
+                  <button
+                    key={key}
+                    className={`fin-toggle ${chartMetric === key ? 'fin-toggle-active' : ''}`}
+                    onClick={() => setChartMetric(key)}
+                  >{CHART_METRICS[key].label}</button>
+                ))}
               </div>
             </div>
             <div className="fin-chart">
               {chartData.length === 0 ? (
                 <div className="fin-empty">No data to chart yet.</div>
-              ) : (
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={chartData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
-                    <CartesianGrid stroke="#F0EDE8" />
-                    <XAxis dataKey="month" tickFormatter={(m) => m.slice(5)} stroke="#8A8580" />
-                    <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke="#8A8580" />
-                    <Tooltip
-                      formatter={(val) => fmtMoney(val)}
-                      labelFormatter={(m) => fmtMonth(m)}
-                      contentStyle={{ background: '#fff', border: '1px solid #F0EDE8', borderRadius: 8 }}
-                    />
-                    <Legend />
-                    {(timeseries?.series || []).map((s, idx) => (
-                      <Line
-                        key={s.propertyId}
-                        type="monotone"
-                        dataKey={s.propertyName}
-                        stroke={PALETTE[idx % PALETTE.length]}
-                        strokeWidth={idx === 0 ? 3 : 2}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
+              ) : (() => {
+                const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
+                const ChartCmp = cfg.kind === 'bar' ? BarChart : LineChart;
+                const SeriesCmp = cfg.kind === 'bar' ? Bar : Line;
+                return (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ChartCmp data={chartData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
+                      <CartesianGrid stroke="#F0EDE8" />
+                      <XAxis
+                        dataKey="month"
+                        tickFormatter={fmtMonthShort}
+                        stroke="#8A8580"
                       />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+                      <YAxis
+                        tickFormatter={cfg.yFmt}
+                        domain={cfg.yDomain || [0, 'auto']}
+                        allowDecimals={cfg.yAllowDecimals !== false}
+                        stroke="#8A8580"
+                      />
+                      <Tooltip
+                        formatter={(val) => cfg.valFmt(val)}
+                        labelFormatter={(m) => fmtMonth(m)}
+                        contentStyle={{ background: '#fff', border: '1px solid #F0EDE8', borderRadius: 8 }}
+                      />
+                      <Legend />
+                      {(timeseries?.series || []).map((s, idx) => {
+                        const color = PALETTE[idx % PALETTE.length];
+                        return cfg.kind === 'bar' ? (
+                          <Bar key={s.propertyId || s.propertyName} dataKey={s.propertyName} fill={color} />
+                        ) : (
+                          <Line
+                            key={s.propertyId || s.propertyName}
+                            type="monotone"
+                            dataKey={s.propertyName}
+                            stroke={color}
+                            strokeWidth={idx === 0 ? 3 : 2}
+                            dot={{ r: 3 }}
+                            activeDot={{ r: 5 }}
+                            connectNulls
+                          />
+                        );
+                      })}
+                    </ChartCmp>
+                  </ResponsiveContainer>
+                );
+              })()}
             </div>
           </section>
 

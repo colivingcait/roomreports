@@ -612,63 +612,6 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
-    function vacantDaysInMonthForRoom(intervals, monthStr, roomFirstMonthStr) {
-      // Months strictly before the room's first ever data are out of
-      // scope — we don't know the room existed yet.
-      if (roomFirstMonthStr && monthStr < roomFirstMonthStr) return 0;
-      const dim = daysInMonth(monthStr);
-      if (!intervals || intervals.length === 0) return dim;
-      const [y, m] = monthStr.split('-').map(Number);
-
-      // Effective end-date per interval:
-      //   - The LATEST occupant (last in the sorted list) is treated as
-      //     "still present" — they extend through end-of-time so days
-      //     after their last payment don't appear as vacant. PadSplit
-      //     processes weekly payments on different days; a member
-      //     paying April 3 then April 24 lived there continuously.
-      //   - Earlier occupants who were replaced by someone else have
-      //     their interval close at their lastPositiveDate. The gap
-      //     from there until the next occupant's firstPositiveDate is
-      //     vacancy.
-      const FAR_FUTURE = new Date(8640000000000000);
-      const effective = intervals.map((intv, i) => ({
-        start: intv.firstDate,
-        end: i === intervals.length - 1 ? FAR_FUTURE : intv.lastDate,
-      }));
-
-      // For the room's FIRST month: don't count days before the first
-      // occupant's move-in as vacant (the room may have been newly
-      // listed mid-month — we don't know it existed before then).
-      const isRoomsFirstMonth = roomFirstMonthStr && monthStr === roomFirstMonthStr;
-      const firstStart = effective[0].start;
-
-      let occupied = 0;
-      let skipped = 0;
-      for (let day = 1; day <= dim; day++) {
-        const d = new Date(Date.UTC(y, m - 1, day));
-        if (isRoomsFirstMonth && d < firstStart) { skipped += 1; continue; }
-        for (const e of effective) {
-          if (d >= e.start && d <= e.end) { occupied += 1; break; }
-        }
-      }
-      return dim - occupied - skipped;
-    }
-
-    function turnoversInMonthForRoom(intervals, monthStr) {
-      if (!intervals || intervals.length < 2) return 0;
-      const [y, m] = monthStr.split('-').map(Number);
-      const monthStart = new Date(Date.UTC(y, m - 1, 1));
-      const monthEnd = new Date(Date.UTC(y, m - 1, daysInMonth(monthStr)));
-      let count = 0;
-      for (let i = 1; i < intervals.length; i++) {
-        const cur = intervals[i];
-        const prev = intervals[i - 1];
-        if (cur.memberId === prev.memberId) continue;
-        if (cur.firstDate >= monthStart && cur.firstDate <= monthEnd) count += 1;
-      }
-      return count;
-    }
-
     // Maintenance costs per property + per room (for the month)
     const maintByProperty = {};
     const maintByRoom = {};
@@ -992,23 +935,34 @@ router.get('/dashboard', async (req, res) => {
 router.get('/timeseries', async (req, res) => {
   try {
     const orgId = req.user.organizationId;
-    const records = await prisma.financialRecord.findMany({
-      where: { organizationId: orgId, recordType: 'COLLECTED' },
-      select: {
-        propertyAddress: true,
-        earningsMonth: true,
-        grossAmount: true,
-        bookingFee: true,
-        serviceFee: true,
-        transactionFee: true,
-        hostEarnings: true,
-      },
-    });
-    const mappings = await prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } });
-    const properties = await prisma.property.findMany({
-      where: { organizationId: orgId, deletedAt: null },
-      select: { id: true, name: true },
-    });
+    const [records, mappings, properties, maintenance] = await Promise.all([
+      prisma.financialRecord.findMany({
+        where: { organizationId: orgId, recordType: 'COLLECTED' },
+        select: {
+          propertyAddress: true,
+          earningsMonth: true,
+          memberId: true,
+          roomNumber: true,
+          roomId: true,
+          billType: true,
+          grossAmount: true,
+          bookingFee: true,
+          serviceFee: true,
+          transactionFee: true,
+          hostEarnings: true,
+          recordDate: true,
+        },
+      }),
+      prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
+      prisma.property.findMany({
+        where: { organizationId: orgId, deletedAt: null },
+        select: { id: true, name: true },
+      }),
+      prisma.maintenanceItem.findMany({
+        where: { organizationId: orgId, deletedAt: null, actualCost: { not: null } },
+        select: { propertyId: true, actualCost: true, createdAt: true },
+      }),
+    ]);
     const mappingByAddr = {};
     for (const m of mappings) mappingByAddr[m.padsplitAddress] = m.propertyId;
     const propertyById = {};
@@ -1028,17 +982,25 @@ router.get('/timeseries', async (req, res) => {
       if (bestScore >= 1 && bestId) mappingByAddr[norm] = bestId;
     }
 
-    // Bucket by normalized address — chart shows every property with
-    // data, matched or not.
+    // Bucket by normalized address — skip Unknown / address-less rows.
     const buckets = {};
     const labelByKey = {};
     const monthsSet = new Set();
+    // Per-room first-month + occupancy intervals so we can compute
+    // occupancy %, turnovers per month, and rooms-onboarded curves.
+    const roomFirstMonth = {}; // "norm|room" → first month
+    const roomGroup = {};      // "norm|room" → memberId → month → { net, firstPos, lastPos }
+    const allRoomsByProperty = {}; // "norm" → Set<roomKey>
+
     for (const r of records) {
-      const norm = normalizeAddress(r.propertyAddress) || 'unknown';
+      if (!r.propertyAddress || String(r.propertyAddress).trim() === '') continue;
+      const norm = normalizeAddress(r.propertyAddress);
+      if (!norm || norm === 'unknown') continue;
       const propId = mappingByAddr[norm];
-      const label = propId ? (propertyById[propId]?.name || r.propertyAddress) : (r.propertyAddress || 'Unknown');
+      const label = propId ? (propertyById[propId]?.name || r.propertyAddress) : r.propertyAddress;
       labelByKey[norm] = label;
       monthsSet.add(r.earningsMonth);
+
       if (!buckets[norm]) buckets[norm] = {};
       if (!buckets[norm][r.earningsMonth]) {
         buckets[norm][r.earningsMonth] = { gross: 0, fees: 0, host: 0 };
@@ -1047,19 +1009,135 @@ router.get('/timeseries', async (req, res) => {
       b.gross += r.grossAmount || 0;
       b.fees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
       b.host += r.hostEarnings || 0;
+
+      // Rooms tracking
+      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+      if (roomKey) {
+        if (!allRoomsByProperty[norm]) allRoomsByProperty[norm] = new Set();
+        allRoomsByProperty[norm].add(roomKey);
+        const k = `${norm}|${roomKey}`;
+        if (!roomFirstMonth[k] || r.earningsMonth < roomFirstMonth[k]) {
+          roomFirstMonth[k] = r.earningsMonth;
+        }
+        const memberId = (r.memberId || '').toString().trim();
+        if (memberId) {
+          if (!roomGroup[k]) roomGroup[k] = {};
+          if (!roomGroup[k][memberId]) roomGroup[k][memberId] = {};
+          if (!roomGroup[k][memberId][r.earningsMonth]) {
+            roomGroup[k][memberId][r.earningsMonth] = { net: 0, firstPos: null, lastPos: null };
+          }
+          const slot = roomGroup[k][memberId][r.earningsMonth];
+          slot.net += (r.grossAmount || 0);
+          if ((r.grossAmount || 0) > 0 && r.recordDate) {
+            const d = new Date(r.recordDate);
+            if (!isNaN(d.getTime())) {
+              if (!slot.firstPos || d < slot.firstPos) slot.firstPos = d;
+              if (!slot.lastPos || d > slot.lastPos) slot.lastPos = d;
+            }
+          }
+        }
+      }
+    }
+
+    // Build occupancy intervals per room (filtering rejected members).
+    const occupancyByRoom = {};
+    for (const k of Object.keys(roomGroup)) {
+      const intervals = [];
+      const members = roomGroup[k];
+      for (const memberId of Object.keys(members)) {
+        const monthsForMember = members[memberId];
+        let firstDate = null, lastDate = null;
+        const positiveMonths = new Set();
+        for (const month of Object.keys(monthsForMember)) {
+          const slot = monthsForMember[month];
+          if (slot.net > 0) {
+            positiveMonths.add(month);
+            if (slot.firstPos && (!firstDate || slot.firstPos < firstDate)) firstDate = slot.firstPos;
+            if (slot.lastPos && (!lastDate || slot.lastPos > lastDate)) lastDate = slot.lastPos;
+          }
+        }
+        if (positiveMonths.size === 0) continue;
+        if (!firstDate) {
+          const earliest = [...positiveMonths].sort()[0];
+          const [y, m] = earliest.split('-').map(Number);
+          firstDate = new Date(Date.UTC(y, m - 1, 1));
+        }
+        if (!lastDate) {
+          const latest = [...positiveMonths].sort().pop();
+          const [y, m] = latest.split('-').map(Number);
+          lastDate = new Date(Date.UTC(y, m - 1, daysInMonth(latest)));
+        }
+        intervals.push({ memberId, firstDate, lastDate, positiveMonths });
+      }
+      intervals.sort((a, b) => a.firstDate - b.firstDate);
+      occupancyByRoom[k] = intervals;
+    }
+
+    // Maintenance per (propertyId, month).
+    const maintByPropMonth = {};
+    for (const m of maintenance) {
+      if (!m.propertyId) continue;
+      const d = m.createdAt ? new Date(m.createdAt) : null;
+      if (!d || isNaN(d)) continue;
+      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const k = `${m.propertyId}|${month}`;
+      maintByPropMonth[k] = (maintByPropMonth[k] || 0) + (m.actualCost || 0);
     }
 
     const months = [...monthsSet].sort();
-    const series = Object.keys(buckets).map((key) => ({
-      propertyId: mappingByAddr[key] || null,
-      propertyName: labelByKey[key] || key,
-      points: months.map((m) => ({
-        month: m,
-        gross: round2(buckets[key][m]?.gross || 0),
-        fees: round2(buckets[key][m]?.fees || 0),
-        host: round2(buckets[key][m]?.host || 0),
-      })),
-    }));
+    const series = Object.keys(buckets).map((key) => {
+      const propId = mappingByAddr[key] || null;
+      const rooms = [...(allRoomsByProperty[key] || [])];
+      // Sort rooms by their first month so the cumulative curve is monotonic.
+      const roomFirsts = rooms.map((rk) => roomFirstMonth[`${key}|${rk}`]).filter(Boolean).sort();
+
+      const points = months.map((m) => {
+        // Money/host
+        const b = buckets[key][m] || { gross: 0, fees: 0, host: 0 };
+
+        // Occupancy %: across all rooms in this property whose first
+        // month is ≤ m, sum (daysInMonth - vacantDays) / total room-days.
+        let propTotalDays = 0;
+        let propVacantDays = 0;
+        let turnovers = 0;
+        const dim = daysInMonth(m);
+        for (const rk of rooms) {
+          const rentKey = `${key}|${rk}`;
+          const fm = roomFirstMonth[rentKey];
+          if (fm && m < fm) continue; // room not yet onboarded
+          propTotalDays += dim;
+          const intervals = occupancyByRoom[rentKey] || [];
+          propVacantDays += vacantDaysInMonthForRoom(intervals, m, fm);
+          turnovers += turnoversInMonthForRoom(intervals, m);
+        }
+        const occupancyPct = propTotalDays > 0
+          ? Math.max(0, Math.min(100, ((propTotalDays - propVacantDays) / propTotalDays) * 100))
+          : null;
+
+        // Cumulative rooms onboarded by end of month m.
+        const onboarded = roomFirsts.filter((fm) => fm <= m).length;
+
+        // Maintenance cost for the month for this property (if mapped).
+        const maint = propId ? (maintByPropMonth[`${propId}|${m}`] || 0) : 0;
+
+        return {
+          month: m,
+          gross: round2(b.gross),
+          fees: round2(b.fees),
+          host: round2(b.host),
+          occupancy: occupancyPct != null ? round2(occupancyPct) : null,
+          turnovers,
+          onboarded,
+          maintenance: round2(maint),
+        };
+      });
+
+      return {
+        propertyId: propId,
+        propertyName: labelByKey[key] || key,
+        points,
+      };
+    });
 
     return res.json({ months, series });
   } catch (err) {
@@ -1270,6 +1348,49 @@ function daysInMonth(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   // Day 0 of next month = last day of current month.
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+// Day-level vacancy check for a room in a given month, given its
+// sorted occupancy intervals (rejected members already filtered).
+// Hoisted to module scope so both the dashboard and timeseries
+// endpoints can use it.
+function vacantDaysInMonthForRoom(intervals, monthStr, roomFirstMonthStr) {
+  if (roomFirstMonthStr && monthStr < roomFirstMonthStr) return 0;
+  const dim = daysInMonth(monthStr);
+  if (!intervals || intervals.length === 0) return dim;
+  const [y, m] = monthStr.split('-').map(Number);
+  const FAR_FUTURE = new Date(8640000000000000);
+  const effective = intervals.map((intv, i) => ({
+    start: intv.firstDate,
+    end: i === intervals.length - 1 ? FAR_FUTURE : intv.lastDate,
+  }));
+  const isRoomsFirstMonth = roomFirstMonthStr && monthStr === roomFirstMonthStr;
+  const firstStart = effective[0].start;
+  let occupied = 0;
+  let skipped = 0;
+  for (let day = 1; day <= dim; day++) {
+    const d = new Date(Date.UTC(y, m - 1, day));
+    if (isRoomsFirstMonth && d < firstStart) { skipped += 1; continue; }
+    for (const e of effective) {
+      if (d >= e.start && d <= e.end) { occupied += 1; break; }
+    }
+  }
+  return dim - occupied - skipped;
+}
+
+function turnoversInMonthForRoom(intervals, monthStr) {
+  if (!intervals || intervals.length < 2) return 0;
+  const [y, m] = monthStr.split('-').map(Number);
+  const monthStart = new Date(Date.UTC(y, m - 1, 1));
+  const monthEnd = new Date(Date.UTC(y, m - 1, daysInMonth(monthStr)));
+  let count = 0;
+  for (let i = 1; i < intervals.length; i++) {
+    const cur = intervals[i];
+    const prev = intervals[i - 1];
+    if (cur.memberId === prev.memberId) continue;
+    if (cur.firstDate >= monthStart && cur.firstDate <= monthEnd) count += 1;
+  }
+  return count;
 }
 
 function monthAfter(monthStr) {
