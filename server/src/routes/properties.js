@@ -717,6 +717,406 @@ router.get('/:id/health', requireRole('OWNER', 'PM'), async (req, res) => {
   }
 });
 
+// GET /api/properties/:id/insights — rule-based actionable insights
+// Pulls maintenance items, financial records, occupancy intervals, and
+// inspection history, then runs eight rules and returns a sorted list
+// of insight cards.
+router.get('/:id/insights', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const property = await prisma.property.findFirst({
+      where: { id: req.params.id, organizationId: orgId, deletedAt: null },
+      include: {
+        rooms: { where: { deletedAt: null }, select: { id: true, label: true, features: true } },
+      },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    const now = new Date();
+    const DAY_MS = 86400000;
+    const sixMonthsAgo = new Date(now.getTime() - 180 * DAY_MS);
+
+    const [items, inspections, allCollected, mappings] = await Promise.all([
+      prisma.maintenanceItem.findMany({
+        where: { propertyId: property.id, organizationId: orgId, deletedAt: null },
+        select: {
+          id: true,
+          status: true,
+          flagCategory: true,
+          actualCost: true,
+          roomId: true,
+          createdAt: true,
+          resolvedAt: true,
+          room: { select: { id: true, label: true } },
+        },
+      }),
+      prisma.inspection.findMany({
+        where: {
+          propertyId: property.id,
+          organizationId: orgId,
+          deletedAt: null,
+          status: { in: ['SUBMITTED', 'REVIEWED'] },
+          type: 'QUARTERLY',
+          createdAt: { gte: sixMonthsAgo },
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          items: { select: { status: true, zone: true, options: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.financialRecord.findMany({
+        where: { organizationId: orgId, recordType: 'COLLECTED' },
+        select: {
+          earningsMonth: true,
+          propertyAddress: true,
+          roomNumber: true,
+          memberId: true,
+          memberName: true,
+          billType: true,
+          grossAmount: true,
+          bookingFee: true,
+          recordDate: true,
+        },
+      }),
+      prisma.padSplitPropertyMapping.findMany({
+        where: { organizationId: orgId, propertyId: property.id },
+        select: { padsplitAddress: true },
+      }),
+    ]);
+
+    // Resolve which PadSplit addresses belong to this property.
+    const mappedNorms = new Set(mappings.map((m) => m.padsplitAddress));
+    const propertyHistory = allCollected.filter((r) => {
+      const norm = (r.propertyAddress || '').toLowerCase().replace(/[.,#]/g, '').replace(/\s+/g, ' ').trim();
+      return mappedNorms.has(norm);
+    });
+
+    const insights = [];
+
+    // ── Rule 1: recurring maintenance per room+category ──
+    const sixMoMaint = items.filter((i) => new Date(i.createdAt) >= sixMonthsAgo);
+    const patternMap = {};
+    for (const it of sixMoMaint) {
+      if (!it.roomId) continue;
+      const k = `${it.roomId}|${it.flagCategory || 'Other'}`;
+      if (!patternMap[k]) {
+        patternMap[k] = { roomLabel: it.room?.label || '—', category: it.flagCategory || 'Other', count: 0, totalCost: 0 };
+      }
+      patternMap[k].count += 1;
+      patternMap[k].totalCost += (it.actualCost || 0);
+    }
+    for (const p of Object.values(patternMap)) {
+      if (p.count < 3) continue;
+      const avgCost = p.totalCost / p.count;
+      const fixCost = Math.round(avgCost * 2);
+      const annualPace = Math.round((p.totalCost / 6) * 12);
+      insights.push({
+        kind: 'warning',
+        priority: 1,
+        roi: annualPace,
+        headline: `${p.roomLabel} has a recurring ${p.category.toLowerCase()} problem`,
+        detail: `${p.count} ${p.category.toLowerCase()} tickets in the last 6 months, costing $${Math.round(p.totalCost).toLocaleString()}.`,
+        action: 'Consider a permanent fix instead of repeated repairs.',
+        cost: fixCost > 0 ? `~$${fixCost.toLocaleString()} estimated for a permanent fix` : 'Cost varies',
+        impact: `Current pace: ~$${annualPace.toLocaleString()} per year in repeat repairs`,
+        link: '/maintenance',
+        linkLabel: 'View tickets',
+      });
+    }
+
+    // Build occupancy intervals + per-room turnover counts for rules 2/8.
+    const grouped = {};
+    const firstMonthByRoom = {};
+    for (const r of propertyHistory) {
+      const roomKey = (r.roomNumber || '').toString().trim();
+      const memberId = (r.memberId || '').toString().trim();
+      if (!roomKey || !memberId) continue;
+      if (!firstMonthByRoom[roomKey] || r.earningsMonth < firstMonthByRoom[roomKey]) {
+        firstMonthByRoom[roomKey] = r.earningsMonth;
+      }
+      if (!grouped[roomKey]) grouped[roomKey] = {};
+      if (!grouped[roomKey][memberId]) grouped[roomKey][memberId] = { net: 0, name: r.memberName, firstDate: null, lastDate: null, bookingFeeSum: 0 };
+      const slot = grouped[roomKey][memberId];
+      slot.net += (r.grossAmount || 0);
+      slot.bookingFeeSum += (r.bookingFee || 0);
+      if (r.recordDate && (r.grossAmount || 0) > 0) {
+        const d = new Date(r.recordDate);
+        if (!isNaN(d)) {
+          if (!slot.firstDate || d < slot.firstDate) slot.firstDate = d;
+          if (!slot.lastDate || d > slot.lastDate) slot.lastDate = d;
+        }
+      }
+    }
+    const intervalsByRoom = {};
+    const dataMonths = [...new Set(propertyHistory.map((r) => r.earningsMonth))].sort();
+    const latestMonth = dataMonths[dataMonths.length - 1];
+    for (const roomKey of Object.keys(grouped)) {
+      const intervals = [];
+      for (const memberId of Object.keys(grouped[roomKey])) {
+        const m = grouped[roomKey][memberId];
+        if (Math.round(m.net * 100) / 100 <= 1) continue;
+        intervals.push({ memberId, memberName: m.name, firstDate: m.firstDate, lastDate: m.lastDate, bookingFeeSum: m.bookingFeeSum });
+      }
+      intervals.sort((a, b) => (a.firstDate || 0) - (b.firstDate || 0));
+      intervalsByRoom[roomKey] = intervals;
+    }
+
+    // ── Rule 2: high-turnover room ──
+    for (const roomKey of Object.keys(intervalsByRoom)) {
+      const intervals = intervalsByRoom[roomKey];
+      let turnovers = 0;
+      for (let i = 1; i < intervals.length; i++) {
+        if (intervals[i].memberId !== intervals[i - 1].memberId) turnovers += 1;
+      }
+      const fm = firstMonthByRoom[roomKey];
+      let monthsOfData = 1;
+      if (fm && latestMonth) {
+        const [fy, fmn] = fm.split('-').map(Number);
+        const [ly, lmn] = latestMonth.split('-').map(Number);
+        monthsOfData = Math.max(1, (ly - fy) * 12 + (lmn - fmn) + 1);
+      }
+      const annualized = (turnovers / monthsOfData) * 12;
+      if (annualized > 4) {
+        const avgTenure = monthsOfData / Math.max(1, turnovers + 1);
+        const perTurnCost = 600; // rough placeholder — vacancy + booking + cleaning
+        const annualCost = Math.round(annualized * perTurnCost);
+        insights.push({
+          kind: 'warning',
+          priority: 2,
+          roi: annualCost,
+          headline: `Room ${roomKey} has high turnover`,
+          detail: `${turnovers} turnovers, avg tenure ${avgTenure.toFixed(1)} months, costing ~$${annualCost.toLocaleString()}/year.`,
+          action: "Investigate what's driving move-outs — check room condition, pricing, and resident screening.",
+          cost: 'No direct cost — requires investigation',
+          impact: `Each avoided turnover saves ~$${perTurnCost.toLocaleString()}`,
+          link: '/financials',
+          linkLabel: 'View financials',
+        });
+      }
+    }
+
+    // ── Rule 3: slow maintenance resolution ──
+    const resolved = items.filter((i) => i.resolvedAt);
+    if (resolved.length > 0) {
+      const avgDays = resolved.reduce(
+        (a, i) => a + (new Date(i.resolvedAt) - new Date(i.createdAt)) / DAY_MS,
+        0,
+      ) / resolved.length;
+      if (avgDays > 7) {
+        insights.push({
+          kind: 'warning',
+          priority: 3,
+          roi: 0,
+          headline: 'Maintenance is taking too long to resolve',
+          detail: `Average ${avgDays.toFixed(1)} days to resolve tickets at this property.`,
+          action: 'Assign tickets within 24 hours and follow up on aging tickets weekly.',
+          cost: 'No cost — process improvement',
+          impact: 'Faster resolution correlates with higher resident satisfaction and lower turnover',
+          link: '/maintenance',
+          linkLabel: 'View maintenance',
+        });
+      }
+    }
+
+    // ── Rule 4: inspection overdue ──
+    const lastQuarterly = inspections[0];
+    const daysSinceInsp = lastQuarterly
+      ? Math.floor((now - new Date(lastQuarterly.createdAt)) / DAY_MS)
+      : null;
+    if (daysSinceInsp == null || daysSinceInsp > 30) {
+      insights.push({
+        kind: 'warning',
+        priority: 4,
+        roi: 0,
+        headline: 'Room inspection overdue',
+        detail: lastQuarterly
+          ? `Last inspected ${daysSinceInsp} days ago.`
+          : 'No room inspection in the last 6 months.',
+        action: 'Schedule a room inspection this week to catch issues early.',
+        cost: '30-60 minutes of inspector time',
+        impact: 'Regular inspections prevent small issues from becoming expensive repairs',
+        link: '/inspections',
+        linkLabel: 'Schedule inspection',
+      });
+    }
+
+    // ── Rule 5: declining pass rate ──
+    function passRate(insp) {
+      let pass = 0; let fail = 0;
+      for (const it of (insp?.items || [])) {
+        if (it.zone?.startsWith('_')) continue;
+        if (Array.isArray(it.options) && it.options.includes('_section')) continue;
+        if (it.status === 'Pass') pass += 1;
+        else if (it.status === 'Fail') fail += 1;
+      }
+      const total = pass + fail;
+      return total > 0 ? (pass / total) * 100 : null;
+    }
+    if (inspections.length >= 2) {
+      const newer = passRate(inspections[0]);
+      const older = passRate(inspections[1]);
+      if (newer != null && older != null && older - newer > 5) {
+        insights.push({
+          kind: 'warning',
+          priority: 5,
+          roi: 0,
+          headline: 'Property condition is declining',
+          detail: `Pass rate dropped from ${older.toFixed(0)}% to ${newer.toFixed(0)}% between the last two inspections.`,
+          action: 'Review recent failed items and address root causes.',
+          cost: 'Varies by issue',
+          impact: 'Preventing condition decline protects property value and resident retention',
+          link: '/inspections',
+          linkLabel: 'View inspections',
+        });
+      }
+    }
+
+    // ── Rule 6: underperforming room ──
+    // Net P&L per room = host earnings (latest month) minus maintenance.
+    // We approximate using collected as proxy (host = collected - 8% service - booking).
+    const latestRoomTotals = {}; // roomKey → gross
+    for (const r of propertyHistory) {
+      if (r.earningsMonth !== latestMonth) continue;
+      const roomKey = (r.roomNumber || '').toString().trim();
+      if (!roomKey) continue;
+      latestRoomTotals[roomKey] = (latestRoomTotals[roomKey] || 0) + (r.grossAmount || 0);
+    }
+    const roomKeys = Object.keys(latestRoomTotals);
+    if (roomKeys.length >= 3) {
+      const avg = roomKeys.reduce((a, k) => a + latestRoomTotals[k], 0) / roomKeys.length;
+      let lowKey = null; let lowVal = Infinity;
+      for (const k of roomKeys) {
+        if (latestRoomTotals[k] > 0 && latestRoomTotals[k] < lowVal) {
+          lowVal = latestRoomTotals[k];
+          lowKey = k;
+        }
+      }
+      if (lowKey && avg > 0 && (avg - lowVal) / avg > 0.2) {
+        const gap = Math.round(avg - lowVal);
+        insights.push({
+          kind: 'opportunity',
+          priority: 6,
+          roi: gap * 12,
+          headline: `Room ${lowKey} is your lowest earner`,
+          detail: `Earning $${Math.round(lowVal).toLocaleString()}/month vs property avg of $${Math.round(avg).toLocaleString()}/month.`,
+          action: 'Consider: raise rent (if below market), add features (ensuite/AC), or investigate why turnover is high.',
+          cost: 'Feature additions: $500-$2,000. Rent increase: $0',
+          impact: `Closing the gap to average would add ~$${(gap * 12).toLocaleString()}/year`,
+          link: '/financials',
+          linkLabel: 'View financials',
+        });
+      }
+    }
+
+    // ── Rule 7: ensuite premium ──
+    const ensuiteIds = new Set(
+      property.rooms
+        .filter((r) => Array.isArray(r.features) && r.features.some((f) => /ensuite|private bath/i.test(String(f))))
+        .map((r) => {
+          const m = String(r.label || '').match(/(\d+)/);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean),
+    );
+    const sharedIds = new Set(
+      property.rooms
+        .filter((r) => !(Array.isArray(r.features) && r.features.some((f) => /ensuite|private bath/i.test(String(f)))))
+        .map((r) => {
+          const m = String(r.label || '').match(/(\d+)/);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean),
+    );
+    if (ensuiteIds.size > 0 && sharedIds.size > 0) {
+      let ensuiteSum = 0; let ensuiteCount = 0;
+      let sharedSum = 0; let sharedCount = 0;
+      for (const k of Object.keys(latestRoomTotals)) {
+        const v = latestRoomTotals[k];
+        if (v <= 0) continue;
+        if (ensuiteIds.has(k)) { ensuiteSum += v; ensuiteCount += 1; }
+        else if (sharedIds.has(k)) { sharedSum += v; sharedCount += 1; }
+      }
+      if (ensuiteCount > 0 && sharedCount > 0) {
+        const ensAvg = ensuiteSum / ensuiteCount;
+        const shAvg = sharedSum / sharedCount;
+        if (ensAvg > shAvg) {
+          const pct = ((ensAvg - shAvg) / shAvg) * 100;
+          const monthlyDelta = ensAvg - shAvg;
+          const yearly = Math.round(monthlyDelta * 12);
+          const minPayback = Math.ceil(5000 / Math.max(monthlyDelta, 1));
+          insights.push({
+            kind: 'opportunity',
+            priority: 7,
+            roi: yearly,
+            headline: `Private bath rooms earn ${pct.toFixed(0)}% more`,
+            detail: `Avg ensuite: $${Math.round(ensAvg).toLocaleString()}/month vs shared: $${Math.round(shAvg).toLocaleString()}/month.`,
+            action: 'If feasible, consider converting a shared bath room to ensuite on the next renovation.',
+            cost: 'Bathroom addition: $5,000-$15,000 estimated',
+            impact: `Additional ~$${yearly.toLocaleString()}/year per converted room. Payback ~${minPayback} months at low end.`,
+            link: '/financials',
+            linkLabel: 'View financials',
+          });
+        }
+      }
+    }
+
+    // ── Rule 8: self-referral opportunity ──
+    // Members with $0 lifetime booking fee = host-referred. Members with
+    // any booking fee = PadSplit-sourced.
+    let psSourced = 0; let total = 0; let psFeeTotal = 0;
+    let dailyRateSum = 0; let dailyRateCount = 0;
+    const seenMembers = new Set();
+    for (const roomKey of Object.keys(grouped)) {
+      for (const memberId of Object.keys(grouped[roomKey])) {
+        if (seenMembers.has(memberId)) continue;
+        seenMembers.add(memberId);
+        const m = grouped[roomKey][memberId];
+        if (Math.round(m.net * 100) / 100 <= 1) continue;
+        total += 1;
+        if ((m.bookingFeeSum || 0) > 0) {
+          psSourced += 1;
+          psFeeTotal += m.bookingFeeSum;
+        }
+      }
+    }
+    // Average daily rate across rooms (proxy for booking fee size).
+    for (const k of Object.keys(latestRoomTotals)) {
+      const v = latestRoomTotals[k];
+      if (v <= 0) continue;
+      dailyRateSum += v / 30;
+      dailyRateCount += 1;
+    }
+    const avgDaily = dailyRateCount > 0 ? dailyRateSum / dailyRateCount : 0;
+    if (total > 0 && (psSourced / total) > 0.5) {
+      const perTurnSavings = Math.round(avgDaily * 10);
+      insights.push({
+        kind: 'opportunity',
+        priority: 8,
+        roi: perTurnSavings * 4,
+        headline: "You're paying PadSplit to find most of your members",
+        detail: `${psSourced} of ${total} members were PadSplit-sourced, costing ~$${Math.round(psFeeTotal).toLocaleString()} in booking fees.`,
+        action: 'Market rooms directly — Facebook groups, Craigslist, local postings — to avoid the 10-day booking fee.',
+        cost: 'Time investment: 1-2 hours per listing',
+        impact: `Each self-referred member saves ~$${perTurnSavings.toLocaleString()} (10 days × daily rate)`,
+        link: '/financials',
+        linkLabel: 'View financials',
+      });
+    }
+
+    insights.sort((a, b) => (b.roi || 0) - (a.roi || 0));
+
+    return res.json({
+      property: { id: property.id, name: property.name },
+      insights,
+    });
+  } catch (error) {
+    console.error('Property insights error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/properties/:id/qr-token — signed token for resident QR code
 router.get('/:id/qr-token', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
