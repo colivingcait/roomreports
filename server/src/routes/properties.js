@@ -218,7 +218,7 @@ router.get('/', async (req, res) => {
 // POST /api/properties — create property
 router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
-    const { name, address } = req.body;
+    const { name, address, metroArea } = req.body;
 
     if (!name || !address) {
       return res.status(400).json({ error: 'name and address are required' });
@@ -245,6 +245,7 @@ router.post('/', requireRole('OWNER', 'PM'), async (req, res) => {
       data: {
         name,
         address,
+        metroArea: metroArea || null,
         organizationId: req.user.organizationId,
       },
     });
@@ -514,12 +515,13 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
       return res.status(404).json({ error: 'Property not found' });
     }
 
-    const { name, address } = req.body;
+    const { name, address, metroArea } = req.body;
     const updated = await prisma.property.update({
       where: { id: property.id },
       data: {
         ...(name !== undefined && { name }),
         ...(address !== undefined && { address }),
+        ...(metroArea !== undefined && { metroArea: metroArea || null }),
       },
     });
 

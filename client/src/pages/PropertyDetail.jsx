@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { DEFAULT_FEATURES, DEFAULT_FURNITURE } from '../../../shared/index.js';
+import { DEFAULT_FEATURES, DEFAULT_FURNITURE, METRO_AREAS } from '../../../shared/index.js';
 import { useAuth } from '../context/AuthContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
@@ -128,6 +128,56 @@ function InlineEdit({ value, onSave, placeholder }) {
       onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
       autoFocus
     />
+  );
+}
+
+// ─── Metro area selector ─────────────────────────────────
+// Shows the standard list of metros plus an "Other" option that
+// reveals a free-text input. Persists null when cleared.
+function MetroSelect({ value, onSave }) {
+  const isStandard = !value || METRO_AREAS.includes(value);
+  const [mode, setMode] = useState(isStandard ? 'standard' : 'other');
+  const [custom, setCustom] = useState(isStandard ? '' : (value || ''));
+
+  const handleStandardChange = (e) => {
+    const v = e.target.value;
+    if (v === '__other__') {
+      setMode('other');
+      return;
+    }
+    setMode('standard');
+    onSave(v || null);
+  };
+
+  const commitCustom = () => {
+    const trimmed = custom.trim();
+    if (trimmed !== (value || '')) onSave(trimmed || null);
+  };
+
+  return (
+    <div className="metro-select-wrap">
+      <select
+        className="metro-select"
+        value={mode === 'other' ? '__other__' : (value || '')}
+        onChange={handleStandardChange}
+      >
+        <option value="">Set a metro area…</option>
+        {METRO_AREAS.map((m) => <option key={m} value={m}>{m}</option>)}
+        <option value="__other__">Other…</option>
+      </select>
+      {mode === 'other' && (
+        <input
+          type="text"
+          className="metro-other-input"
+          placeholder="Type a metro (e.g. Boise, ID)"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          onBlur={commitCustom}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          autoFocus
+        />
+      )}
+    </div>
   );
 }
 
@@ -437,6 +487,13 @@ export default function PropertyDetail() {
           <p className="page-subtitle">
             <InlineEdit value={property.address} onSave={(v) => handleUpdateProperty('address', v)} placeholder="Add address" />
           </p>
+          <div className="property-metro-row">
+            <span className="property-metro-label">Metro area</span>
+            <MetroSelect
+              value={property.metroArea || ''}
+              onSave={(v) => handleUpdateProperty('metroArea', v)}
+            />
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn-secondary" onClick={() => setShowQR(true)}>QR Code</button>

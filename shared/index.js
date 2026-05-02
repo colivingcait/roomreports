@@ -97,6 +97,30 @@ export const DEFAULT_FURNITURE = [
 ];
 
 // Maintenance/flag categories used across inspections, maintenance filters
+// Standard PadSplit-style coliving metros for property comparisons.
+// Add new options at the end so existing properties keep their slot.
+// "Other" lets the user type a custom metro.
+export const METRO_AREAS = [
+  'Atlanta, GA',
+  'Dallas-Fort Worth, TX',
+  'Houston, TX',
+  'Phoenix, AZ',
+  'San Antonio, TX',
+  'Charlotte, NC',
+  'Nashville, TN',
+  'Memphis, TN',
+  'Birmingham, AL',
+  'Jacksonville, FL',
+  'Tampa, FL',
+  'Orlando, FL',
+  'Indianapolis, IN',
+  'Columbus, OH',
+  'Kansas City, MO',
+  'Louisville, KY',
+  'Richmond, VA',
+  'Raleigh, NC',
+];
+
 export const FLAG_CATEGORIES = [
   'Electrical',
   'Plumbing',
