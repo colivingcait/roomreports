@@ -640,7 +640,9 @@ router.get('/:id/health', requireRole('OWNER', 'PM'), async (req, res) => {
         deletedAt: null,
         status: { in: ['SUBMITTED', 'REVIEWED'] },
         type: { in: ['QUARTERLY', 'COMMON_AREA'] },
-        createdAt: { gte: sixMonthsAgo },
+        // 12-month window so the year-view compliance calendar can mark
+        // every month it has signal for.
+        createdAt: { gte: new Date(now.getTime() - 365 * DAY_MS) },
       },
       select: {
         id: true,

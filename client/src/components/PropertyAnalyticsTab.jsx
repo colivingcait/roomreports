@@ -36,24 +36,28 @@ const CHART_METRICS = [
   { key: 'maintenance', label: 'Maintenance cost', kind: 'line', color: TERRA, yFmt: fmtMoney },
 ];
 
+// Window anchored on the LATEST month with data, not today's calendar
+// month. If today is May 2026 and the most recent CSV upload covers
+// April 2026, "1M" should show April; "3M" should show Feb–Apr.
 function applyTimeline(months, timeline, custom) {
-  if (timeline === 'all' || !months || months.length === 0) return months || [];
+  if (!months || months.length === 0) return [];
+  if (timeline === 'all') return months;
   if (timeline === 'custom') {
     const { from, to } = custom || {};
     if (!from && !to) return months;
     return months.filter((m) => (!from || m >= from) && (!to || m <= to));
   }
-  const now = new Date();
-  const ym = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  const cur = ym(now);
+  const latest = months[months.length - 1];
+  const [ly, lm] = latest.split('-').map(Number);
   if (timeline === 'ytd') {
-    const start = `${now.getUTCFullYear()}-01`;
-    return months.filter((m) => m >= start && m <= cur);
+    const start = `${ly}-01`;
+    return months.filter((m) => m >= start && m <= latest);
   }
-  const window = { '1m': 1, '3m': 3, '6m': 6, '12m': 12 }[timeline] || 12;
-  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (window - 1), 1));
-  const startMonth = ym(cutoff);
-  return months.filter((m) => m >= startMonth && m <= cur);
+  const windowSize = { '1m': 1, '3m': 3, '6m': 6, '12m': 12 }[timeline] || 12;
+  // Inclusive of the latest month: include (windowSize) months ending at latest.
+  const startDate = new Date(Date.UTC(ly, lm - 1 - (windowSize - 1), 1));
+  const startMonth = `${startDate.getUTCFullYear()}-${String(startDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  return months.filter((m) => m >= startMonth && m <= latest);
 }
 
 export default function PropertyAnalyticsTab({ propertyId }) {
@@ -192,10 +196,6 @@ export default function PropertyAnalyticsTab({ propertyId }) {
       {periodTotals && (
         <div className="ph-card-row">
           <div className="ph-card">
-            <div className="ph-card-label">Total collected (period)</div>
-            <div className="ph-card-value">{fmtMoney(periodTotals.collected)}</div>
-          </div>
-          <div className="ph-card">
             <div className="ph-card-label">Host earnings (period)</div>
             <div className="ph-card-value">{fmtMoney(periodTotals.host)}</div>
           </div>
@@ -217,7 +217,10 @@ export default function PropertyAnalyticsTab({ propertyId }) {
       )}
 
       {/* Maintenance + comparison + compliance sections */}
-      <PropertyHealthTab propertyId={propertyId} />
+      <PropertyHealthTab
+        propertyId={propertyId}
+        timelineMonths={timeline === 'all' ? 'all' : filteredMonths}
+      />
     </div>
   );
 }
