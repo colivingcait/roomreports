@@ -10563,10 +10563,18 @@ img,
 }
 .fin-detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.6rem;
   margin: 0.5rem 0;
+  max-width: 1100px;
 }
+@media (max-width: 900px) {
+  .fin-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .fin-detail-grid { grid-template-columns: 1fr; }
+}
+.fin-detail-stat span { overflow-wrap: break-word; min-width: 0; }
 .fin-detail-stat {
   display: flex; flex-direction: column; gap: 2px;
 }
@@ -11100,4 +11108,53 @@ img,
   justify-content: center;
   font-size: 24px;
   font-weight: 700;
+}
+
+/* ═══════ Compliance calendar (12-month) ═══════ */
+
+.ph-cal { display: flex; flex-direction: column; gap: 0.85rem; }
+.ph-cal-row { display: flex; align-items: center; gap: 0.85rem; }
+.ph-cal-row-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ds-text-muted);
+  width: 130px;
+  flex-shrink: 0;
+}
+.ph-cal-cells {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.4rem;
+  flex: 1;
+}
+.ph-cal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ph-cal-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1.5px solid transparent;
+}
+.ph-cal-dot-done    { background: var(--ds-sage); color: #fff; border-color: var(--ds-sage); }
+.ph-cal-dot-overdue { background: #fff; color: var(--ds-danger); border-color: var(--ds-danger); }
+.ph-cal-dot-due     { background: #fff; color: var(--ds-sage); border-color: var(--ds-sage); }
+.ph-cal-dot-future  { background: #fff; color: var(--ds-text-muted); border-color: var(--ds-divider); }
+.ph-cal-dot-skip    { background: #F0EDE8; color: var(--ds-text-muted); border-color: transparent; }
+.ph-cal-label {
+  font-size: 10px;
+  color: var(--ds-text-muted);
+}
+@media (max-width: 720px) {
+  .ph-cal-row { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+  .ph-cal-row-label { width: auto; }
+  .ph-cal-cells { width: 100%; }
 }

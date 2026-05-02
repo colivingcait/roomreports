@@ -1306,6 +1306,10 @@ router.get('/timeseries', async (req, res) => {
         // Maintenance cost for the month for this property (if mapped).
         const maint = propId ? (maintByPropMonth[`${propId}|${m}`] || 0) : 0;
 
+        // Avg room rate = month's gross collected / rooms onboarded.
+        // (simple, honest mean — doesn't separate vacant from occupied)
+        const avgRate = onboarded > 0 ? b.gross / onboarded : null;
+
         return {
           month: m,
           gross: round2(b.gross),
@@ -1315,6 +1319,7 @@ router.get('/timeseries', async (req, res) => {
           turnovers,
           onboarded,
           maintenance: round2(maint),
+          avgRate: avgRate != null ? round2(avgRate) : null,
         };
       });
 
