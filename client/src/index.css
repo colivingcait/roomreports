@@ -10985,3 +10985,119 @@ img,
 }
 .prt-detail-list li:hover { color: var(--ds-sage); }
 .prt-spark { display: block; }
+
+/* ═══════ Property Insights tab ═══════ */
+
+.pi-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.pi-card {
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid var(--ds-divider);
+  border-left-width: 4px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.pi-card-warning      { border-left-color: var(--ds-terra, #C4703F); }
+.pi-card-opportunity  { border-left-color: var(--ds-sage); }
+.pi-card-info         { border-left-color: var(--ds-text-muted); }
+
+.pi-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.pi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.pi-icon-warning      { background: #FCE9E0; color: var(--ds-terra, #C4703F); }
+.pi-icon-opportunity  { background: #EAF1EB; color: var(--ds-sage); }
+.pi-icon-info         { background: #F0EDE8; color: var(--ds-text-muted); }
+
+.pi-headline {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ds-text);
+}
+.pi-detail {
+  margin: 0 0 0.85rem;
+  color: var(--ds-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.pi-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: #FAF7F2;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 0.85rem;
+}
+.pi-meta-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0.5rem;
+  font-size: 13px;
+}
+.pi-meta-label {
+  color: var(--ds-text-muted);
+  font-weight: 500;
+}
+.pi-meta-value {
+  color: var(--ds-text);
+}
+@media (max-width: 640px) {
+  .pi-meta-row { grid-template-columns: 1fr; gap: 0; }
+}
+
+.pi-link-btn {
+  background: none;
+  border: none;
+  color: var(--ds-sage);
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+  font-family: inherit;
+}
+.pi-link-btn:hover { text-decoration: underline; }
+
+.pi-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid var(--ds-divider);
+  text-align: center;
+  color: var(--ds-text-muted);
+}
+.pi-empty-check {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #EAF1EB;
+  color: var(--ds-sage);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+}

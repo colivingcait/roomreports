@@ -6,6 +6,8 @@ import LogViolation from '../components/LogViolation';
 import PropertyFinancialHealth from '../components/PropertyFinancialHealth';
 import PropertyHealthTab from '../components/PropertyHealthTab';
 import PropertyRoomTable from '../components/PropertyRoomTable';
+import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
+import PropertyInsightsTab from '../components/PropertyInsightsTab';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -205,12 +207,17 @@ export default function PropertyOverview() {
           onClick={() => setActiveTab('overview')}
         >Overview</button>
         <button
-          className={`pd-tab ${activeTab === 'health' ? 'pd-tab-active' : ''}`}
-          onClick={() => setActiveTab('health')}
-        >Property health</button>
+          className={`pd-tab ${activeTab === 'analytics' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('analytics')}
+        >Analytics</button>
+        <button
+          className={`pd-tab ${activeTab === 'insights' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('insights')}
+        >Insights</button>
       </div>
 
-      {activeTab === 'health' && <PropertyHealthTab propertyId={id} />}
+      {activeTab === 'analytics' && <PropertyAnalyticsTab propertyId={id} />}
+      {activeTab === 'insights' && <PropertyInsightsTab propertyId={id} />}
 
       {activeTab === 'overview' && (<>
       <PropertyFinancialHealth propertyId={id} />
@@ -229,10 +236,11 @@ export default function PropertyOverview() {
         />
       </section>
 
-      {/* ─── ALL MAINTENANCE TICKETS ─── */}
+      {/* ─── ALL MAINTENANCE & VIOLATIONS (side by side on desktop) ─── */}
+      <div className="po-split">
       <section className="po-section">
         <div className="po-section-head">
-          <h2 className="po-section-title">All Maintenance Tickets</h2>
+          <h2 className="po-section-title">Open maintenance</h2>
           <select className="filter-select" value={maintFilter} onChange={(e) => setMaintFilter(e.target.value)}>
             <option value="active">Active only</option>
             <option value="all">All (incl. archived)</option>
@@ -270,7 +278,7 @@ export default function PropertyOverview() {
       {/* ─── ALL LEASE VIOLATIONS ─── */}
       <section className="po-section">
         <div className="po-section-head">
-          <h2 className="po-section-title">All Lease Violations</h2>
+          <h2 className="po-section-title">Active violations</h2>
           <select className="filter-select" value={violationFilter} onChange={(e) => setViolationFilter(e.target.value)}>
             <option value="active">Active only</option>
             <option value="all">All (incl. resolved/archived)</option>
@@ -299,6 +307,7 @@ export default function PropertyOverview() {
           );
         })()}
       </section>
+      </div>
 
       {/* ─── RECENT INSPECTIONS (grouped by type) ─── */}
       <section className="po-section">
