@@ -10819,3 +10819,169 @@ img,
 }
 .ph-timeline-dot-on { background: var(--ds-sage); color: #fff; font-weight: 600; }
 .ph-timeline-label { font-size: 11px; color: var(--ds-text-muted); }
+
+/* ═══════ Property Room Table ═══════ */
+
+.prt-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.prt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  color: var(--ds-text);
+  min-width: 720px;
+}
+.prt-th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8A8580;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--ds-divider);
+  background: #FAF7F2;
+  white-space: nowrap;
+}
+.prt-th-sortable { cursor: pointer; user-select: none; }
+.prt-th-sortable:hover { color: var(--ds-text); }
+.prt-sort-arrow { font-size: 9px; color: var(--ds-sage); }
+
+.prt-th-sticky,
+.prt-td-sticky {
+  position: sticky;
+  left: 0;
+  background: inherit;
+  z-index: 1;
+}
+.prt-th-sticky { background: #FAF7F2; }
+
+.prt-row {
+  cursor: pointer;
+  transition: background 0.12s;
+  background: #fff;
+}
+.prt-row:hover { background: #F5F3F0; }
+.prt-row:hover .prt-td-sticky { background: #F5F3F0; }
+.prt-row-problem { background: #FCF6F4; }
+.prt-row-problem .prt-td-sticky { background: #FCF6F4; }
+.prt-row-problem:hover { background: #F8EDE8; }
+.prt-row-problem:hover .prt-td-sticky { background: #F8EDE8; }
+.prt-row-expanded { background: #F4F8F3; }
+.prt-row-expanded .prt-td-sticky { background: #F4F8F3; }
+
+.prt-td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 0.5px solid var(--ds-divider);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.prt-td-sticky strong { font-weight: 600; }
+.prt-sub {
+  font-size: 11px;
+  color: var(--ds-text-muted);
+  margin-top: 1px;
+}
+
+.prt-good { color: #2F7A48; font-weight: 500; }
+.prt-bad  { color: #B23B3B; font-weight: 500; }
+.prt-dim  { color: var(--ds-text-muted); }
+
+.prt-tag-ensuite {
+  display: inline-block;
+  padding: 1px 6px;
+  background: #EAF1EB;
+  color: var(--ds-sage);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.prt-tag-shared {
+  display: inline-block;
+  padding: 1px 6px;
+  background: #F0EDE8;
+  color: var(--ds-text-muted);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.prt-badge-bad {
+  display: inline-block;
+  background: #FCE9E9;
+  color: var(--ds-danger);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 22px;
+  text-align: center;
+}
+
+.prt-turn-btn {
+  padding: 0.3rem 0.7rem;
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--ds-text);
+}
+.prt-turn-btn:hover { border-color: var(--ds-sage); color: var(--ds-sage); }
+
+.prt-detail-row { background: #FAF7F2; }
+.prt-detail-cell { padding: 0; }
+.prt-detail {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--ds-divider);
+}
+.prt-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+.prt-detail-label {
+  font-size: 11px;
+  color: var(--ds-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+  font-weight: 500;
+}
+.prt-detail-meta {
+  font-size: 12px;
+  color: var(--ds-text-muted);
+  margin-top: 0.4rem;
+}
+.prt-feature-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.prt-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--ds-text);
+}
+.prt-detail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 12px;
+}
+.prt-detail-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.prt-detail-list li:hover { color: var(--ds-sage); }
+.prt-spark { display: block; }

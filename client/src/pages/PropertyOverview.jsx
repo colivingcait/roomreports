@@ -1,10 +1,11 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 import NewMaintenance from '../components/NewMaintenance';
 import LogViolation from '../components/LogViolation';
 import PropertyFinancialHealth from '../components/PropertyFinancialHealth';
 import PropertyHealthTab from '../components/PropertyHealthTab';
+import PropertyRoomTable from '../components/PropertyRoomTable';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -58,8 +59,6 @@ export default function PropertyOverview() {
   const [showStart, setShowStart] = useState(false);
   const [showNewMaint, setShowNewMaint] = useState(false);
   const [showLogViolation, setShowLogViolation] = useState(false);
-  const [expandedRoomId, setExpandedRoomId] = useState(null);
-  const [showFurniture, setShowFurniture] = useState(false);
   const [turnoverTarget, setTurnoverTarget] = useState(null);
   const [turningOver, setTurningOver] = useState(false);
   const [turnoverPlan, setTurnoverPlan] = useState(null);
@@ -216,174 +215,18 @@ export default function PropertyOverview() {
       {activeTab === 'overview' && (<>
       <PropertyFinancialHealth propertyId={id} />
 
-      {/* ─── ROOM ACCORDION LIST ─── */}
+      {/* ─── ROOM TABLE ─── */}
       <section className="po-section">
         <h2 className="po-section-title">Rooms</h2>
-        <div className="po-room-list">
-          {roomCards.map((room) => {
-            const isExpanded = expandedRoomId === room.id;
-            const open = room.openMaintenanceCount || 0;
-            const viol = room.activeViolationCount || 0;
-            const deferred = deferredByRoom[room.id] || [];
-            const tone = (open > 0 && viol > 0) ? 'red' : (open > 0 || viol > 0) ? 'yellow' : 'green';
-            const roomNum = roomNumberFromLabel(room.label);
-            const finRoom = financial?.hasData && roomNum ? financial.rooms?.[roomNum] : null;
-            return (
-              <Fragment key={room.id}>
-                <div
-                  className={`po-room-row po-room-row-${tone} ${isExpanded ? 'expanded' : ''}`}
-                  onClick={() => { setExpandedRoomId(isExpanded ? null : room.id); setShowFurniture(false); }}
-                >
-                  <div className="po-room-row-main">
-                    <div className="po-room-row-title">
-                      <h3 className="po-room-label">{room.label}</h3>
-                      <button
-                        className="btn-secondary-sm"
-                        onClick={(e) => { e.stopPropagation(); openTurnoverModal(room); }}
-                        title="Turn room for new resident"
-                      >
-                        Turn Room
-                      </button>
-                      {viol >= 3 && (
-                        <span className="po-room-escalation" title={`${viol} active violations`}>
-                          &#9888; {viol}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="po-room-row-right">
-                    <span className={`po-count-badge po-count-badge-maint ${open === 0 ? 'po-count-empty' : ''}`} title="Open maintenance">
-                      {open} <span className="po-count-label">open</span>
-                    </span>
-                    <span className={`po-count-badge po-count-badge-viol ${viol === 0 ? 'po-count-empty' : ''}`} title="Active violations">
-                      {viol} <span className="po-count-label">viol</span>
-                    </span>
-                    {deferred.length > 0 && (
-                      <span className="po-count-badge po-count-badge-deferred" title="Deferred maintenance">
-                        {deferred.length} <span className="po-count-label">deferred</span>
-                      </span>
-                    )}
-                    {finRoom && (
-                      <span className="po-fin-badge" title={`Host earnings ${financial.latestMonth}`}>
-                        {fmtMoneyShort(finRoom.host)}
-                      </span>
-                    )}
-                    {finRoom && finRoom.vacantDays > 0 && (
-                      <span className="po-fin-badge po-fin-badge-warn" title="Vacant days this month">
-                        {finRoom.vacantDays}d vacant
-                      </span>
-                    )}
-                    <span className={`po-room-chevron ${isExpanded ? 'open' : ''}`}>&#9656;</span>
-                  </div>
-                </div>
-
-                {isExpanded && (
-                  <div className="po-room-expanded">
-                    <div className="po-room-expanded-grid">
-                      <div>
-                        <div className="po-dim">
-                          {room.lastInspection
-                            ? `Last inspected: ${TYPE_LABELS[room.lastInspection.type] || room.lastInspection.type} ${timeAgo(room.lastInspection.date)}`
-                            : 'Never inspected'}
-                          {room.lastTurnoverAt && (
-                            <> &middot; Turned {timeAgo(room.lastTurnoverAt)}</>
-                          )}
-                        </div>
-                        {room.features?.length > 0 && (
-                          <div className="po-room-features" style={{ marginTop: '0.5rem' }}>
-                            {room.features.map((f) => (
-                              <span key={f} className="po-feature-tag">{f}</span>
-                            ))}
-                          </div>
-                        )}
-                        {room.furniture?.length > 0 && (
-                          <button
-                            className="po-furniture-toggle"
-                            onClick={(e) => { e.stopPropagation(); setShowFurniture(!showFurniture); }}
-                          >
-                            {showFurniture ? '▾' : '▸'} Furniture ({room.furniture.length})
-                          </button>
-                        )}
-                        {showFurniture && room.furniture?.length > 0 && (
-                          <div className="po-furniture-list">
-                            {room.furniture.map((f) => (
-                              <span key={f} className="po-feature-tag">{f}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="po-room-quick-links">
-                        <button
-                          className="btn-text-sm"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/maintenance?propertyId=${id}&roomId=${room.id}`); }}
-                        >
-                          View {open} ticket{open === 1 ? '' : 's'} &rarr;
-                        </button>
-                        <button
-                          className="btn-text-sm"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/reports?tab=violations&propertyId=${id}&roomId=${room.id}`); }}
-                        >
-                          View {viol} violation{viol === 1 ? '' : 's'} &rarr;
-                        </button>
-                      </div>
-                    </div>
-                    {finRoom && (
-                      <div className="po-fin-detail">
-                        <div className="po-fin-detail-grid">
-                          <div className="po-fin-stat">
-                            <label>Resident</label>
-                            <span>{finRoom.residentName || <span className="po-dim">vacant</span>}</span>
-                          </div>
-                          <div className="po-fin-stat">
-                            <label>Collected this month</label>
-                            <span>{fmtMoneyShort(finRoom.gross)}</span>
-                          </div>
-                          <div className="po-fin-stat">
-                            <label>Host earnings</label>
-                            <span>{fmtMoneyShort(finRoom.host)}</span>
-                          </div>
-                          <div className="po-fin-stat">
-                            <label>Vacant days</label>
-                            <span>{finRoom.vacantDays}</span>
-                          </div>
-                          <div className="po-fin-stat">
-                            <label>Daily rate</label>
-                            <span>{fmtMoneyShort(finRoom.dailyRate)}</span>
-                          </div>
-                          <div className="po-fin-stat">
-                            <label>Maintenance (all-time)</label>
-                            <span>{fmtMoneyShort(finRoom.maintenanceCost)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {deferred.length > 0 && (
-                      <div className="po-room-deferred">
-                        <div className="po-room-deferred-heading">Deferred</div>
-                        {deferred.map((d) => (
-                          <div key={d.id} className="po-room-deferred-row" onClick={(e) => { e.stopPropagation(); navigate('/maintenance'); }}>
-                            <div>
-                              <div className="po-room-deferred-title">{d.description}</div>
-                              <div className="po-room-deferred-sub">
-                                {d.flagCategory || 'General'}
-                                {d.deferType === 'ROOM_TURN'
-                                  ? ' · Until room turn'
-                                  : d.deferUntil
-                                    ? ` · Until ${new Date(d.deferUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                                    : ''}
-                              </div>
-                            </div>
-                            <span className="invite-badge invite-badge-pending">Deferred</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Fragment>
-            );
-          })}
-        </div>
+        <PropertyRoomTable
+          propertyId={id}
+          rooms={roomCards}
+          financial={financial}
+          deferredByRoom={deferredByRoom}
+          maintItems={maintItems}
+          violations={violations}
+          onTurn={openTurnoverModal}
+        />
       </section>
 
       {/* ─── ALL MAINTENANCE TICKETS ─── */}
