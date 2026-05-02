@@ -11697,3 +11697,87 @@ img,
 .props-card-inspected-never {
   color: #B5B0AB;
 }
+
+/* ═══════ Financials page — mobile (≤768px) ═══════ */
+/* Stops every section of the Financials page from blowing past the
+   viewport on small screens. */
+@media (max-width: 768px) {
+  /* Container can never expand past the viewport */
+  .fin-page {
+    max-width: 100vw;
+    overflow-x: hidden;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+    box-sizing: border-box;
+  }
+  .fin-page * { box-sizing: border-box; }
+
+  /* Pill rows scroll horizontally instead of wrapping. The trailing
+     padding keeps the last pill from sitting flush against the edge. */
+  .fin-page .fin-toggle-row,
+  .fin-page .fin-timeline-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-right: 12px;
+    margin-right: -16px;
+  }
+  .fin-page .fin-toggle-row::-webkit-scrollbar,
+  .fin-page .fin-timeline-row::-webkit-scrollbar { display: none; }
+  .fin-page .fin-toggle,
+  .fin-page .fin-timeline-pill { flex-shrink: 0; white-space: nowrap; }
+
+  /* Chart frame stays inside the card and never causes page scroll */
+  .fin-page .fin-chart {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0.75rem;
+  }
+  .fin-page .fin-chart .recharts-responsive-container {
+    width: 100% !important;
+  }
+  /* Recharts renders the tooltip in a wrapper with inline transform —
+     constrain so it can't escape the chart frame. */
+  .fin-page .recharts-tooltip-wrapper {
+    max-width: 70vw !important;
+  }
+  /* Wrap the chart legend instead of letting it overflow */
+  .fin-page .fin-chart-legend {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    justify-content: flex-start;
+  }
+
+  /* Property breakdown cards stack — already a column flex, but the
+     inner .fin-prop-stat-grid uses grid that can blow out. Force the
+     7- and 4-card rows into a single column on phones. */
+  .fin-page .fin-prop-stat-grid,
+  .fin-page .fin-prop-stat-grid-7,
+  .fin-page .fin-prop-stat-grid-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tables already have overflow-x: auto on .fin-table-wrap. Tighten
+     the column headers so users see more content before they have to
+     scroll. */
+  .fin-page .fin-tt-table thead th { white-space: nowrap; font-size: 11px; }
+  .fin-page .fin-tt-table tbody td { white-space: nowrap; font-size: 12px; }
+
+  /* Upload history: stack, don't try to fit two cards across */
+  .fin-page .fin-upload-list {
+    grid-template-columns: 1fr;
+  }
+
+  /* Section + property breakdown rows */
+  .fin-page .fin-section { margin-bottom: 1rem; }
+  .fin-page .fin-prop-list { width: 100%; }
+}
+
+/* Mobile-only / desktop-only span helpers — used to swap full-text
+   labels for abbreviations on narrow screens (e.g. table headers). */
+.show-mobile { display: none; }
+@media (max-width: 480px) {
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: inline !important; }
+}
