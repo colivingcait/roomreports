@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Modal from '../components/Modal';
+import ViolationDetailModal from '../components/ViolationDetailModal';
 
 const METHOD_LABELS = {
   text: 'Text',
@@ -22,6 +23,7 @@ function fmt(d) {
 
 export default function Violations() {
   const [violations, setViolations] = useState([]);
+  const [viewingViolationId, setViewingViolationId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filterActive, setFilterActive] = useState(true);
   const [actionTarget, setActionTarget] = useState(null);
@@ -86,7 +88,12 @@ export default function Violations() {
       ) : (
         <div className="violation-list">
           {violations.map((v) => (
-            <div key={v.id} className="violation-card">
+            <div
+              key={v.id}
+              className="violation-card"
+              onClick={() => setViewingViolationId(v.id)}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="violation-head">
                 <div>
                   <h3 className="violation-desc">{v.description}</h3>
@@ -99,7 +106,7 @@ export default function Violations() {
                 </div>
                 <button
                   className={`btn-text-sm ${v.resolvedAt ? '' : ''}`}
-                  onClick={() => toggleResolved(v)}
+                  onClick={(e) => { e.stopPropagation(); toggleResolved(v); }}
                   style={{ color: v.resolvedAt ? '#6B8F71' : '#C4703F' }}
                 >
                   {v.resolvedAt ? 'Resolved ✓' : 'Mark resolved'}
@@ -172,6 +179,11 @@ export default function Violations() {
           </button>
         </form>
       </Modal>
+
+      <ViolationDetailModal
+        violationId={viewingViolationId}
+        onClose={() => setViewingViolationId(null)}
+      />
     </div>
   );
 }

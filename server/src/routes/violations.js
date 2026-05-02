@@ -128,7 +128,56 @@ router.get('/:id', async (req, res) => {
     });
     if (!v) return res.status(404).json({ error: 'Violation not found' });
     const [hydrated] = await hydrateViolations([v], req.user.organizationId);
-    return res.json({ violation: hydrated });
+
+    // Detail-view extras: source inspection (with inspector + completed
+    // date) plus the source item's photos + note, and any follow-up
+    // ticket created from this violation.
+    let sourceInspection = null;
+    let sourceItem = null;
+    if (v.inspectionId) {
+      sourceInspection = await prisma.inspection.findFirst({
+        where: { id: v.inspectionId, organizationId: req.user.organizationId },
+        select: {
+          id: true,
+          type: true,
+          createdAt: true,
+          completedAt: true,
+          inspectorName: true,
+        },
+      });
+    }
+    if (v.inspectionItemId) {
+      sourceItem = await prisma.inspectionItem.findFirst({
+        where: { id: v.inspectionItemId },
+        select: {
+          id: true,
+          text: true,
+          note: true,
+          flagCategory: true,
+          photos: { select: { id: true, url: true } },
+        },
+      });
+    }
+    const followUp = await prisma.maintenanceItem.findFirst({
+      where: {
+        leaseViolationId: v.id,
+        organizationId: req.user.organizationId,
+        deletedAt: null,
+      },
+      select: { id: true, description: true, status: true, dueAt: true },
+    });
+
+    // Try to surface a current resident name for the room. PadSplit
+    // financial data doesn't live in this route, so leave a hook for
+    // the client to fill in if they have it.
+    return res.json({
+      violation: {
+        ...hydrated,
+        sourceInspection,
+        sourceItem,
+        followUp,
+      },
+    });
   } catch (error) {
     console.error('Get violation error:', error);
     return res.status(500).json({ error: 'Internal server error' });
