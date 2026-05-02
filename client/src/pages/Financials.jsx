@@ -431,43 +431,65 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
 
       {expanded && (
         <div className="fin-prop-body">
-          {/* Line 1 — financial metrics (7 cards) */}
-          <div className="fin-prop-stat-grid fin-prop-stat-grid-7">
-            <div className="fin-prop-stat"><label>Total collected</label><span>{fmtMoney(p.gross)}</span></div>
+          {/* Row 1 — Revenue flow (Total → fees → fees → Net) */}
+          <div className="fin-prop-stat-grid fin-prop-stat-grid-revenue">
+            <div className="fin-prop-stat">
+              <label>Total collected</label>
+              <span>{fmtMoney(p.gross)}</span>
+            </div>
             <div className="fin-prop-stat">
               <label>Booking/txn fees</label>
               <span>{fmtMoney((p.bookingFee || 0) + (p.transactionFee || 0))}</span>
             </div>
-            <div className="fin-prop-stat"><label>Service fees (8%)</label><span>{fmtMoney(p.serviceFee)}</span></div>
-            <div className="fin-prop-stat"><label>Net earnings</label><span>{fmtMoney(p.hostEarnings)}</span></div>
             <div className="fin-prop-stat">
-              <label>Vacancy</label>
-              <span>{fmtMoney(p.vacancy)}</span>
-              <small className="fin-prop-stat-sub">
-                {p.vacantDays} {p.vacantDays === 1 ? 'day' : 'days'} vacant
-              </small>
+              <label>Service fees (8%)</label>
+              <span>{fmtMoney(p.serviceFee)}</span>
             </div>
-            <div className="fin-prop-stat"><label>Turnovers</label><span>{p.turnoversThisMonth}</span></div>
-            <div className="fin-prop-stat"><label>Maintenance cost</label><span>{fmtMoney(p.maintenanceCost)}</span></div>
+            {/* Net earnings is highlighted — this is the answer card */}
+            <div className="fin-prop-stat fin-prop-stat-net">
+              <label>Net earnings</label>
+              <span>{fmtMoney(p.hostEarnings)}</span>
+            </div>
           </div>
 
-          {/* Line 2 — room insight metrics */}
-          <div className="fin-prop-stat-grid fin-prop-stat-grid-4">
+          {/* Row 2 — Operating metrics (7 cards, wrap) */}
+          <div className="fin-prop-stat-grid fin-prop-stat-grid-ops">
             {p.hasFeatureData ? (
               <>
                 <div className="fin-prop-stat">
                   <label>Avg private bath</label>
-                  <span>{p.avgPrivateBathRent != null ? fmtMoney(p.avgPrivateBathRent) : '—'}</span>
+                  <span>
+                    {p.avgPrivateBathRent != null ? `${fmtMoney(p.avgPrivateBathRent)} / mo` : '—'}
+                  </span>
+                  {p.avgPrivateBathRent != null && (
+                    <small className="fin-prop-stat-sub">
+                      {fmtMoney((p.avgPrivateBathRent * 12) / 52)} / wk
+                    </small>
+                  )}
                 </div>
                 <div className="fin-prop-stat">
                   <label>Avg shared bath</label>
-                  <span>{p.avgSharedBathRent != null ? fmtMoney(p.avgSharedBathRent) : '—'}</span>
+                  <span>
+                    {p.avgSharedBathRent != null ? `${fmtMoney(p.avgSharedBathRent)} / mo` : '—'}
+                  </span>
+                  {p.avgSharedBathRent != null && (
+                    <small className="fin-prop-stat-sub">
+                      {fmtMoney((p.avgSharedBathRent * 12) / 52)} / wk
+                    </small>
+                  )}
                 </div>
               </>
             ) : (
               <div className="fin-prop-stat">
                 <label>Avg rent / room</label>
-                <span>{fmtMoney(p.avgRentPerRoom)}</span>
+                <span>
+                  {p.avgRentPerRoom != null ? `${fmtMoney(p.avgRentPerRoom)} / mo` : '—'}
+                </span>
+                {p.avgRentPerRoom != null && (
+                  <small className="fin-prop-stat-sub">
+                    {fmtMoney((p.avgRentPerRoom * 12) / 52)} / wk
+                  </small>
+                )}
               </div>
             )}
             <div className="fin-prop-stat">
@@ -477,6 +499,21 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
             <div className="fin-prop-stat">
               <label>Avg days to fill</label>
               <span>{p.avgDaysToFill != null ? `${p.avgDaysToFill} days` : '—'}</span>
+            </div>
+            <div className="fin-prop-stat">
+              <label>Vacancy</label>
+              <span>{fmtMoney(p.vacancy)}</span>
+              <small className="fin-prop-stat-sub">
+                {p.vacantDays} {p.vacantDays === 1 ? 'day' : 'days'} vacant
+              </small>
+            </div>
+            <div className="fin-prop-stat">
+              <label>Maintenance cost</label>
+              <span>{fmtMoney(p.maintenanceCost)}</span>
+            </div>
+            <div className="fin-prop-stat">
+              <label>Turnovers</label>
+              <span>{p.turnoversThisMonth}</span>
             </div>
           </div>
 

@@ -10344,11 +10344,38 @@ img,
   margin-bottom: 1rem;
   min-width: 0;
 }
-.fin-prop-stat-grid-7 { grid-template-columns: repeat(7, 1fr); }
-.fin-prop-stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
-@media (max-width: 1280px) {
-  .fin-prop-stat-grid-7 { grid-template-columns: repeat(4, 1fr); }
+/* Row 1 — revenue flow: 4 equal-width columns at desktop, 2 at mobile. */
+.fin-prop-stat-grid-revenue {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+@media (max-width: 720px) {
+  .fin-prop-stat-grid-revenue { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .fin-prop-stat-grid-revenue { grid-template-columns: 1fr; }
+}
+/* Row 2 — operating metrics: wrapping grid that fits as many ≥160px
+   columns as the viewport allows. Falls to 2-up on phones. */
+.fin-prop-stat-grid-ops {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+@media (max-width: 480px) {
+  .fin-prop-stat-grid-ops { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Net earnings is the "answer" card in row 1 — soft sage tint and a
+   slightly stronger border to draw the eye. */
+.fin-prop-stat-net {
+  background: #EAF3DE !important;
+  border: 1px solid #B7D097 !important;
+}
+.fin-prop-stat-net label { color: #4A6B4F !important; }
+.fin-prop-stat-net span { font-weight: 600 !important; color: #27500A !important; }
+
+/* Legacy classes — kept so PropertyOverview / other surfaces don't
+   regress; not used in the revamped property breakdown anymore. */
+.fin-prop-stat-grid-7 { grid-template-columns: repeat(4, 1fr); }
+.fin-prop-stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 1024px) {
   .fin-prop-stat-grid-7 { grid-template-columns: repeat(3, 1fr); }
   .fin-prop-stat-grid-4 { grid-template-columns: repeat(2, 1fr); }
