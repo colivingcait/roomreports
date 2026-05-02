@@ -10317,6 +10317,16 @@ img,
   margin-bottom: 1rem;
   min-width: 0;
 }
+.fin-prop-stat-grid-7 { grid-template-columns: repeat(4, 1fr); }
+.fin-prop-stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1024px) {
+  .fin-prop-stat-grid-7 { grid-template-columns: repeat(3, 1fr); }
+  .fin-prop-stat-grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .fin-prop-stat-grid-7 { grid-template-columns: repeat(2, 1fr); }
+  .fin-prop-stat-grid-4 { grid-template-columns: 1fr; }
+}
 .fin-prop-stat {
   background: #fff;
   border: 1px solid var(--ds-divider);
@@ -10410,6 +10420,64 @@ img,
 .fin-tt-problem:hover td { background: var(--ds-danger-light); }
 .fin-tt-limited { color: var(--ds-text-muted); }
 .fin-tt-limited-tag { font-size: 11px; color: var(--ds-text-muted); }
+.fin-tt-cost-good { color: #2F7A48; font-weight: 500; }
+.fin-tt-cost-warn { color: #B97215; font-weight: 500; }
+.fin-tt-cost-bad  { color: #B23B3B; font-weight: 600; }
+.fin-tt-cost-sub  { display: block; font-size: 11px; color: var(--ds-text-muted); margin-top: 2px; font-weight: 400; }
+
+.fin-timeline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+.fin-timeline-pill {
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--ds-divider);
+  background: #fff;
+  color: var(--ds-text-muted);
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fin-timeline-pill:hover { border-color: var(--ds-sage); color: var(--ds-text); }
+.fin-timeline-active {
+  background: var(--ds-sage);
+  border-color: var(--ds-sage);
+  color: #fff;
+  font-weight: 500;
+}
+.fin-timeline-active:hover { color: #fff; }
+.fin-timeline-custom { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: 0.4rem; }
+.fin-timeline-input {
+  border: 1px solid var(--ds-divider);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 12px;
+}
+.fin-timeline-dash { color: var(--ds-text-muted); }
+.fin-download-btn { margin-left: 0.75rem; }
+.dl-prop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background: #FAF7F2;
+  border-radius: 6px;
+}
+.dl-prop-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+.dl-prop-item input[type="checkbox"] { cursor: pointer; }
 
 /* Totals row in financial reports table */
 .fin-totals-row td {

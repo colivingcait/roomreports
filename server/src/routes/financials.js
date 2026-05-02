@@ -280,13 +280,22 @@ router.get('/dashboard', async (req, res) => {
           memberName: true,
           billType: true,
           grossAmount: true,
+          bookingFee: true,
           recordDate: true,
         },
       }),
       prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
       prisma.property.findMany({
         where: { organizationId: orgId, deletedAt: null },
-        select: { id: true, name: true, address: true },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          rooms: {
+            where: { deletedAt: null },
+            select: { id: true, label: true, features: true },
+          },
+        },
       }),
       prisma.maintenanceItem.findMany({
         where: {
@@ -649,9 +658,21 @@ router.get('/dashboard', async (req, res) => {
       }
     }
 
+    // Per-member total booking fee — used to detect host referrals
+    // (members whose booking fee is $0 don't trigger a 10-day fee on
+    // turnover).
+    const bookingFeeByMember = {};
+    for (const r of allCollectedHistory) {
+      if (!r.memberId) continue;
+      bookingFeeByMember[r.memberId] = (bookingFeeByMember[r.memberId] || 0) + (r.bookingFee || 0);
+    }
+
     // Turnover tracker — uses occupancyByRoom (rejected members already
     // filtered out). A turnover is a transition between two consecutive
     // ACTUAL OCCUPANTS in the same room.
+    const CLEANING_FEE_PER_TURN = 50;
+    const BOOKING_FEE_DAYS = 10;
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
     const allDataMonths = [...new Set(allCollectedHistory.map((r) => r.earningsMonth))].sort();
     const latestDataMonth = allDataMonths[allDataMonths.length - 1] || null;
     const turnoverList = Object.keys(occupancyByRoom).map((k) => {
@@ -670,6 +691,33 @@ router.get('/dashboard', async (req, res) => {
         if (i > 0 && intervals[i].memberId !== intervals[i - 1].memberId) turnovers += 1;
       }
 
+      // Per-room turnover cost = vacancy + booking fee + cleaning, summed
+      // across each transition between consecutive different occupants.
+      const dailyRate = typicalDailyRateByRoom[k]
+        || fallbackDailyRateByProperty[norm]
+        || 0;
+      let turnoverCostTotal = 0;
+      let turnoverVacantDays = 0;
+      for (let i = 1; i < intervals.length; i++) {
+        const prev = intervals[i - 1];
+        const cur = intervals[i];
+        if (cur.memberId === prev.memberId) continue;
+        const lastOut = prev.lastPositiveDate || prev.lastDate;
+        const firstIn = cur.firstPositiveDate || cur.firstDate;
+        let vacantDays = 0;
+        if (lastOut && firstIn) {
+          vacantDays = Math.max(0, Math.round((firstIn - lastOut) / MS_PER_DAY) - 1);
+        }
+        turnoverVacantDays += vacantDays;
+        const vacancyCost = vacantDays * dailyRate;
+        // Host referrals = members who never paid a booking fee. Skip the
+        // 10-day platform booking fee for those turns.
+        const bookingFeeAmount = (bookingFeeByMember[cur.memberId] || 0) > 0
+          ? BOOKING_FEE_DAYS * dailyRate
+          : 0;
+        turnoverCostTotal += vacancyCost + bookingFeeAmount + CLEANING_FEE_PER_TURN;
+      }
+
       // Months of occupancy = union of all positiveMonths sets.
       const occupiedMonths = new Set();
       for (const i of intervals) {
@@ -685,6 +733,7 @@ router.get('/dashboard', async (req, res) => {
         ? Math.max(1, monthsBetween(fm, latestDataMonth))
         : 1;
       const annualized = (turnovers / monthsOfData) * 12;
+      const annualizedCost = (turnoverCostTotal / monthsOfData) * 12;
 
       return {
         propertyId: propId || null,
@@ -695,6 +744,9 @@ router.get('/dashboard', async (req, res) => {
         avgTenureMonths: Number(avgTenure.toFixed(2)),
         monthsOfData,
         annualizedTurnovers: Number(annualized.toFixed(2)),
+        turnoverCostTotal: Number(turnoverCostTotal.toFixed(2)),
+        turnoverVacantDays,
+        annualizedTurnoverCost: Number(annualizedCost.toFixed(2)),
       };
     });
     turnoverList.sort((a, b) => b.annualizedTurnovers - a.annualizedTurnovers);
@@ -883,6 +935,73 @@ router.get('/dashboard', async (req, res) => {
       const occupancyRate = propTotalDays > 0
         ? Math.max(0, Math.min(100, ((propTotalDays - propVacancyDays) / propTotalDays) * 100))
         : null;
+
+      // Room insight metrics — match PadSplit rooms to RoomReport rooms
+      // so we can split private-bath / shared-bath averages by feature.
+      const rrRooms = p.property?.rooms || [];
+      const hasFeatureData = rrRooms.some(
+        (r) => Array.isArray(r.features) && r.features.length > 0,
+      );
+      const isEnsuite = (label) => {
+        const rr = rrRooms.find((r) => {
+          const rl = String(r.label || '').toLowerCase().trim();
+          const pl = String(label || '').toLowerCase().trim();
+          return rl === pl
+            || rl === `room ${pl}`
+            || rl === `rm ${pl}`
+            || rl.replace(/^room\s+/, '') === pl;
+        });
+        if (!rr || !Array.isArray(rr.features)) return null;
+        return rr.features.some((f) => /ensuite|private bath/i.test(String(f)));
+      };
+      let privateSum = 0; let privateCount = 0;
+      let sharedSum = 0; let sharedCount = 0;
+      for (const room of rooms) {
+        if (!(room.gross > 0)) continue;
+        const ens = isEnsuite(room.roomNumber);
+        if (ens === true) { privateSum += room.gross; privateCount += 1; }
+        else if (ens === false) { sharedSum += room.gross; sharedCount += 1; }
+      }
+      const avgPrivateBathRent = privateCount > 0 ? privateSum / privateCount : null;
+      const avgSharedBathRent = sharedCount > 0 ? sharedSum / sharedCount : null;
+
+      // Avg tenure — for each room's CURRENT occupant (last interval),
+      // months from their firstPositiveDate to today.
+      const today = new Date();
+      const tenureMonths = [];
+      for (const roomKey of Object.keys(p.rooms)) {
+        const intervals = occupancyByRoom[`${propKeyForFallback}|${roomKey}`] || [];
+        if (intervals.length === 0) continue;
+        const cur = intervals[intervals.length - 1];
+        const start = cur.firstPositiveDate || cur.firstDate;
+        if (!start) continue;
+        const months = (today - start) / (1000 * 60 * 60 * 24 * 30.4375);
+        if (months > 0 && Number.isFinite(months)) tenureMonths.push(months);
+      }
+      const avgTenureMonths = tenureMonths.length > 0
+        ? tenureMonths.reduce((a, b) => a + b, 0) / tenureMonths.length
+        : null;
+
+      // Avg days to fill — across all turnovers in this property,
+      // mean of vacant days between consecutive different occupants.
+      const fillGaps = [];
+      for (const roomKey of Object.keys(p.rooms)) {
+        const intervals = occupancyByRoom[`${propKeyForFallback}|${roomKey}`] || [];
+        for (let i = 1; i < intervals.length; i++) {
+          const a = intervals[i - 1];
+          const b = intervals[i];
+          if (a.memberId === b.memberId) continue;
+          const out = a.lastPositiveDate || a.lastDate;
+          const inn = b.firstPositiveDate || b.firstDate;
+          if (!out || !inn) continue;
+          const days = Math.max(0, Math.round((inn - out) / (1000 * 60 * 60 * 24)) - 1);
+          fillGaps.push(days);
+        }
+      }
+      const avgDaysToFill = fillGaps.length > 0
+        ? fillGaps.reduce((a, b) => a + b, 0) / fillGaps.length
+        : null;
+
       return {
         propertyId: p.propertyId,
         propertyName: p.property?.name || p.padsplitAddress,
@@ -899,6 +1018,11 @@ router.get('/dashboard', async (req, res) => {
         roomDays: propTotalDays,
         lateFees: round2(p.lateFees),
         avgRentPerRoom: round2(avgRent),
+        avgPrivateBathRent: avgPrivateBathRent != null ? round2(avgPrivateBathRent) : null,
+        avgSharedBathRent: avgSharedBathRent != null ? round2(avgSharedBathRent) : null,
+        avgTenureMonths: avgTenureMonths != null ? Number(avgTenureMonths.toFixed(1)) : null,
+        avgDaysToFill: avgDaysToFill != null ? Math.round(avgDaysToFill) : null,
+        hasFeatureData,
         turnoversThisMonth: propTurnoversThisMonth,
         maintenanceCost: round2(p.propertyId ? (maintByProperty[p.propertyId] || 0) : 0),
         rooms,
@@ -1691,6 +1815,11 @@ router.get('/report.pdf', async (req, res) => {
     const orgId = req.user.organizationId;
     const propertyIdFilter = req.query.propertyId && req.query.propertyId !== 'all'
       ? req.query.propertyId : null;
+    // Multi-property filter — comma-separated ids. Takes precedence over
+    // the single propertyId param when present.
+    const propertyIdsFilter = req.query.propertyIds
+      ? String(req.query.propertyIds).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
     const fromMonth = req.query.from && /^\d{4}-\d{2}$/.test(req.query.from) ? req.query.from : null;
     const toMonth = req.query.to && /^\d{4}-\d{2}$/.test(req.query.to) ? req.query.to : null;
 
@@ -1715,9 +1844,13 @@ router.get('/report.pdf', async (req, res) => {
       where: { id: orgId },
       select: { name: true },
     });
-    const propLabel = propertyIdFilter
-      ? (pnl.byProperty.find((p) => p.propertyId === propertyIdFilter)?.propertyName || 'Property')
-      : 'All properties';
+    const propLabel = propertyIdsFilter && propertyIdsFilter.length > 0
+      ? (propertyIdsFilter.length === 1
+          ? (pnl.byProperty.find((p) => p.propertyId === propertyIdsFilter[0])?.propertyName || 'Property')
+          : `${propertyIdsFilter.length} properties`)
+      : (propertyIdFilter
+          ? (pnl.byProperty.find((p) => p.propertyId === propertyIdFilter)?.propertyName || 'Property')
+          : 'All properties');
     const dateLabel = pnl.months.length > 0
       ? `${monthLabel(pnl.months[0])} – ${monthLabel(pnl.months[pnl.months.length - 1])}`
       : '—';
@@ -1816,9 +1949,11 @@ router.get('/report.pdf', async (req, res) => {
     }
 
     // ── Pages per property ──
-    const propsToRender = propertyIdFilter
-      ? pnl.byProperty.filter((p) => p.propertyId === propertyIdFilter)
-      : pnl.byProperty;
+    const propsToRender = propertyIdsFilter && propertyIdsFilter.length > 0
+      ? pnl.byProperty.filter((p) => propertyIdsFilter.includes(p.propertyId))
+      : (propertyIdFilter
+          ? pnl.byProperty.filter((p) => p.propertyId === propertyIdFilter)
+          : pnl.byProperty);
     for (const p of propsToRender) {
       doc.addPage();
       drawHeader(doc);
