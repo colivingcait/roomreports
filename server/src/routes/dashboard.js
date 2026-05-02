@@ -375,9 +375,13 @@ router.get('/', async (req, res) => {
     if (stale.length > 0) {
       const oldest = stale.reduce((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? a : b));
       const ageDays = Math.floor((now - new Date(oldest.createdAt).getTime()) / DAY_MS);
+      // Severity tiers per spec: red only when something is genuinely
+      // urgent (14+ days old). 7-14 days is orange. Below 7 days won't
+      // hit this rule at all.
+      const severity = ageDays >= 14 ? 'red' : 'orange';
       actionItems.push({
         kind: 'stale_tickets',
-        severity: 'red',
+        severity,
         message: `${stale.length} maintenance ticket${stale.length === 1 ? '' : 's'} open over 7 days`,
         context: `Oldest ${ageDays}d old at ${oldest.property?.name || 'property'}`,
         link: '/maintenance',
@@ -414,9 +418,15 @@ router.get('/', async (req, res) => {
     }
     if (propsOverdueRoom.length > 0) {
       const first = propsOverdueRoom[0];
+      // Red only when the worst overdue is 45+ days. 30-45d is orange.
+      const worst = propsOverdueRoom.reduce(
+        (m, p) => (p.days != null && p.days > (m ?? 0) ? p.days : m),
+        first.days,
+      );
+      const severity = (worst != null && worst >= 45) ? 'red' : 'orange';
       actionItems.push({
         kind: 'overdue_room_inspection',
-        severity: 'orange',
+        severity,
         message: `${propsOverdueRoom.length} ${propsOverdueRoom.length === 1 ? 'property' : 'properties'} overdue for room inspection`,
         context: `${first.name}${first.days != null ? ` — ${first.days}d ago` : ' — never inspected'}${propsOverdueRoom.length > 1 ? ` +${propsOverdueRoom.length - 1} more` : ''}`,
         link: '/inspections',
@@ -427,7 +437,7 @@ router.get('/', async (req, res) => {
       const first = propsOverdueCommon[0];
       actionItems.push({
         kind: 'overdue_common_inspection',
-        severity: 'orange',
+        severity: 'amber',
         message: `${propsOverdueCommon.length} ${propsOverdueCommon.length === 1 ? 'property' : 'properties'} overdue for common area inspection`,
         context: `${first.name}${first.days != null ? ` — ${first.days}d ago` : ' — never inspected'}${propsOverdueCommon.length > 1 ? ` +${propsOverdueCommon.length - 1} more` : ''}`,
         link: '/inspections',
@@ -532,15 +542,18 @@ router.get('/', async (req, res) => {
       const daysSinceQ = lastQ
         ? Math.floor((now - new Date(lastQ).getTime()) / DAY_MS)
         : null;
+      // Red is reserved for the truly bad combination: many open tickets
+      // AND active violations AND an overdue inspection. Most properties
+      // land on green or amber on any given day.
+      const overdueInspection = daysSinceQ != null && daysSinceQ > 45;
+      const isSevere = open >= 4 && violations >= 1 && overdueInspection;
       let dot = 'green';
       let summary = 'All clear';
-      if (open >= 3 || violations >= 3) {
+      if (isSevere) {
         dot = 'red';
-        summary = open >= violations
-          ? `Needs attention — ${open} open ticket${open === 1 ? '' : 's'}`
-          : `Needs attention — ${violations} active violation${violations === 1 ? '' : 's'}`;
-      } else if (daysSinceQ != null && daysSinceQ > 60) {
-        dot = 'red';
+        summary = `Needs attention — ${open} open, ${violations} viol, ${daysSinceQ}d since inspection`;
+      } else if (overdueInspection) {
+        dot = 'amber';
         summary = `Inspection overdue ${daysSinceQ} days`;
       } else if (violations > 0) {
         dot = 'amber';
@@ -614,7 +627,7 @@ router.get('/', async (req, res) => {
     for (const v of recentViolations) {
       recentEvents.push({
         kind: 'violation_logged',
-        dot: 'red',
+        dot: 'terra',
         description: `Violation logged at ${violationRoomMap[v.roomId] || 'property'}: ${v.category || 'Lease'}`,
         at: v.createdAt,
         link: '/violations',
@@ -623,32 +636,74 @@ router.get('/', async (req, res) => {
     recentEvents.sort((a, b) => new Date(b.at) - new Date(a.at));
     const recentActivityFeed = recentEvents.slice(0, 5);
 
-    // ── Portfolio insights (top 3 cross-property) ──
-    const portfolioInsights = [];
-    if (stale.length > 0) {
-      portfolioInsights.push({
+    // ── Portfolio insights (warnings + at least one positive) ──
+    const warnings = [];
+    const positives = [];
+
+    // Only flag the truly bad: tickets open 14+ days. Below that lives
+    // in Action items where it belongs.
+    const reallyStale = stale.filter(
+      (t) => (now - new Date(t.createdAt).getTime()) > 14 * DAY_MS,
+    );
+    if (reallyStale.length > 0) {
+      warnings.push({
         kind: 'warning',
-        headline: `${stale.length} ticket${stale.length === 1 ? '' : 's'} open over 2 weeks`,
-        detail: 'Aging tickets correlate with resident dissatisfaction and turnover. Assign or escalate.',
+        headline: `${reallyStale.length} ticket${reallyStale.length === 1 ? '' : 's'} open over 2 weeks`,
+        detail: 'Aging tickets correlate with resident dissatisfaction. Assign or escalate.',
         link: '/maintenance',
       });
     }
-    if (propsOverdueRoom.length > 0) {
-      portfolioInsights.push({
+    const reallyOverdue = propsOverdueRoom.filter((p) => p.days != null && p.days >= 45);
+    if (reallyOverdue.length > 0) {
+      warnings.push({
         kind: 'warning',
-        headline: `${propsOverdueRoom.length} ${propsOverdueRoom.length === 1 ? 'property is' : 'properties are'} overdue for room inspection`,
-        detail: `Schedule inspections to catch issues early. Starting with ${propsOverdueRoom[0].name}.`,
+        headline: `${reallyOverdue.length} ${reallyOverdue.length === 1 ? 'property' : 'properties'} 45+ days overdue for inspection`,
+        detail: `Starting with ${reallyOverdue[0].name}. Catching issues early prevents expensive repairs.`,
         link: '/inspections',
       });
     }
-    if (actionItems.find((a) => a.kind === 'unassigned')) {
-      portfolioInsights.push({
+
+    // Positives — surface what's working so the dashboard doesn't feel
+    // like only bad news.
+    if (recentResolved.length >= 3) {
+      const last30Resolved = recentResolved.filter(
+        (m) => (now - new Date(m.resolvedAt).getTime()) <= 30 * DAY_MS,
+      ).length;
+      if (last30Resolved >= 3) {
+        positives.push({
+          kind: 'opportunity',
+          headline: `${last30Resolved} maintenance ticket${last30Resolved === 1 ? '' : 's'} resolved this month`,
+          detail: 'Keep the streak going — quick resolutions correlate with longer tenure.',
+          link: '/maintenance',
+        });
+      }
+    }
+    if (avgResolutionDays != null && avgResolutionDays <= 3) {
+      positives.push({
         kind: 'opportunity',
-        headline: `${unassigned.length} unassigned ticket${unassigned.length === 1 ? '' : 's'} waiting for an owner`,
-        detail: 'Tickets without an assignee tend to sit; assigning them reduces resolution time.',
+        headline: `Avg resolution time is just ${avgResolutionDays.toFixed(1)} days`,
+        detail: 'You\'re responding fast. Industry benchmark for coliving is 5-7 days.',
         link: '/maintenance',
       });
     }
+    const greenProps = propertiesAtAGlance.filter((p) => p.dot === 'green').length;
+    if (greenProps > 0 && propertiesAtAGlance.length > 0) {
+      const pct = Math.round((greenProps / propertiesAtAGlance.length) * 100);
+      if (pct >= 50) {
+        positives.push({
+          kind: 'opportunity',
+          headline: `${pct}% of properties are all clear`,
+          detail: `${greenProps} of ${propertiesAtAGlance.length} properties have no open tickets, no violations, and inspections on schedule.`,
+          link: '/properties',
+        });
+      }
+    }
+
+    // Always show at least one positive if any exist; cap warnings at 2.
+    const portfolioInsights = [
+      ...warnings.slice(0, 2),
+      ...positives.slice(0, Math.max(1, 3 - Math.min(warnings.length, 2))),
+    ].slice(0, 3);
 
     const openMaintenanceTotal = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
     console.log(
