@@ -384,6 +384,40 @@ router.post('/logout', requireAuth, async (req, res) => {
 //
 // curl http://localhost:3000/api/auth/me \
 //   -H "Cookie: auth_session=<session_id>"
+// ─── GET /api/auth/orgs — list memberships for current user ──
+// Used by the sidebar org switcher. Active membership is whichever
+// org matches the user's current `organizationId`.
+router.get('/orgs', requireAuth, async (req, res) => {
+  try {
+    const { listMemberships } = await import('../lib/orgMembership.js');
+    const memberships = await listMemberships(req.user.id);
+    return res.json({
+      memberships,
+      activeOrganizationId: req.user.organizationId,
+    });
+  } catch (err) {
+    console.error('list orgs error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/auth/switch-org — set active org by membership ──
+// Updates User.organizationId and User.role to the values from the
+// membership row, so subsequent authenticated queries scope to the
+// new org automatically.
+router.post('/switch-org', requireAuth, async (req, res) => {
+  try {
+    const { organizationId } = req.body || {};
+    if (!organizationId) return res.status(400).json({ error: 'organizationId required' });
+    const { switchActiveOrg } = await import('../lib/orgMembership.js');
+    const m = await switchActiveOrg(req.user.id, organizationId);
+    return res.json({ ok: true, organizationId, role: m.role });
+  } catch (err) {
+    console.error('switch org error:', err);
+    return res.status(400).json({ error: err.message || 'Could not switch org' });
+  }
+});
+
 router.get('/me', requireAuth, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({

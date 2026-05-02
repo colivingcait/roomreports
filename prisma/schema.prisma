@@ -82,6 +82,7 @@ model Organization {
   deletedAt DateTime?
 
   users       User[]
+  members     OrganizationMember[]
   properties  Property[]
   inspections Inspection[]
   maintenanceItems MaintenanceItem[]
@@ -112,6 +113,7 @@ model User {
   deletedAt      DateTime?
 
   organization        Organization         @relation(fields: [organizationId], references: [id])
+  memberships         OrganizationMember[]
   sessions            Session[]
   inspections         Inspection[]
   propertyAssignments PropertyAssignment[]
@@ -123,6 +125,36 @@ model User {
 
   @@index([organizationId])
   @@map("users")
+}
+
+// ─── OrganizationMember ─────────────────────────────────
+// A user can belong to multiple organizations with a different role
+// in each. The user's `organizationId` field still points at their
+// "active" org (= the org currently scoping every authenticated
+// query). Switching orgs updates that pointer + the user's role to
+// match the row in this table for the chosen org.
+//
+// This is additive: existing single-org users get a membership row
+// generated on server startup so their setup keeps working unchanged.
+model OrganizationMember {
+  id              String    @id @default(cuid())
+  userId          String
+  organizationId  String
+  role            Role
+  customRole      String?
+  status          String    @default("active") // active | deactivated | invited
+  invitedById     String?
+  invitedAt       DateTime  @default(now())
+  acceptedAt      DateTime?
+  deactivatedAt  DateTime?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
 }
 
 // ─── Session ────────────────────────────────────────────
