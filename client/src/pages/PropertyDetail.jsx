@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { DEFAULT_FEATURES, DEFAULT_FURNITURE, METRO_AREAS } from '../../../shared/index.js';
+import PropertyHealthTab from '../components/PropertyHealthTab';
 import { useAuth } from '../context/AuthContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
@@ -416,6 +417,7 @@ export default function PropertyDetail() {
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [qrToken, setQrToken] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     if (showQR && !qrToken) {
@@ -501,6 +503,20 @@ export default function PropertyDetail() {
         </div>
       </div>
 
+      <div className="pd-tabs">
+        <button
+          className={`pd-tab ${activeTab === 'overview' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('overview')}
+        >Overview</button>
+        <button
+          className={`pd-tab ${activeTab === 'health' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('health')}
+        >Property health</button>
+      </div>
+
+      {activeTab === 'health' && <PropertyHealthTab propertyId={id} />}
+
+      {activeTab === 'overview' && (<>
       <PropertyImageSection property={property} propertyId={id} onRefresh={fetchProperty} />
 
       <SpaceSection title="Kitchens" items={property.kitchens} propertyId={id} endpoint="kitchens" onRefresh={fetchProperty} />
@@ -563,6 +579,7 @@ export default function PropertyDetail() {
           </div>
         );
       })()}
+      </>)}
 
       <ConfirmDialog
         open={deleteProperty}
