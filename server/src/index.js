@@ -23,6 +23,7 @@ import notificationRoutes from './routes/notifications.js';
 import publicMaintenanceRoutes from './routes/publicMaintenance.js';
 import financialsRoutes from './routes/financials.js';
 import { startScheduledJobs } from './lib/scheduledJobs.js';
+import { backfillMemberships } from './lib/orgMembership.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -75,4 +76,7 @@ app.use('/api/financials', financialsRoutes);
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   startScheduledJobs();
+  // Idempotent: makes sure every existing user has a membership row
+  // in the new OrganizationMember table.
+  backfillMemberships();
 });

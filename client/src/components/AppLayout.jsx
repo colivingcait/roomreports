@@ -74,6 +74,38 @@ export default function AppLayout() {
     try { return localStorage.getItem(COLLAPSE_KEY) === '1'; }
     catch { return false; }
   });
+  const [memberships, setMemberships] = useState([]);
+  const [showOrgPicker, setShowOrgPicker] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/auth/orgs', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMemberships(d?.memberships || []))
+      .catch(() => setMemberships([]));
+  }, [user?.id]);
+
+  const switchOrg = async (organizationId) => {
+    if (organizationId === user?.organizationId) {
+      setShowOrgPicker(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error((await res.json())?.error || 'Could not switch org');
+      try { localStorage.setItem('roomreport:active-org', organizationId); } catch { /* ignore */ }
+      // Reload so every cached query / dashboard picks up the new org.
+      window.location.assign('/dashboard');
+    } catch (err) {
+      console.error(err);
+      setShowOrgPicker(false);
+    }
+  };
 
   useEffect(() => {
     try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); }
@@ -156,10 +188,37 @@ export default function AppLayout() {
             {!collapsed && (
               <div className="sidebar-user-info">
                 <span className="sidebar-user-name">{user?.name}</span>
-                <span className="sidebar-user-org">{organization?.name}</span>
+                {memberships.length > 1 ? (
+                  <button
+                    type="button"
+                    className="sidebar-user-org sidebar-org-switcher"
+                    onClick={() => setShowOrgPicker((v) => !v)}
+                    title="Switch organization"
+                  >
+                    {organization?.name}
+                    <span className="sidebar-org-chev">▾</span>
+                  </button>
+                ) : (
+                  <span className="sidebar-user-org">{organization?.name}</span>
+                )}
               </div>
             )}
           </div>
+          {showOrgPicker && memberships.length > 1 && !collapsed && (
+            <div className="sidebar-org-menu">
+              {memberships.map((m) => (
+                <button
+                  key={m.organizationId}
+                  type="button"
+                  className={`sidebar-org-item ${m.organizationId === user?.organizationId ? 'sidebar-org-item-active' : ''}`}
+                  onClick={() => switchOrg(m.organizationId)}
+                >
+                  <span className="sidebar-org-item-name">{m.organizationName}</span>
+                  <span className="sidebar-org-item-role">{m.role}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <button
             className="sidebar-collapse-btn"
             onClick={() => setCollapsed((c) => !c)}

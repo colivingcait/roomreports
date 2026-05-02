@@ -252,7 +252,24 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
     // Check if user exists in another org (prevents cross-org collision)
     const anyUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (anyUser) {
-      return res.status(409).json({ error: 'A user with this email already exists' });
+      // Already in THIS org → can't re-invite. Membership in another
+      // org is fine — the invite-accept path will add a new
+      // OrganizationMember row when they accept.
+      const sameOrgMember = anyUser.organizationId === req.user.organizationId
+        || await prisma.organizationMember.findFirst({
+          where: {
+            userId: anyUser.id,
+            organizationId: req.user.organizationId,
+            status: 'active',
+          },
+          select: { id: true },
+        });
+      if (sameOrgMember) {
+        return res.status(409).json({ error: 'A user with this email is already on this team' });
+      }
+      // Otherwise fall through and create the invitation. The accept
+      // handler will detect the existing account and add a membership
+      // instead of creating a new user.
     }
 
     // If an active invite exists for this email in this org, reuse the row
@@ -334,6 +351,66 @@ router.post('/invite', requireRole('OWNER', 'PM'), async (req, res) => {
     return res.status(201).json({ invitation: inviteShape(invitation) });
   } catch (error) {
     console.error('Invite error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/team/invitations/:token/accept-as-existing ──
+// Accept a team invite when the invitee already has an account. The
+// signup form blocks "email already in use" — this endpoint is for
+// the already-logged-in case (e.g. an existing Owner gets invited
+// as a Cleaner to a different org). Adds an OrganizationMember row
+// and switches the user's active org to the inviting one.
+router.post('/invitations/:token/accept-as-existing', async (req, res) => {
+  try {
+    // requireAuth would normally be applied, but this is a public
+    // route mounted under /api/team which already has requireAuth.
+    // Defensive: confirm req.user.
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+    const invite = await prisma.invitation.findUnique({
+      where: { token: req.params.token },
+    });
+    if (!invite) return res.status(404).json({ error: 'Invalid invitation' });
+    if (invite.acceptedAt) return res.status(400).json({ error: 'Invitation already accepted' });
+    if (invite.revokedAt) return res.status(400).json({ error: 'Invitation has been revoked' });
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'Invitation has expired' });
+    }
+    const me = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, email: true },
+    });
+    if (!me) return res.status(404).json({ error: 'User not found' });
+    if (me.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return res.status(403).json({ error: 'This invitation was sent to a different email' });
+    }
+
+    const { ensureMembership, switchActiveOrg } = await import('../lib/orgMembership.js');
+    await ensureMembership({
+      userId: me.id,
+      organizationId: invite.organizationId,
+      role: invite.role,
+      customRole: invite.customRole,
+      invitedById: invite.invitedById,
+    });
+    // Property assignments come over with the invite.
+    const propIds = Array.isArray(invite.propertyIds) ? invite.propertyIds : [];
+    if (propIds.length > 0) {
+      await prisma.propertyAssignment.createMany({
+        data: propIds.map((pid) => ({ userId: me.id, propertyId: pid })),
+        skipDuplicates: true,
+      });
+    }
+    await prisma.invitation.update({
+      where: { id: invite.id },
+      data: { acceptedAt: new Date(), status: 'ACCEPTED' },
+    });
+    // Switch the user's active org to the new one so the next
+    // request lands them on the right dashboard.
+    await switchActiveOrg(me.id, invite.organizationId);
+    return res.json({ ok: true, organizationId: invite.organizationId });
+  } catch (err) {
+    console.error('accept-as-existing error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
