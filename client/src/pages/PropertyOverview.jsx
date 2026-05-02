@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import StartInspection from '../components/StartInspection';
 import NewMaintenance from '../components/NewMaintenance';
 import LogViolation from '../components/LogViolation';
-import PropertyFinancialHealth from '../components/PropertyFinancialHealth';
 import PropertyHealthTab from '../components/PropertyHealthTab';
 import PropertyRoomTable from '../components/PropertyRoomTable';
 import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
@@ -220,8 +219,6 @@ export default function PropertyOverview() {
       {activeTab === 'insights' && <PropertyInsightsTab propertyId={id} />}
 
       {activeTab === 'overview' && (<>
-      <PropertyFinancialHealth propertyId={id} />
-
       {/* ─── ROOM TABLE ─── */}
       <section className="po-section">
         <h2 className="po-section-title">Rooms</h2>
