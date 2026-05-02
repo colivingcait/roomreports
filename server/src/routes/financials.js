@@ -2221,12 +2221,27 @@ router.get('/property/:propertyId', async (req, res) => {
     }
 
     const dim = daysInMonth(latestMonth);
+
+    // Last 6 months of host earnings per room → mini sparkline.
+    const sortedMonths = [...new Set(allHistory.map((r) => r.earningsMonth))].sort();
+    const last6 = sortedMonths.slice(-6);
+    const monthlyHostByRoom = {}; // roomKey → { month → host }
+    for (const r of history) {
+      const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
+      if (!roomKey) continue;
+      if (!last6.includes(r.earningsMonth)) continue;
+      if (!monthlyHostByRoom[roomKey]) monthlyHostByRoom[roomKey] = {};
+      monthlyHostByRoom[roomKey][r.earningsMonth] =
+        (monthlyHostByRoom[roomKey][r.earningsMonth] || 0) + (r.hostEarnings || 0);
+    }
+
     const rooms = {};
     const allRoomKeys = new Set([
       ...Object.keys(latestMonthRoomTotals),
       ...Object.keys(intervalsByRoom),
       ...Object.keys(firstMonthByRoom),
     ]);
+    const nowDate = new Date();
     for (const roomKey of allRoomKeys) {
       const fm = firstMonthByRoom[roomKey];
       if (fm && latestMonth < fm) continue; // room not yet onboarded
@@ -2235,15 +2250,38 @@ router.get('/property/:propertyId', async (req, res) => {
       const vacantDays = vacantDaysInMonthForRoom(intervalsByRoom[roomKey] || [], latestMonth, fm);
       const rrRoomId = rrRoomByLabel[roomKey];
       const maintenanceCost = rrRoomId ? (maintByRoom[rrRoomId] || 0) : 0;
+
+      // Current resident tenure — from the latest interval that includes
+      // the current month. Months from firstDate to today.
+      const intervals = intervalsByRoom[roomKey] || [];
+      const currentInterval = intervals.length > 0 ? intervals[intervals.length - 1] : null;
+      let tenureMonths = null;
+      let residentSince = null;
+      if (currentInterval && residentByRoom[roomKey]) {
+        residentSince = currentInterval.firstDate || null;
+        if (residentSince) {
+          tenureMonths = (nowDate - residentSince) / (1000 * 60 * 60 * 24 * 30.4375);
+        }
+      }
+
+      // Sparkline — host earnings per last 6 months, in order.
+      const sparkline = last6.map((m) => ({
+        month: m,
+        host: round2(monthlyHostByRoom[roomKey]?.[m] || 0),
+      }));
+
       rooms[roomKey] = {
         roomNumber: roomKey,
         rrRoomId: rrRoomId || null,
         residentName: residentByRoom[roomKey] || null,
+        residentSince,
+        tenureMonths: tenureMonths != null ? Number(tenureMonths.toFixed(1)) : null,
         gross: round2(totals.gross),
         host: round2(totals.host),
         vacantDays,
         dailyRate: round2(dailyRate),
         maintenanceCost: round2(maintenanceCost),
+        sparkline,
       };
     }
 
