@@ -1464,6 +1464,33 @@ body {
   color: #4A4543;
 }
 
+.property-metro-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 13px;
+}
+.property-metro-label {
+  color: var(--ds-text-muted);
+  font-weight: 500;
+}
+.metro-select-wrap { display: inline-flex; gap: 0.4rem; align-items: center; }
+.metro-select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--ds-divider);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--ds-text);
+}
+.metro-other-input {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--ds-divider);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
 .inline-add-form {
   display: flex;
   align-items: center;

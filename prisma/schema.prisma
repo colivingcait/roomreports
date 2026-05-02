@@ -177,6 +177,7 @@ model Property {
   id             String   @id @default(cuid())
   name           String
   address        String
+  metroArea      String?
   imageUrl       String?
   organizationId String
   createdAt      DateTime @default(now())

@@ -539,6 +539,7 @@ export default function Financials() {
   const [chartTimeline, setChartTimeline] = useState('all');
   const [customRange, setCustomRange] = useState({ from: '', to: '' });
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [metroFilter, setMetroFilter] = useState('all');
   const [expandedProps, setExpandedProps] = useState({});
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -724,8 +725,53 @@ export default function Financials() {
 
   if (loading) return <div className="page-loading">Loading…</div>;
 
-  const totals = dashboard?.totals;
-  const trends = dashboard?.trends;
+  // Metros surfaced in the data — used to populate the filter dropdown.
+  // Only metros that have at least one property attached get a slot.
+  const metroOptions = (() => {
+    const set = new Set();
+    for (const p of (dashboard?.propertyBreakdown || [])) {
+      if (p.metroArea) set.add(p.metroArea);
+    }
+    return [...set].sort();
+  })();
+
+  const propertyBreakdownAll = dashboard?.propertyBreakdown || [];
+  const propertyBreakdown = metroFilter === 'all'
+    ? propertyBreakdownAll
+    : propertyBreakdownAll.filter((p) => (p.metroArea || '') === metroFilter);
+
+  // Recompute portfolio totals client-side when filtering by metro.
+  // For "all" we keep the server totals (preserve trend deltas).
+  const totalsRaw = dashboard?.totals || {};
+  const trends = metroFilter === 'all' ? (dashboard?.trends || {}) : {};
+  const totals = metroFilter === 'all'
+    ? totalsRaw
+    : (() => {
+        let host = 0; let gross = 0; let fees = 0;
+        let occRoomDays = 0; let occVacantDays = 0;
+        let turnovers = 0; let maint = 0;
+        for (const p of propertyBreakdown) {
+          host += p.hostEarnings || 0;
+          gross += p.gross || 0;
+          fees += (p.bookingFee || 0) + (p.serviceFee || 0) + (p.transactionFee || 0);
+          occRoomDays += p.roomDays || 0;
+          occVacantDays += p.vacantDays || 0;
+          turnovers += p.turnoversThisMonth || 0;
+          maint += p.maintenanceCost || 0;
+        }
+        const occupancy = occRoomDays > 0
+          ? ((occRoomDays - occVacantDays) / occRoomDays) * 100
+          : null;
+        return {
+          ...totalsRaw,
+          hostEarnings: host,
+          gross,
+          fees,
+          occupancy,
+          turnovers,
+          maintenance: maint,
+        };
+      })();
 
   return (
     <div className="page-container fin-page">
@@ -801,6 +847,16 @@ export default function Financials() {
                 <option key={m} value={m}>{fmtMonth(m)}</option>
               ))}
               <option value="all">All time</option>
+            </select>
+            <label htmlFor="fin-metro" style={{ marginLeft: '0.75rem' }}>Metro</label>
+            <select
+              id="fin-metro"
+              className="filter-select"
+              value={metroFilter}
+              onChange={(e) => setMetroFilter(e.target.value)}
+            >
+              <option value="all">All metros</option>
+              {metroOptions.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
             <button
               type="button"
@@ -902,7 +958,9 @@ export default function Financials() {
               ) : (() => {
                 const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
                 const ChartCmp = cfg.kind === 'bar' ? BarChart : LineChart;
-                const allSeries = timeseries?.series || [];
+                const allSeries = (timeseries?.series || []).filter(
+                  (s) => metroFilter === 'all' || (s.metroArea || '') === metroFilter,
+                );
 
                 // Click handler — toggle a series; never let the user
                 // hide the last visible one.
@@ -990,10 +1048,10 @@ export default function Financials() {
           <section className="fin-section">
             <h2 className="fin-section-title">Property breakdown</h2>
             <div className="fin-prop-list">
-              {(dashboard?.propertyBreakdown || []).length === 0 ? (
+              {propertyBreakdown.length === 0 ? (
                 <div className="fin-empty">No matched properties for this month.</div>
               ) : (
-                (dashboard?.propertyBreakdown || []).map((p) => (
+                propertyBreakdown.map((p) => (
                   <PropertyCard
                     key={p.propertyId}
                     p={p}

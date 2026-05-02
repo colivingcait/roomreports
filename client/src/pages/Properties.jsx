@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
+import { METRO_AREAS } from '../../../shared/index.js';
 
 export default function Properties() {
   const navigate = useNavigate();
@@ -9,6 +10,8 @@ export default function Properties() {
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  const [metroChoice, setMetroChoice] = useState('');
+  const [metroOther, setMetroOther] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,17 +34,22 @@ export default function Properties() {
     setSaving(true);
     setError('');
     try {
+      const metroArea = metroChoice === '__other__'
+        ? (metroOther.trim() || null)
+        : (metroChoice || null);
       const res = await fetch('/api/properties', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, address }),
+        body: JSON.stringify({ name, address, metroArea }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setShowAdd(false);
       setName('');
       setAddress('');
+      setMetroChoice('');
+      setMetroOther('');
       fetchProperties();
     } catch (err) {
       setError(err.message);
@@ -101,6 +109,28 @@ export default function Properties() {
             Address
             <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, Austin TX" required />
           </label>
+          <label>
+            Metro area
+            <select
+              value={metroChoice}
+              onChange={(e) => setMetroChoice(e.target.value)}
+            >
+              <option value="">Set later…</option>
+              {METRO_AREAS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <option value="__other__">Other…</option>
+            </select>
+          </label>
+          {metroChoice === '__other__' && (
+            <label>
+              Custom metro
+              <input
+                type="text"
+                value={metroOther}
+                onChange={(e) => setMetroOther(e.target.value)}
+                placeholder="e.g. Boise, ID"
+              />
+            </label>
+          )}
           <button type="submit" className="btn-primary" disabled={saving}>
             {saving ? 'Creating...' : 'Create Property'}
           </button>

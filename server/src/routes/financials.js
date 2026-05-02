@@ -291,6 +291,7 @@ router.get('/dashboard', async (req, res) => {
           id: true,
           name: true,
           address: true,
+          metroArea: true,
           rooms: {
             where: { deletedAt: null },
             select: { id: true, label: true, features: true },
@@ -1005,6 +1006,7 @@ router.get('/dashboard', async (req, res) => {
       return {
         propertyId: p.propertyId,
         propertyName: p.property?.name || p.padsplitAddress,
+        metroArea: p.property?.metroArea || null,
         padsplitAddress: p.padsplitAddress,
         gross: round2(p.gross),
         bookingFee: round2(p.bookingFee),
@@ -1140,7 +1142,7 @@ router.get('/timeseries', async (req, res) => {
       prisma.padSplitPropertyMapping.findMany({ where: { organizationId: orgId } }),
       prisma.property.findMany({
         where: { organizationId: orgId, deletedAt: null },
-        select: { id: true, name: true },
+        select: { id: true, name: true, metroArea: true },
       }),
       prisma.maintenanceItem.findMany({
         where: { organizationId: orgId, deletedAt: null, actualCost: { not: null } },
@@ -1319,6 +1321,7 @@ router.get('/timeseries', async (req, res) => {
       return {
         propertyId: propId,
         propertyName: labelByKey[key] || key,
+        metroArea: propId ? (propertyById[propId]?.metroArea || null) : null,
         points,
       };
     });
