@@ -10472,7 +10472,12 @@ img,
   cursor: pointer;
   transition: all 0.15s;
 }
-.fin-timeline-pill:hover { border-color: var(--ds-sage); color: var(--ds-text); }
+.fin-timeline-pill:hover:not(:disabled) { border-color: var(--ds-sage); color: var(--ds-text); }
+.fin-timeline-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #FAF7F2;
+}
 .fin-timeline-active {
   background: var(--ds-sage);
   border-color: var(--ds-sage);

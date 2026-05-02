@@ -168,7 +168,7 @@ export default function PropertyOverview() {
     <div className="page-container">
       {/* Breadcrumb */}
       <div className="po-breadcrumb">
-        <Link to="/dashboard">Dashboard</Link>
+        <Link to="/properties">Properties</Link>
         <span> / </span>
         <span>{property.name}</span>
       </div>

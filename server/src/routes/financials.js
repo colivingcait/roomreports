@@ -936,6 +936,20 @@ router.get('/dashboard', async (req, res) => {
       const occupancyRate = propTotalDays > 0
         ? Math.max(0, Math.min(100, ((propTotalDays - propVacancyDays) / propTotalDays) * 100))
         : null;
+      // Targeted debug for the Meadowchase Feb 2026 occupancy bug —
+      // logs the inputs that produce the percentage so we can verify
+      // the fix in pm2 logs.
+      if (
+        (p.property?.name || '').toLowerCase().includes('meadowchase')
+        && allMonthsForVacancy.length === 1
+        && allMonthsForVacancy[0] === '2026-02'
+      ) {
+        console.log(
+          `[occupancy-debug] Meadowchase 2026-02: ` +
+          `vacantDays=${propVacancyDays} totalDays=${propTotalDays} ` +
+          `occupancy=${occupancyRate?.toFixed(1)}% rooms=${rooms.length}`,
+        );
+      }
 
       // Room insight metrics — match PadSplit rooms to RoomReport rooms
       // so we can split private-bath / shared-bath averages by feature.
@@ -2518,6 +2532,9 @@ function monthsBetween(startMonth, endMonth) {
 // Hoisted to module scope so both the dashboard and timeseries
 // endpoints can use it.
 function vacantDaysInMonthForRoom(intervals, monthStr, roomFirstMonthStr) {
+  // Months strictly before the room first appeared in the data are
+  // outside our knowable window — treat as 0 vacant days (caller also
+  // skips those months when rolling up totals).
   if (roomFirstMonthStr && monthStr < roomFirstMonthStr) return 0;
   const dim = daysInMonth(monthStr);
   if (!intervals || intervals.length === 0) return dim;
@@ -2527,18 +2544,18 @@ function vacantDaysInMonthForRoom(intervals, monthStr, roomFirstMonthStr) {
     start: intv.firstDate,
     end: i === intervals.length - 1 ? FAR_FUTURE : intv.lastDate,
   }));
-  const isRoomsFirstMonth = roomFirstMonthStr && monthStr === roomFirstMonthStr;
-  const firstStart = effective[0].start;
+  // No "skip pre-move-in days" carve-out: the property is considered
+  // available from the start of its first data month, so days before
+  // the first occupant collected rent count as vacancy. Subsequent
+  // months use the same straight day-by-day check.
   let occupied = 0;
-  let skipped = 0;
   for (let day = 1; day <= dim; day++) {
     const d = new Date(Date.UTC(y, m - 1, day));
-    if (isRoomsFirstMonth && d < firstStart) { skipped += 1; continue; }
     for (const e of effective) {
       if (d >= e.start && d <= e.end) { occupied += 1; break; }
     }
   }
-  return dim - occupied - skipped;
+  return dim - occupied;
 }
 
 function turnoversInMonthForRoom(intervals, monthStr) {

@@ -29,7 +29,6 @@ function fmtMonthShort(m) {
 
 const CHART_METRICS = [
   { key: 'host', label: 'Earnings', kind: 'line', color: SAGE, yFmt: fmtMoney },
-  { key: 'collected', label: 'Collected', kind: 'line', color: SAGE, yFmt: fmtMoney },
   { key: 'avgRate', label: 'Avg room rate', kind: 'line', color: SAGE, yFmt: fmtMoney },
   { key: 'occupancy', label: 'Occupancy %', kind: 'line', color: SAGE, yFmt: (v) => `${v}%` },
   { key: 'turnovers', label: 'Turnovers', kind: 'bar', color: TERRA, yFmt: (v) => `${v}` },
@@ -83,9 +82,22 @@ export default function PropertyAnalyticsTab({ propertyId }) {
     return series.series.find((s) => s.propertyId === propertyId) || null;
   }, [series, propertyId]);
 
+  // Property's onboard month = earliest month it has any data for.
+  // Charts and timeline ranges are floored to this month so we never
+  // render zeros for months before the property existed in PadSplit.
+  const propertyMonths = useMemo(() => {
+    if (!propertySeries?.points) return [];
+    const pts = propertySeries.points
+      .filter((p) => (p.host || 0) > 0 || (p.collected || 0) > 0 || (p.onboarded || 0) > 0)
+      .map((p) => p.month);
+    return pts.sort();
+  }, [propertySeries]);
+
+  const historyMonths = propertyMonths.length;
+
   const filteredMonths = useMemo(
-    () => applyTimeline(series?.months || [], timeline, customRange),
-    [series, timeline, customRange],
+    () => applyTimeline(propertyMonths, timeline, customRange),
+    [propertyMonths, timeline, customRange],
   );
 
   const chartData = useMemo(() => {
@@ -127,23 +139,33 @@ export default function PropertyAnalyticsTab({ propertyId }) {
 
   return (
     <div className="ph-tab">
-      {/* Timeline selector */}
+      {/* Timeline selector — pill is disabled when the property has
+          fewer months of history than the option implies. The user
+          spec: 3M needs 2+ months, 6M needs 4+, 12M needs 7+. 1M / YTD /
+          All time / Custom are always available. */}
       <div className="fin-timeline-row">
         {[
-          { v: '1m', l: '1M' },
-          { v: '3m', l: '3M' },
-          { v: '6m', l: '6M' },
-          { v: '12m', l: '12M' },
-          { v: 'ytd', l: 'YTD' },
-          { v: 'all', l: 'All time' },
-          { v: 'custom', l: 'Custom' },
-        ].map((opt) => (
-          <button
-            key={opt.v}
-            className={`fin-timeline-pill ${timeline === opt.v ? 'fin-timeline-active' : ''}`}
-            onClick={() => setTimeline(opt.v)}
-          >{opt.l}</button>
-        ))}
+          { v: '1m', l: '1M', minMonths: 1 },
+          { v: '3m', l: '3M', minMonths: 2 },
+          { v: '6m', l: '6M', minMonths: 4 },
+          { v: '12m', l: '12M', minMonths: 7 },
+          { v: 'ytd', l: 'YTD', minMonths: 1 },
+          { v: 'all', l: 'All time', minMonths: 1 },
+          { v: 'custom', l: 'Custom', minMonths: 1 },
+        ].map((opt) => {
+          const disabled = historyMonths < opt.minMonths;
+          return (
+            <button
+              key={opt.v}
+              className={`fin-timeline-pill ${timeline === opt.v ? 'fin-timeline-active' : ''}`}
+              onClick={() => !disabled && setTimeline(opt.v)}
+              disabled={disabled}
+              title={disabled
+                ? `Not enough data — only ${historyMonths} month${historyMonths === 1 ? '' : 's'} of history`
+                : ''}
+            >{opt.l}</button>
+          );
+        })}
         {timeline === 'custom' && (
           <span className="fin-timeline-custom">
             <input
