@@ -1319,8 +1319,14 @@ function TurnoverTracker({ rows }) {
                     <tr>
                       <th>Room</th>
                       <th>Turnovers</th>
-                      <th>Annualized rate</th>
-                      <th>Avg tenure (months)</th>
+                      <th>
+                        <span className="hide-mobile">Annualized rate</span>
+                        <span className="show-mobile">Ann. rate</span>
+                      </th>
+                      <th>
+                        <span className="hide-mobile">Avg tenure (months)</span>
+                        <span className="show-mobile">Avg ten.</span>
+                      </th>
                       <th>Turnover cost</th>
                       <th></th>
                     </tr>
