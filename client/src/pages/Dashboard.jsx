@@ -49,11 +49,14 @@ function fmtMoneyShort(n) {
 }
 
 function TrendArrow({ delta, lowerIsBetter = false }) {
-  if (delta == null || Math.abs(delta) < 0.05) return null;
+  if (delta == null || Math.abs(delta) < 0.05) {
+    return <span className="db-trend db-trend-flat">— flat</span>;
+  }
   const isUp = delta > 0;
   const isGood = lowerIsBetter ? !isUp : isUp;
+  // Trends use sage (good) or terracotta (attention) — never red.
   return (
-    <span className={`db-trend ${isGood ? 'db-trend-good' : 'db-trend-bad'}`}>
+    <span className={`db-trend ${isGood ? 'db-trend-good' : 'db-trend-warn'}`}>
       {isUp ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}%
     </span>
   );
@@ -292,7 +295,7 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       {/* Portfolio pulse — 4 metric cards */}
       {isWidgetOn('portfolioPulse') && (
         <div className="db-pulse">
-          <div className="db-card db-pulse-card">
+          <div className="db-card db-pulse-card" onClick={() => navigate('/financials')}>
             <div className="db-pulse-label">Host earnings</div>
             <div className="db-pulse-value">
               {hasFinancialData
@@ -301,13 +304,9 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
             </div>
             {hasFinancialData
               ? <TrendArrow delta={finTrends?.hostEarnings} />
-              : (
-                <button className="db-link" onClick={() => navigate('/financials')}>
-                  Upload PadSplit data →
-                </button>
-              )}
+              : <span className="db-pulse-cta">Upload PadSplit data →</span>}
           </div>
-          <div className="db-card db-pulse-card">
+          <div className="db-card db-pulse-card" onClick={() => navigate('/financials')}>
             <div className="db-pulse-label">Occupancy</div>
             <div className="db-pulse-value">
               {hasFinancialData && occupancy != null
@@ -316,31 +315,19 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
             </div>
             {hasFinancialData
               ? <TrendArrow delta={finTrends?.occupancy} />
-              : (
-                <button className="db-link" onClick={() => navigate('/financials')}>
-                  Upload PadSplit data →
-                </button>
-              )}
+              : <span className="db-pulse-cta">Upload PadSplit data →</span>}
           </div>
-          <div className="db-card db-pulse-card">
+          <div className="db-card db-pulse-card" onClick={() => navigate('/maintenance')}>
             <div className="db-pulse-label">Open tickets</div>
-            <div className={`db-pulse-value ${openTickets > 5 ? 'db-pulse-bad' : ''}`}>
-              {openTickets}
-            </div>
-            <button className="db-link" onClick={() => navigate('/maintenance')}>
-              View board →
-            </button>
+            <div className="db-pulse-value">{openTickets}</div>
           </div>
-          <div className="db-card db-pulse-card">
+          <div className="db-card db-pulse-card" onClick={() => navigate('/maintenance')}>
             <div className="db-pulse-label">Avg resolution</div>
             <div className="db-pulse-value">
               {avgResolutionDays != null
                 ? `${avgResolutionDays.toFixed(1)}d`
                 : <span className="db-dim">—</span>}
             </div>
-            <button className="db-link" onClick={() => navigate('/maintenance')}>
-              View board →
-            </button>
           </div>
         </div>
       )}
@@ -388,7 +375,12 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
                     className="db-activity-row"
                     onClick={() => e.link && navigate(e.link)}
                   >
-                    <span className={`db-dot db-dot-${e.dot === 'red' ? 'red' : e.dot === 'amber' ? 'amber' : 'sage'}`} />
+                    <span className={`db-dot db-dot-${
+                      e.dot === 'terra' ? 'terra'
+                      : e.dot === 'gray' ? 'gray'
+                      : e.dot === 'sage' ? 'sage'
+                      : 'gray'
+                    }`} />
                     <span className="db-activity-desc">{e.description}</span>
                     <span className="db-activity-time">{timeAgo(e.at)}</span>
                   </li>
