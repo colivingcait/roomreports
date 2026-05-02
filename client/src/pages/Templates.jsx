@@ -80,13 +80,30 @@ export default function Templates() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Group items by zone for display
+  // Group items by zone for display.
+  // Strip internal metadata: zones starting with `_` (e.g. `_Completed:*`)
+  // are completion trackers, not user-facing checklist items, and never
+  // belong in the editor view. `_section` items keep their zone but render
+  // as in-zone subheadings rather than checkable rows.
   const groups = {};
   const zoneOrder = [];
   for (const it of template?.items || []) {
+    if (it.zone?.startsWith('_')) continue;
     if (!groups[it.zone]) { groups[it.zone] = []; zoneOrder.push(it.zone); }
     groups[it.zone].push(it);
   }
+
+  // `Kitchen:Kitchen` → `Kitchen`, `Bathroom:Downstairs Shared Bath` →
+  // `Downstairs Shared Bath`. Single-segment zones (e.g. `Maintenance`)
+  // pass through unchanged.
+  const zoneLabel = (zone) => {
+    if (!zone) return '';
+    const idx = zone.indexOf(':');
+    return idx === -1 ? zone : zone.slice(idx + 1);
+  };
+
+  const isSectionItem = (item) =>
+    Array.isArray(item.options) && item.options.includes('_section');
 
   const handleDragEnd = async (e) => {
     const { active, over } = e;
@@ -216,22 +233,31 @@ export default function Templates() {
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={template.items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-            {zoneOrder.map((zone) => (
-              <div key={zone} className="tpl-zone">
-                <div className="tpl-zone-head">
-                  <h3>{zone}</h3>
-                  <button className="btn-text-sm" onClick={() => openAdd(zone)}>+ Add to {zone}</button>
+            {zoneOrder.map((zone) => {
+              const label = zoneLabel(zone);
+              return (
+                <div key={zone} className="tpl-zone">
+                  <div className="tpl-zone-head">
+                    <h3>{label}</h3>
+                    <button className="btn-text-sm" onClick={() => openAdd(zone)}>+ Add to {label}</button>
+                  </div>
+                  {groups[zone].map((item) => (
+                    isSectionItem(item) ? (
+                      <div key={item.id} className="tpl-section-head">
+                        <h4>{item.text}</h4>
+                      </div>
+                    ) : (
+                      <SortableRow
+                        key={item.id}
+                        item={item}
+                        onEdit={openEdit}
+                        onDelete={setDeleteTarget}
+                      />
+                    )
+                  ))}
                 </div>
-                {groups[zone].map((item) => (
-                  <SortableRow
-                    key={item.id}
-                    item={item}
-                    onEdit={openEdit}
-                    onDelete={setDeleteTarget}
-                  />
-                ))}
-              </div>
-            ))}
+              );
+            })}
           </SortableContext>
         </DndContext>
       )}

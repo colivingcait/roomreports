@@ -4414,6 +4414,20 @@ body {
 .tpl-row-meta { font-size: 0.75rem; color: #8A8583; margin-top: 0.15rem; }
 .tpl-row-actions { display: flex; gap: 0.25rem; }
 
+.tpl-section-head {
+  padding: 0.75rem 0.25rem 0.25rem;
+  margin-top: 0.5rem;
+  border-bottom: 1px solid #E8E2D8;
+}
+.tpl-section-head h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6B8F71;
+}
+
 /* ─── Responsive polish ───────────────────────────────── */
 
 /* Minimum 44px tap targets on mobile for all interactive elements */
