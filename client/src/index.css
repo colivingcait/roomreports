@@ -11470,3 +11470,54 @@ img,
   font-size: 13px;
   font-weight: 500;
 }
+
+/* ═══════ Financials page ── upload header + history additions ═══════ */
+
+.fin-last-synced {
+  margin-top: 0.4rem;
+  font-size: 12px;
+  color: #8A8580;
+}
+.fin-thin-banner {
+  background: #EAF1EB;
+  color: #4A6B4F;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 0 0 12px;
+  border: 1px solid rgba(107, 143, 113, 0.25);
+}
+.fin-remove-btn {
+  background: #fff;
+  border: 1px solid #E8C4C4;
+  color: var(--ds-danger);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-left: auto;
+}
+.fin-remove-btn:hover { background: #FCEFEF; }
+
+.fin-tt-good {
+  background: #EAF1EB;
+  color: #2F7A48;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-top: 0.5rem;
+}
+.fin-tt-toggle-row {
+  margin-top: 0.6rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Pack the chart-metric pills tighter so all 8 fit in one row when
+   the viewport is wide enough. They wrap on narrow screens. */
+.fin-toggle-row { gap: 4px !important; flex-wrap: wrap; }
+.fin-toggle {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}

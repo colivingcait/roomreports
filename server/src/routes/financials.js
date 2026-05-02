@@ -115,6 +115,36 @@ router.post('/reset', async (req, res) => {
   }
 });
 
+// ─── DELETE /api/financials/uploads/:month ───────────────
+// Removes every FinancialRecord + FinancialUpload row for the given
+// org + earningsMonth (YYYY-MM). Used by the Upload history "Remove"
+// button so a user can clear out a partial / bad import without
+// nuking everything via /reset.
+router.delete('/uploads/:month', async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const month = req.params.month;
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'month must be YYYY-MM' });
+    }
+    const recordsDel = await prisma.financialRecord.deleteMany({
+      where: { organizationId: orgId, earningsMonth: month },
+    });
+    const uploadsDel = await prisma.financialUpload.deleteMany({
+      where: { organizationId: orgId, earningsMonth: month },
+    });
+    return res.json({
+      ok: true,
+      month,
+      recordsDeleted: recordsDel.count,
+      uploadsDeleted: uploadsDel.count,
+    });
+  } catch (err) {
+    console.error('delete month error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/financials/uploads — list all uploads ─────
 
 router.get('/uploads', async (req, res) => {
@@ -241,12 +271,34 @@ router.post('/upload', async (req, res) => {
 
 router.get('/months', async (req, res) => {
   try {
+    const orgId = req.user.organizationId;
     const rows = await prisma.financialUpload.findMany({
-      where: { organizationId: req.user.organizationId },
+      where: { organizationId: orgId },
       select: { earningsMonth: true },
       orderBy: { earningsMonth: 'desc' },
     });
-    return res.json({ months: rows.map((r) => r.earningsMonth) });
+    const monthList = rows.map((r) => r.earningsMonth);
+
+    // Total membership-dues collected per month so the client can pick
+    // the most recent "complete" month and skip months where data is
+    // still trickling in. Threshold lives on the client.
+    const grouped = await prisma.financialRecord.groupBy({
+      by: ['earningsMonth'],
+      where: {
+        organizationId: orgId,
+        recordType: 'COLLECTED',
+      },
+      _sum: { grossAmount: true },
+    });
+    const collectedByMonth = {};
+    for (const g of grouped) {
+      collectedByMonth[g.earningsMonth] = round2(g._sum.grossAmount || 0);
+    }
+
+    return res.json({
+      months: monthList,
+      collectedByMonth,
+    });
   } catch (err) {
     console.error('list financial months error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1333,6 +1385,30 @@ router.get('/timeseries', async (req, res) => {
         // Maintenance cost for the month for this property (if mapped).
         const maint = propId ? (maintByPropMonth[`${propId}|${m}`] || 0) : 0;
 
+        // Avg days to fill: across turnovers that completed in month m,
+        // mean of vacant days between consecutive different occupants.
+        // null when there were no turnovers that month.
+        const fillGaps = [];
+        for (const rk of allRoomsByProperty[key] || []) {
+          const intervals = occupancyByRoom[`${key}|${rk}`] || [];
+          for (let i = 1; i < intervals.length; i++) {
+            const a = intervals[i - 1];
+            const b = intervals[i];
+            if (a.memberId === b.memberId) continue;
+            const inn = b.firstPositiveDate || b.firstDate;
+            if (!inn) continue;
+            const inMonth = `${inn.getUTCFullYear()}-${String(inn.getUTCMonth() + 1).padStart(2, '0')}`;
+            if (inMonth !== m) continue;
+            const out = a.lastPositiveDate || a.lastDate;
+            if (!out) continue;
+            const days = Math.max(0, Math.round((inn - out) / (1000 * 60 * 60 * 24)) - 1);
+            fillGaps.push(days);
+          }
+        }
+        const daysToFill = fillGaps.length > 0
+          ? Math.round(fillGaps.reduce((a, b) => a + b, 0) / fillGaps.length)
+          : null;
+
         // Avg room rate = membership-dues collected this month divided
         // by the count of rooms that actually had a positive dues sum
         // that month (vacant rooms are excluded from the denominator,
@@ -1353,6 +1429,7 @@ router.get('/timeseries', async (req, res) => {
           onboarded,
           maintenance: round2(maint),
           avgRate: avgRate != null ? round2(avgRate) : null,
+          daysToFill,
         };
       });
 

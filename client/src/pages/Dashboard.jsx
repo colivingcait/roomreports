@@ -151,16 +151,19 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       })
       .finally(() => setLoading(false));
 
-    // Pulse cards need the LATEST month, not the all-time sum.
+    // Pulse cards need the most recent month with at least $1,000 in
+    // collections — months below that threshold are typically a current
+    // calendar month where the upload hasn't happened yet.
     fetch('/api/financials/months', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const months = d?.months || [];
+        const collected = d?.collectedByMonth || {};
         if (months.length === 0) {
           setFinancial({ hasData: false });
           return;
         }
-        const latest = months[0];
+        const latest = months.find((m) => (collected[m] || 0) >= 1000) || months[0];
         fetch(`/api/financials/dashboard?month=${encodeURIComponent(latest)}`, { credentials: 'include' })
           .then((r) => r.json())
           .then((fin) => {

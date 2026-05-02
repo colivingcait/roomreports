@@ -64,16 +64,16 @@ function fmtMonthShort(s) {
 // line so the chart shows portfolio-wide totals instead of per-property
 // series.
 const CHART_METRICS = {
-  total:       { label: 'Total earnings',  key: 'host',        kind: 'line', aggregate: true, yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   host:        { label: 'Host earnings',   key: 'host',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   gross:       { label: 'Gross collected', key: 'gross',       kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   fees:        { label: 'Platform fees',   key: 'fees',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
+  total:       { label: 'Total earnings',  key: 'host',        kind: 'line', aggregate: true, yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   occupancy:   { label: 'Occupancy %',     key: 'occupancy',   kind: 'line', yFmt: (v) => `${v}%`, yDomain: [0, 100],     valFmt: (v) => `${v}%` },
   turnovers:   { label: 'Turnovers',       key: 'turnovers',   kind: 'bar',  yFmt: (v) => `${v}`, yAllowDecimals: false,  valFmt: (v) => `${v}` },
-  onboarded:   { label: 'Rooms onboarded', key: 'onboarded',   kind: 'line', yFmt: (v) => `${v}`, yAllowDecimals: false,  valFmt: (v) => `${v}` },
+  daysToFill:  { label: 'Avg days to fill', key: 'daysToFill', kind: 'line', yFmt: (v) => `${v}d`, yAllowDecimals: false, valFmt: (v) => `${v} days` },
   maintenance: { label: 'Maintenance costs', key: 'maintenance', kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
 };
-const CHART_METRIC_ORDER = ['total', 'host', 'gross', 'fees', 'occupancy', 'turnovers', 'onboarded', 'maintenance'];
+const CHART_METRIC_ORDER = ['host', 'gross', 'fees', 'total', 'occupancy', 'turnovers', 'daysToFill', 'maintenance'];
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -535,7 +535,11 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
 export default function Financials() {
   const [uploads, setUploads] = useState([]);
   const [months, setMonths] = useState([]);
+  const [collectedByMonth, setCollectedByMonth] = useState({});
   const [selectedMonth, setSelectedMonth] = useState(null);
+  // When the user (or default logic) lands on a thin month, store
+  // what they tried to view here so we can render a banner.
+  const [thinMonthBanner, setThinMonthBanner] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [timeseries, setTimeseries] = useState(null);
   const [chartMetric, setChartMetric] = useState('host');
@@ -565,10 +569,20 @@ export default function Financials() {
       ]);
       setUploads(uploadsRes.uploads || []);
       const monthList = monthsRes.months || [];
+      const collected = monthsRes.collectedByMonth || {};
       setMonths(monthList);
+      setCollectedByMonth(collected);
       setAllProperties(propsRes.properties || []);
       if (monthList.length > 0) {
-        setSelectedMonth((m) => m || monthList[0]);
+        // Default to the most recent month with at least $1,000 in
+        // collections — current calendar month often has $0 because the
+        // upload hasn't happened yet, and showing zeros would mislead.
+        const defaultMonth = monthList.find((m) => (collected[m] || 0) >= 1000) || monthList[0];
+        const latestMonth = monthList[0];
+        if (defaultMonth !== latestMonth && (collected[latestMonth] || 0) < 1000) {
+          setThinMonthBanner({ requested: latestMonth, fallback: defaultMonth });
+        }
+        setSelectedMonth((m) => m || defaultMonth);
       } else {
         setSelectedMonth(null);
       }
@@ -683,6 +697,22 @@ export default function Financials() {
       setUploadError(err.message || 'Reset failed');
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleDeleteMonth = async (month) => {
+    if (!confirm(`Remove ${fmtMonth(month)} data? This cannot be undone.`)) return;
+    setUploadError('');
+    setUploadInfo('');
+    try {
+      const res = await api(`/api/financials/uploads/${encodeURIComponent(month)}`, { method: 'DELETE' });
+      // If we were viewing the month we just removed, fall back to the
+      // next valid month.
+      if (selectedMonth === month) setSelectedMonth(null);
+      await loadAll();
+      setUploadInfo(`Removed ${res.recordsDeleted} records for ${fmtMonth(month)}.`);
+    } catch (err) {
+      setUploadError(err.message || 'Delete failed');
     }
   };
 
@@ -801,37 +831,21 @@ export default function Financials() {
         </div>
       </div>
 
-      {/* Upload section */}
+      {/* Upload section — stays at top of the page */}
       <section className="fin-section">
         <UploadZone onUpload={handleUpload} busy={uploadBusy} error={uploadError} />
+        {uploads.length > 0 && (() => {
+          const last = uploads[0];
+          return (
+            <div className="fin-last-synced">
+              Last synced: {new Date(last.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {' · '}
+              {fmtMonth(last.earningsMonth)} data
+            </div>
+          );
+        })()}
 
         {uploadInfo && <div className="fin-info-banner">{uploadInfo}</div>}
-
-        {uploads.length > 0 && (
-          <div className="fin-uploads">
-            <div className="fin-uploads-head">
-              <h3 className="md-section-title">Upload history</h3>
-              <button
-                type="button"
-                className="btn-text-sm fin-reset-btn"
-                onClick={handleReset}
-                disabled={resetting}
-              >
-                {resetting ? 'Resetting…' : 'Reset all financial data'}
-              </button>
-            </div>
-            <ul className="fin-upload-list">
-              {uploads.map((u) => (
-                <li key={u.id} className="fin-upload-row">
-                  <span className="fin-upload-month">{fmtMonth(u.earningsMonth)}</span>
-                  <span className="fin-upload-meta">
-                    {u._count?.records || 0} rows · uploaded {new Date(u.uploadedAt).toLocaleDateString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
 
         {mappings.unmatched && mappings.unmatched.length > 0 && (
           <div className="fin-warning-banner">
@@ -853,6 +867,11 @@ export default function Financials() {
         </div>
       ) : (
         <>
+          {thinMonthBanner && (
+            <div className="fin-thin-banner">
+              {fmtMonth(thinMonthBanner.requested)} doesn't have enough data yet — showing {fmtMonth(thinMonthBanner.fallback)} instead. This month will update automatically once collections reach $1,000.
+            </div>
+          )}
           {/* Month selector */}
           <div className="fin-month-row">
             <label htmlFor="fin-month">Earnings month</label>
@@ -860,7 +879,23 @@ export default function Financials() {
               id="fin-month"
               className="filter-select"
               value={selectedMonth || ''}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'all' || (collectedByMonth[v] || 0) >= 1000) {
+                  setThinMonthBanner(null);
+                  setSelectedMonth(v);
+                  return;
+                }
+                // User picked a thin month — show banner and fall back
+                // to the most recent month with enough data.
+                const fallback = months.find((m) => (collectedByMonth[m] || 0) >= 1000);
+                if (fallback) {
+                  setThinMonthBanner({ requested: v, fallback });
+                  setSelectedMonth(fallback);
+                } else {
+                  setSelectedMonth(v);
+                }
+              }}
             >
               {months.map((m) => (
                 <option key={m} value={m}>{fmtMonth(m)}</option>
@@ -1104,6 +1139,39 @@ export default function Financials() {
             <h2 className="fin-section-title">Turnover tracker</h2>
             <TurnoverTracker rows={dashboard?.turnoverTracker || []} />
           </section>
+
+          {/* Upload history — bottom of page */}
+          {uploads.length > 0 && (
+            <section className="fin-section">
+              <div className="fin-uploads-head">
+                <h2 className="fin-section-title">Upload history</h2>
+                <button
+                  type="button"
+                  className="btn-text-sm fin-reset-btn"
+                  onClick={handleReset}
+                  disabled={resetting}
+                >
+                  {resetting ? 'Resetting…' : 'Reset all financial data'}
+                </button>
+              </div>
+              <ul className="fin-upload-list">
+                {uploads.map((u) => (
+                  <li key={u.id} className="fin-upload-row">
+                    <span className="fin-upload-month">{fmtMonth(u.earningsMonth)}</span>
+                    <span className="fin-upload-meta">
+                      {u._count?.records || 0} rows · uploaded {new Date(u.uploadedAt).toLocaleDateString()}
+                    </span>
+                    <button
+                      type="button"
+                      className="fin-remove-btn"
+                      onClick={() => handleDeleteMonth(u.earningsMonth)}
+                      title={`Remove ${fmtMonth(u.earningsMonth)} data`}
+                    >Remove</button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
 
@@ -1168,9 +1236,16 @@ const PROBLEM_TURNOVER_RATE = 4;
 const MIN_MONTHS_FOR_PROBLEM = 6;
 
 function TurnoverTracker({ rows }) {
+  const [showAll, setShowAll] = useState(false);
   if (!rows || rows.length === 0) {
     return <div className="fin-empty fin-tt-empty">No turnover data yet.</div>;
   }
+  // Total problem rooms across the portfolio — used to decide whether
+  // the collapsed view should show "No problem rooms" instead of a
+  // bunch of empty property tables.
+  const totalProblemRooms = rows.filter(
+    (r) => (r.annualizedTurnovers || 0) >= PROBLEM_TURNOVER_RATE && r.monthsOfData >= MIN_MONTHS_FOR_PROBLEM,
+  ).length;
 
   // Group by property; sort properties by problem-room count desc
   // (then alphabetically). Within each property, rooms with turnovers
@@ -1226,6 +1301,12 @@ function TurnoverTracker({ rows }) {
         const propertyRows = groups[name];
         const totalTurnovers = propertyRows.reduce((s, r) => s + (r.turnovers || 0), 0);
         const limitedData = (propertyMonthsByName[name] || 0) < MIN_MONTHS_FOR_PROBLEM;
+        const hasProblemRows = propertyRows.some(
+          (r) => (r.annualizedTurnovers || 0) >= PROBLEM_TURNOVER_RATE && !limitedData,
+        );
+        // In collapsed mode, hide property cards that have no problem
+        // rooms so the page doesn't stack a bunch of empty tables.
+        if (!showAll && !hasProblemRows) return null;
         return (
           <div key={name} className="fin-tt-group">
             <h3 className="fin-tt-property">{name}</h3>
@@ -1248,6 +1329,9 @@ function TurnoverTracker({ rows }) {
                     {propertyRows.map((r) => {
                       const annualized = r.annualizedTurnovers || 0;
                       const isProblem = !limitedData && annualized >= PROBLEM_TURNOVER_RATE;
+                      // Default view shows only problem rooms; toggle
+                      // expands to every room in the property.
+                      if (!showAll && !isProblem) return null;
                       const annCost = r.annualizedTurnoverCost || 0;
                       const costClass = annCost > 1000
                         ? 'fin-tt-cost-bad'
@@ -1283,6 +1367,20 @@ function TurnoverTracker({ rows }) {
           </div>
         );
       })}
+      {/* Collapsed-mode helper — green note when no problem rooms, plus
+          the show-all / hide-non-problem toggle. */}
+      {!showAll && totalProblemRooms === 0 && (
+        <div className="fin-tt-good">No problem rooms — all turnover rates are healthy</div>
+      )}
+      <div className="fin-tt-toggle-row">
+        <button
+          type="button"
+          className="btn-text-sm"
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? 'Hide non-problem rooms ▴' : 'Show all rooms ▾'}
+        </button>
+      </div>
     </div>
   );
 }
