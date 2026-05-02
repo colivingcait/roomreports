@@ -462,6 +462,261 @@ router.get('/:id/overview', async (req, res) => {
   }
 });
 
+// GET /api/properties/:id/health — Property Health analytics
+// Returns maintenance + inspection rollups for the Property Health tab.
+// Comparison rows for the portfolio table come from the existing
+// /api/financials/dashboard endpoint, which the client also fetches.
+router.get('/:id/health', requireRole('OWNER', 'PM'), async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const property = await prisma.property.findFirst({
+      where: { id: req.params.id, organizationId: orgId, deletedAt: null },
+      select: { id: true, name: true, metroArea: true, _count: { select: { rooms: { where: { deletedAt: null } } } } },
+    });
+    if (!property) return res.status(404).json({ error: 'Property not found' });
+
+    const HOUR_MS = 60 * 60 * 1000;
+    const DAY_MS = 24 * HOUR_MS;
+    const now = new Date();
+    const monthAgo = new Date(now.getTime() - 30 * DAY_MS);
+    const twoMonthsAgo = new Date(now.getTime() - 60 * DAY_MS);
+    const sixMonthsAgo = new Date(now.getTime() - 180 * DAY_MS);
+
+    // Pull maintenance items (active + soft-resolved). Include events to
+    // measure response time (first transition out of OPEN).
+    const items = await prisma.maintenanceItem.findMany({
+      where: { propertyId: property.id, organizationId: orgId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        flagCategory: true,
+        actualCost: true,
+        roomId: true,
+        createdAt: true,
+        resolvedAt: true,
+        events: {
+          where: { type: { in: ['status', 'assigned'] } },
+          orderBy: { createdAt: 'asc' },
+          select: { type: true, createdAt: true, toValue: true },
+        },
+        room: { select: { id: true, label: true } },
+      },
+    });
+
+    // Helper: average response/resolution times within a window. Response
+    // = first event after createdAt that moves the ticket out of OPEN.
+    function avgResponseHours(scope) {
+      const samples = [];
+      for (const it of scope) {
+        const evt = it.events.find((e) => e.toValue && e.toValue !== 'OPEN');
+        if (!evt) continue;
+        const ms = new Date(evt.createdAt) - new Date(it.createdAt);
+        if (ms > 0) samples.push(ms / HOUR_MS);
+      }
+      return samples.length > 0 ? samples.reduce((a, b) => a + b, 0) / samples.length : null;
+    }
+    function avgResolutionDays(scope) {
+      const samples = [];
+      for (const it of scope) {
+        if (!it.resolvedAt) continue;
+        const ms = new Date(it.resolvedAt) - new Date(it.createdAt);
+        if (ms > 0) samples.push(ms / DAY_MS);
+      }
+      return samples.length > 0 ? samples.reduce((a, b) => a + b, 0) / samples.length : null;
+    }
+
+    const thisMonth = items.filter((i) => new Date(i.createdAt) >= monthAgo);
+    const lastMonth = items.filter((i) => {
+      const d = new Date(i.createdAt);
+      return d >= twoMonthsAgo && d < monthAgo;
+    });
+
+    const avgResponse = avgResponseHours(thisMonth);
+    const avgResponsePrev = avgResponseHours(lastMonth);
+    const avgResolution = avgResolutionDays(items.filter((i) => i.resolvedAt && new Date(i.resolvedAt) >= monthAgo));
+    const avgResolutionPrev = avgResolutionDays(items.filter((i) => {
+      if (!i.resolvedAt) return false;
+      const d = new Date(i.resolvedAt);
+      return d >= twoMonthsAgo && d < monthAgo;
+    }));
+
+    // Maintenance by category (all-time on this property).
+    const byCategoryMap = {};
+    for (const it of items) {
+      const c = it.flagCategory || 'Other';
+      byCategoryMap[c] = (byCategoryMap[c] || 0) + 1;
+    }
+    const byCategory = Object.entries(byCategoryMap)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Cost per room per month. Total actualCost / rooms / months_observed.
+    const totalCost = items.reduce((a, i) => a + (i.actualCost || 0), 0);
+    const earliest = items.reduce((min, i) => {
+      const d = new Date(i.createdAt);
+      return min == null || d < min ? d : min;
+    }, null);
+    const monthsObserved = earliest
+      ? Math.max(1, Math.round((now - earliest) / (30 * DAY_MS)))
+      : 1;
+    const roomsCount = property._count.rooms || 1;
+    const costPerRoomPerMonth = totalCost / roomsCount / monthsObserved;
+
+    // Metro average — same calc across all properties in the same metro.
+    let metroAvgCostPerRoomPerMonth = null;
+    if (property.metroArea) {
+      const peerProps = await prisma.property.findMany({
+        where: {
+          organizationId: orgId,
+          deletedAt: null,
+          metroArea: property.metroArea,
+        },
+        select: {
+          id: true,
+          _count: { select: { rooms: { where: { deletedAt: null } } } },
+        },
+      });
+      if (peerProps.length > 0) {
+        const peerItems = await prisma.maintenanceItem.findMany({
+          where: {
+            organizationId: orgId,
+            deletedAt: null,
+            propertyId: { in: peerProps.map((p) => p.id) },
+          },
+          select: { propertyId: true, actualCost: true, createdAt: true },
+        });
+        let peerTotal = 0;
+        for (const it of peerItems) peerTotal += (it.actualCost || 0);
+        const peerEarliest = peerItems.reduce((min, i) => {
+          const d = new Date(i.createdAt);
+          return min == null || d < min ? d : min;
+        }, null);
+        const peerMonths = peerEarliest
+          ? Math.max(1, Math.round((now - peerEarliest) / (30 * DAY_MS)))
+          : 1;
+        const peerRooms = peerProps.reduce((a, p) => a + (p._count.rooms || 0), 0) || 1;
+        metroAvgCostPerRoomPerMonth = peerTotal / peerRooms / peerMonths;
+      }
+    }
+
+    // Recurring patterns: room+category with 2+ tickets.
+    const patternMap = {};
+    for (const it of items) {
+      if (!it.roomId) continue;
+      const k = `${it.roomId}|${it.flagCategory || 'Other'}`;
+      if (!patternMap[k]) {
+        patternMap[k] = {
+          roomId: it.roomId,
+          roomLabel: it.room?.label || '—',
+          category: it.flagCategory || 'Other',
+          count: 0,
+          totalCost: 0,
+          lastOccurrence: null,
+        };
+      }
+      const p = patternMap[k];
+      p.count += 1;
+      p.totalCost += (it.actualCost || 0);
+      const d = new Date(it.createdAt);
+      if (!p.lastOccurrence || d > new Date(p.lastOccurrence)) p.lastOccurrence = d;
+    }
+    const recurringPatterns = Object.values(patternMap)
+      .filter((p) => p.count >= 2)
+      .sort((a, b) => b.count - a.count);
+
+    // Tickets by status (active items only; resolved counted separately).
+    const byStatusMap = { OPEN: 0, ASSIGNED: 0, IN_PROGRESS: 0, RESOLVED: 0, DEFERRED: 0 };
+    for (const it of items) {
+      const s = it.status || 'OPEN';
+      if (byStatusMap[s] !== undefined) byStatusMap[s] += 1;
+    }
+    const byStatus = byStatusMap;
+
+    // Inspection compliance — last room (QUARTERLY) + last common area.
+    const inspections = await prisma.inspection.findMany({
+      where: {
+        propertyId: property.id,
+        organizationId: orgId,
+        deletedAt: null,
+        status: { in: ['SUBMITTED', 'REVIEWED'] },
+        type: { in: ['QUARTERLY', 'COMMON_AREA'] },
+        createdAt: { gte: sixMonthsAgo },
+      },
+      select: {
+        id: true,
+        type: true,
+        createdAt: true,
+        completedAt: true,
+        items: {
+          select: { status: true, zone: true, options: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const lastRoomInspection = inspections.find((i) => i.type === 'QUARTERLY')?.createdAt || null;
+    const lastCommonInspection = inspections.find((i) => i.type === 'COMMON_AREA')?.createdAt || null;
+
+    // Pass rate — across the last 6 months of inspections, count
+    // items where status === 'Pass' vs items where status === 'Fail'.
+    // Skip metadata zones (start with `_`) and section markers.
+    function passRateFor(insps) {
+      let pass = 0; let fail = 0;
+      for (const insp of insps) {
+        for (const it of (insp.items || [])) {
+          if (it.zone?.startsWith('_')) continue;
+          if (Array.isArray(it.options) && it.options.includes('_section')) continue;
+          if (it.status === 'Pass') pass += 1;
+          else if (it.status === 'Fail') fail += 1;
+        }
+      }
+      const total = pass + fail;
+      return total > 0 ? (pass / total) * 100 : null;
+    }
+    const passRateAll = passRateFor(inspections);
+    const recentSplit = (() => {
+      // First half (older) vs second half (newer) of the 6-month window.
+      const cutoff = new Date(now.getTime() - 90 * DAY_MS);
+      const older = inspections.filter((i) => new Date(i.createdAt) < cutoff);
+      const newer = inspections.filter((i) => new Date(i.createdAt) >= cutoff);
+      return { older: passRateFor(older), newer: passRateFor(newer) };
+    })();
+
+    return res.json({
+      property: { id: property.id, name: property.name, metroArea: property.metroArea, roomCount: roomsCount },
+      maintenance: {
+        avgResponseHours: avgResponse,
+        avgResponseHoursPrev: avgResponsePrev,
+        avgResolutionDays: avgResolution,
+        avgResolutionDaysPrev: avgResolutionPrev,
+        byCategory,
+        byStatus,
+        recurringPatterns,
+        costPerRoomPerMonth: Number(costPerRoomPerMonth.toFixed(2)),
+        metroAvgCostPerRoomPerMonth: metroAvgCostPerRoomPerMonth != null
+          ? Number(metroAvgCostPerRoomPerMonth.toFixed(2))
+          : null,
+        totalActiveOpen: byStatus.OPEN + byStatus.ASSIGNED + byStatus.IN_PROGRESS,
+      },
+      inspections: {
+        lastRoomInspection,
+        lastCommonInspection,
+        timeline: inspections.map((i) => ({
+          id: i.id,
+          type: i.type,
+          date: i.createdAt,
+        })),
+        passRate: passRateAll,
+        passRateOlder: recentSplit.older,
+        passRateNewer: recentSplit.newer,
+      },
+    });
+  } catch (error) {
+    console.error('Property health error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/properties/:id/qr-token — signed token for resident QR code
 router.get('/:id/qr-token', requireRole('OWNER', 'PM'), async (req, res) => {
   try {
