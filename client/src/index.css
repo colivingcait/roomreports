@@ -11586,3 +11586,114 @@ img,
 }
 .md-modal-photo img { width: 100%; height: 100%; object-fit: cover; display: block; image-orientation: from-image; }
 .md-modal-actions { display: flex; justify-content: flex-end; }
+
+/* ═══════ Properties page (selector grid) ═══════ */
+
+.btn-outline-sm {
+  background: #fff;
+  border: 1px solid var(--ds-divider);
+  color: var(--ds-text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-outline-sm:hover:not(:disabled) {
+  border-color: var(--ds-text);
+  color: var(--ds-text);
+}
+.btn-outline-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.props-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 1rem;
+}
+
+.props-card {
+  background: #fff;
+  border: 0.5px solid #E0DCDA;
+  border-radius: 10px;
+  padding: 1.25rem;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.props-card:hover {
+  border-color: #B5B0AB;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.props-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.props-card-initials {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.props-card-id { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.props-card-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ds-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.props-card-rooms {
+  font-size: 12px;
+  color: var(--ds-text-muted);
+}
+
+.props-card-divider {
+  height: 1px;
+  background: #EFECEA;
+  margin: 0 -1.25rem;
+}
+
+.props-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 12px;
+}
+.props-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text);
+}
+.props-card-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.props-card-inspected {
+  color: var(--ds-text-muted);
+}
+.props-card-inspected-never {
+  color: #B5B0AB;
+}
