@@ -431,7 +431,7 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
 
       {expanded && (
         <div className="fin-prop-body">
-          {/* Row 1 — Revenue flow (Total → fees → fees → Net) */}
+          {/* Row 1 — Revenue flow */}
           <div className="fin-prop-stat-grid fin-prop-stat-grid-revenue">
             <div className="fin-prop-stat">
               <label>Total collected</label>
@@ -445,36 +445,35 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
               <label>Service fees (8%)</label>
               <span>{fmtMoney(p.serviceFee)}</span>
             </div>
-            {/* Net earnings is highlighted — this is the answer card */}
-            <div className="fin-prop-stat fin-prop-stat-net">
+            <div className="fin-prop-stat">
               <label>Net earnings</label>
               <span>{fmtMoney(p.hostEarnings)}</span>
             </div>
           </div>
 
-          {/* Row 2 — Operating metrics (7 cards, wrap) */}
+          {/* Row 2 — Operating metrics (4 + 3 wrap) */}
           <div className="fin-prop-stat-grid fin-prop-stat-grid-ops">
             {p.hasFeatureData ? (
               <>
                 <div className="fin-prop-stat">
-                  <label>Avg private bath</label>
+                  <label>Avg collected (private)</label>
                   <span>
-                    {p.avgPrivateBathRent != null ? `${fmtMoney(p.avgPrivateBathRent)} / mo` : '—'}
+                    {p.avgPrivateBathRent != null ? fmtMoney(p.avgPrivateBathRent) : '—'}
                   </span>
                   {p.avgPrivateBathRent != null && (
                     <small className="fin-prop-stat-sub">
-                      {fmtMoney((p.avgPrivateBathRent * 12) / 52)} / wk
+                      ~{fmtMoney(p.avgPrivateBathRent / 4.33)} / wk
                     </small>
                   )}
                 </div>
                 <div className="fin-prop-stat">
-                  <label>Avg shared bath</label>
+                  <label>Avg collected (shared)</label>
                   <span>
-                    {p.avgSharedBathRent != null ? `${fmtMoney(p.avgSharedBathRent)} / mo` : '—'}
+                    {p.avgSharedBathRent != null ? fmtMoney(p.avgSharedBathRent) : '—'}
                   </span>
                   {p.avgSharedBathRent != null && (
                     <small className="fin-prop-stat-sub">
-                      {fmtMoney((p.avgSharedBathRent * 12) / 52)} / wk
+                      ~{fmtMoney(p.avgSharedBathRent / 4.33)} / wk
                     </small>
                   )}
                 </div>
@@ -482,12 +481,10 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
             ) : (
               <div className="fin-prop-stat">
                 <label>Avg rent / room</label>
-                <span>
-                  {p.avgRentPerRoom != null ? `${fmtMoney(p.avgRentPerRoom)} / mo` : '—'}
-                </span>
+                <span>{p.avgRentPerRoom != null ? fmtMoney(p.avgRentPerRoom) : '—'}</span>
                 {p.avgRentPerRoom != null && (
                   <small className="fin-prop-stat-sub">
-                    {fmtMoney((p.avgRentPerRoom * 12) / 52)} / wk
+                    ~{fmtMoney(p.avgRentPerRoom / 4.33)} / wk
                   </small>
                 )}
               </div>
