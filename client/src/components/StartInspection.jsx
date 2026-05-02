@@ -8,6 +8,8 @@ import {
 } from '../../../shared/index.js';
 
 // ─── Inspection types (order + room requirement) ──────
+// `hidden: true` keeps the type wired through the codebase but hides it
+// from the user-facing selector while we finish polishing those flows.
 const INSPECTION_TYPES = [
   {
     value: 'QUARTERLY',
@@ -28,11 +30,13 @@ const INSPECTION_TYPES = [
     value: 'MOVE_IN_OUT',
     description: 'Photo-first move-in condition baseline for a resident.',
     needsRoom: true,
+    hidden: true,
   },
   {
     value: 'RESIDENT_SELF_CHECK',
     description: 'A resident self-reports on their own room.',
     needsRoom: true,
+    hidden: true,
   },
 ];
 
@@ -141,9 +145,12 @@ export default function StartInspection({ open, onClose, defaultPropertyId }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
 
-  const allowedTypes = INSPECTION_TYPES.filter((t) =>
-    (ROLE_TYPES[user?.role] || []).includes(t.value),
-  );
+  const allowedTypes = INSPECTION_TYPES.filter((t) => {
+    // RESIDENT role still needs SELF_CHECK access — they don't see this
+    // selector, but if they ever do, keep their option available.
+    if (t.hidden && user?.role !== 'RESIDENT') return false;
+    return (ROLE_TYPES[user?.role] || []).includes(t.value);
+  });
   const selectedType = INSPECTION_TYPES.find((t) => t.value === type);
 
   const reset = useCallback(() => {

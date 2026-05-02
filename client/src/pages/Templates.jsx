@@ -10,15 +10,19 @@ import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-// Common Area inspections are driven by property config (each kitchen,
-// each shared bathroom, plus always-included Laundry/Living/Exterior), so
-// they don't use the template editor. Room Inspections use the fixed
-// 4-screen flow and are also managed in code.
+// Active template editors: Room Inspection (QUARTERLY) drives the
+// quarterly room-by-room flow, Common Area drives Kitchens/Bathrooms/
+// Laundry/Living/Exterior, Room Turn drives the turnover checklist.
+// Self-Check and Move-In are surfaced as "Coming soon" until those flows
+// finish — their templates still exist server-side so we can re-enable
+// them without losing customizations.
 const TYPES = [
+  { value: 'QUARTERLY', label: 'Room Inspection' },
+  { value: 'COMMON_AREA', label: 'Common Area' },
   { value: 'ROOM_TURN', label: 'Room Turn' },
-  { value: 'RESIDENT_SELF_CHECK', label: 'Self-Check' },
-  { value: 'MOVE_IN_OUT', label: 'Move-In' },
 ];
+
+const COMING_SOON_LABELS = ['Self-Check', 'Move-In'];
 
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
@@ -52,7 +56,7 @@ const EMPTY = { zone: '', text: '', options: 'Pass, Fail, N/A' };
 
 export default function Templates() {
   const navigate = useNavigate();
-  const [type, setType] = useState('ROOM_TURN');
+  const [type, setType] = useState('QUARTERLY');
   const [template, setTemplate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // item | null
@@ -174,7 +178,7 @@ export default function Templates() {
       </div>
 
       {/* Type tabs */}
-      <div className="view-toggle" style={{ flexWrap: 'wrap', marginBottom: '1rem' }}>
+      <div className="view-toggle" style={{ flexWrap: 'wrap', marginBottom: '0.5rem' }}>
         {TYPES.map((t) => (
           <button
             key={t.value}
@@ -183,6 +187,18 @@ export default function Templates() {
             onClick={() => setType(t.value)}
           >
             {t.label}
+          </button>
+        ))}
+        {COMING_SOON_LABELS.map((label) => (
+          <button
+            key={label}
+            type="button"
+            className="view-btn"
+            disabled
+            style={{ opacity: 0.5, cursor: 'not-allowed' }}
+            title="Coming soon"
+          >
+            {label} <span style={{ fontSize: '0.75em', marginLeft: '0.4em' }}>(coming soon)</span>
           </button>
         ))}
       </div>
