@@ -8,6 +8,7 @@ import PropertyRoomTable from '../components/PropertyRoomTable';
 import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
 import PropertyInsightsTab from '../components/PropertyInsightsTab';
 import ViolationDetailModal from '../components/ViolationDetailModal';
+import MaintenanceDetailModal from '../components/MaintenanceDetailModal';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -68,6 +69,7 @@ export default function PropertyOverview() {
   const [maintItems, setMaintItems] = useState([]);
   const [violations, setViolations] = useState([]);
   const [viewingViolationId, setViewingViolationId] = useState(null);
+  const [viewingTicketId, setViewingTicketId] = useState(null);
   const [deferredByRoom, setDeferredByRoom] = useState({});
   const [financial, setFinancial] = useState(null); // { hasData, rooms, latestMonth }
   const [maintFilter, setMaintFilter] = useState('active'); // active | all
@@ -233,6 +235,7 @@ export default function PropertyOverview() {
           violations={violations}
           onTurn={openTurnoverModal}
           onViolationClick={setViewingViolationId}
+          onTicketClick={setViewingTicketId}
         />
       </section>
 
@@ -254,7 +257,7 @@ export default function PropertyOverview() {
           return (
             <div className="po-flat-list">
               {rows.slice(0, 20).map((m) => (
-                <div key={m.id} className="po-flat-row" onClick={() => navigate('/maintenance')}>
+                <div key={m.id} className="po-flat-row" onClick={() => setViewingTicketId(m.id)} style={{ cursor: 'pointer' }}>
                   <div className="po-flat-row-main">
                     <span className="po-flat-desc">{m.description}</span>
                     <span className="po-dim">
@@ -365,6 +368,10 @@ export default function PropertyOverview() {
       <ViolationDetailModal
         violationId={viewingViolationId}
         onClose={() => setViewingViolationId(null)}
+      />
+      <MaintenanceDetailModal
+        ticketId={viewingTicketId}
+        onClose={() => setViewingTicketId(null)}
       />
 
       <StartInspection

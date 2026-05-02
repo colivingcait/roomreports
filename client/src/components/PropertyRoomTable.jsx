@@ -76,6 +76,7 @@ export default function PropertyRoomTable({
   violations,       // all violations (from overview)
   onTurn,           // (room) => void
   onViolationClick, // (violationId) => void
+  onTicketClick,    // (ticketId) => void
 }) {
   const navigate = useNavigate();
   const [sortKey, setSortKey] = useState('roomNumber');
@@ -113,13 +114,6 @@ export default function PropertyRoomTable({
       finRoom,
     };
   }), [rooms, financial]);
-
-  // Property avg for green/red coloring on Earnings
-  const earningsAvg = (() => {
-    const vals = rows.map((r) => r.host).filter((v) => v > 0);
-    if (vals.length === 0) return 0;
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
-  })();
 
   const sorted = useMemo(() => {
     const arr = [...rows];
@@ -182,12 +176,15 @@ export default function PropertyRoomTable({
         </thead>
         <tbody>
           {sorted.map((r) => {
-            const isProblem = (r.vacantDays || 0) > 0 || r.maintCount > 0 || r.violationCount > 0;
+            // Row tint: only when there's something actionable —
+            // active maintenance or active violations. Vacancy alone
+            // is a normal state (rooms turn between residents) and
+            // earnings is never a "problem" signal on its own.
+            const isProblem = r.maintCount > 0 || r.violationCount > 0;
             const isExpanded = expandedId === r.id;
-            const earningsClass = r.host > 0
-              ? (r.host >= earningsAvg ? 'prt-good' : 'prt-bad')
-              : '';
-            const netClass = r.net > 0 ? 'prt-good' : r.net < 0 ? 'prt-bad' : '';
+            // Net P&L is the only money column that gets coloured —
+            // sage when positive, terracotta when negative.
+            const netClass = r.net > 0 ? 'prt-positive' : r.net < 0 ? 'prt-negative' : '';
             return (
               <Fragment key={r.id}>
                 <tr
@@ -213,7 +210,7 @@ export default function PropertyRoomTable({
                       <span className="prt-dim">vacant</span>
                     )}
                   </td>
-                  <td className={`prt-td ${earningsClass}`}>{fmtMoneyShort(r.host)}</td>
+                  <td className="prt-td">{fmtMoneyShort(r.host)}</td>
                   <td className={`prt-td ${(r.vacantDays || 0) > 0 ? 'prt-bad' : ''}`}>
                     {r.vacantDays != null ? `${r.vacantDays}d` : '—'}
                   </td>
@@ -261,6 +258,7 @@ export default function PropertyRoomTable({
                         violations={(violations || []).filter((v) => v.roomId === r.id)}
                         onNavigate={navigate}
                         onViolationClick={onViolationClick}
+                        onTicketClick={onTicketClick}
                         propertyId={propertyId}
                       />
                     </td>
@@ -275,7 +273,7 @@ export default function PropertyRoomTable({
   );
 }
 
-function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, onViolationClick, propertyId }) {
+function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, onViolationClick, onTicketClick, propertyId }) {
   return (
     <div className="prt-detail">
       <div className="prt-detail-grid">
@@ -310,7 +308,7 @@ function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigat
               {maintItems.slice(0, 5).map((m) => (
                 <li
                   key={m.id}
-                  onClick={() => onNavigate(`/maintenance?propertyId=${propertyId}&roomId=${room.id}`)}
+                  onClick={(e) => { e.stopPropagation(); onTicketClick?.(m.id); }}
                 >
                   <span>{m.description}</span>
                   <span className="prt-dim">{m.flagCategory}</span>
