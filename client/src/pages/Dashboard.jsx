@@ -9,34 +9,18 @@ import { VIEW_AS_OPTIONS } from '../components/AppLayout';
 
 const WIDGET_STORE_KEY = 'roomreport:dashboard-widgets';
 const DEFAULT_WIDGETS = {
-  pendingReview: true,
-  maintenanceMonth: true,
-  propertyHealth: true,
-  needsAttention: true,
-  financialSummary: true,
+  actionItems: true,
+  portfolioPulse: true,
+  propertiesAtAGlance: true,
   recentActivity: true,
+  insights: true,
 };
 const WIDGET_LABELS = {
-  pendingReview: 'Pending Review',
-  maintenanceMonth: 'Maintenance This Month',
-  propertyHealth: 'Property Health',
-  needsAttention: 'Needs Attention',
-  financialSummary: 'Financial Summary',
-  recentActivity: 'Recent Activity',
-};
-
-const TYPE_LABELS = {
-  COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
-  ROOM_TURN: 'Room Turn', QUARTERLY: 'Room Inspection',
-  RESIDENT_SELF_CHECK: 'Self-Check', MOVE_IN_OUT: 'Move-In',
-};
-const TYPE_COLORS = {
-  QUARTERLY: { bg: '#E8F0E9', color: '#3B6D11' },
-  ROOM_TURN: { bg: '#FAEEDA', color: '#854F0B' },
-  COMMON_AREA: { bg: '#E3EDF7', color: '#2B5F8A' },
-  COMMON_AREA_QUICK: { bg: '#E3EDF7', color: '#2B5F8A' },
-  RESIDENT_SELF_CHECK: { bg: '#F5E8F0', color: '#8A2B6D' },
-  MOVE_IN_OUT: { bg: '#F0E8E3', color: '#6D3B11' },
+  actionItems: 'Action items',
+  portfolioPulse: 'Portfolio pulse',
+  propertiesAtAGlance: 'Properties at a glance',
+  recentActivity: 'Recent activity',
+  insights: 'Insights',
 };
 
 function daysAgo(date) {
@@ -44,14 +28,35 @@ function daysAgo(date) {
   return Math.floor((Date.now() - new Date(date)) / (1000 * 60 * 60 * 24));
 }
 
-function timeLabel(date) {
-  if (!date) return 'Never';
-  const d = daysAgo(date);
-  if (d === 0) return 'Today';
-  if (d === 1) return 'Yesterday';
+function timeAgo(date) {
+  if (!date) return '';
+  const ms = Date.now() - new Date(date).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
   if (d < 7) return `${d}d ago`;
   if (d < 30) return `${Math.floor(d / 7)}w ago`;
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtMoneyShort(n) {
+  if (n == null || isNaN(n)) return '$0';
+  if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+function TrendArrow({ delta, lowerIsBetter = false }) {
+  if (delta == null || Math.abs(delta) < 0.05) return null;
+  const isUp = delta > 0;
+  const isGood = lowerIsBetter ? !isUp : isUp;
+  return (
+    <span className={`db-trend ${isGood ? 'db-trend-good' : 'db-trend-bad'}`}>
+      {isUp ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}%
+    </span>
+  );
 }
 
 export default function Dashboard() {
@@ -88,8 +93,6 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       return DEFAULT_WIDGETS;
     }
   });
-
-  // Only honor the toggles on desktop — on mobile everything shows stacked.
   const [isDesktop, setIsDesktop] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
   );
@@ -102,8 +105,7 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   const toggleWidget = (key) => {
     const next = { ...widgets, [key]: !widgets[key] };
     setWidgets(next);
-    try { localStorage.setItem(WIDGET_STORE_KEY, JSON.stringify(next)); }
-    catch { /* ignore */ }
+    try { localStorage.setItem(WIDGET_STORE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   };
   const isWidgetOn = (key) => (isDesktop ? widgets[key] !== false : true);
 
@@ -112,7 +114,7 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false));
-    fetch('/api/financials/portfolio-summary', { credentials: 'include' })
+    fetch('/api/financials/dashboard?month=all', { credentials: 'include' })
       .then((r) => r.json())
       .then(setFinancial)
       .catch(() => setFinancial({ hasData: false }));
@@ -129,89 +131,59 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   if (!data) return null;
 
   const {
-    pendingReview = [],
-    recentInspectionActivity = [],
+    actionItems = [],
+    propertiesAtAGlance = [],
+    recentActivity = [],
+    portfolioInsights = [],
     maintenance = {},
-    propertyHealth = [],
-    overdueRooms = [],
   } = data;
   const sc = maintenance.statusCounts || {};
+  const openTickets = (sc.OPEN || 0) + (sc.ASSIGNED || 0) + (sc.IN_PROGRESS || 0);
 
-  const startQuarterly = (propertyId, roomId) => {
-    fetch('/api/inspections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ type: 'QUARTERLY', propertyId, roomId }),
-    })
-      .then((r) => r.json())
-      .then((d) => { if (d.inspection) navigate(`/inspections/${d.inspection.id}`); });
-  };
-
-  // ── Top metrics ──
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
   });
 
-  const openMaint =
-    (sc.OPEN || 0) + (sc.ASSIGNED || 0) + (sc.IN_PROGRESS || 0);
-  const activeViolations = (propertyHealth || []).reduce(
-    (acc, p) => acc + (p.activeViolationCount || 0), 0,
-  );
-  const avgResolutionDays = data?.maintenance?.avgResolutionDays ?? data?.avgResolutionDays ?? null;
-
-  const pendingTone =
-    pendingReview.length > 0 ? 'db-metric-value-terracotta' : 'db-metric-value-good';
-  const openTone =
-    openMaint > 5 ? 'db-metric-value-danger'
-    : openMaint > 0 ? 'db-metric-value-terracotta'
-    : 'db-metric-value-good';
-  const violTone =
-    activeViolations > 3 ? 'db-metric-value-danger'
-    : activeViolations > 0 ? 'db-metric-value-terracotta'
-    : 'db-metric-value-good';
-  const avgTone =
-    avgResolutionDays == null ? ''
-    : avgResolutionDays > 5 ? 'db-metric-value-danger'
-    : avgResolutionDays > 3 ? 'db-metric-value-terracotta'
-    : 'db-metric-value-good';
+  // Pull the latest-month financial signals from the financial dashboard.
+  const finTotals = financial?.totals || null;
+  const finTrends = financial?.trends || null;
+  const turnoversThisMonth = finTotals?.turnovers ?? null;
+  const hostEarnings = finTotals?.hostEarnings ?? null;
+  const occupancy = finTotals?.occupancy ?? null;
+  const hasFinancialData = financial?.hasData;
 
   return (
     <div className="db-page page-container">
-      <div className="db-top page-header">
+      {/* Header */}
+      <div className="db-top">
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">{todayLabel}</p>
+          <h1 className="db-title">Dashboard</h1>
+          <p className="db-date">{todayLabel}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+        <div className="db-top-actions">
           {canViewAs && (
             <select
               className="view-as-picker"
               value={viewAsRole || realRole || 'OWNER'}
               onChange={(e) => {
                 const v = e.target.value;
-                if (!v || v === realRole) {
-                  setViewAsRole(null);
-                } else {
-                  setViewAsRole(v);
-                }
+                if (!v || v === realRole) setViewAsRole(null);
+                else setViewAsRole(v);
               }}
               title="Preview the app as another role"
             >
               {VIEW_AS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  View as: {opt.label}
-                </option>
+                <option key={opt.value} value={opt.value}>View as: {opt.label}</option>
               ))}
             </select>
           )}
-          <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New Inspection</button>
+          <button className="btn-primary-sm" onClick={() => setShowStart(true)}>+ New inspection</button>
           {isDesktop && (
             <button
               className="btn-secondary-sm db-widget-gear"
               onClick={() => setShowWidgetSettings(true)}
-              title="Customize widgets"
               aria-label="Customize widgets"
+              title="Customize widgets"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -224,236 +196,169 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
 
       {notification && <div className="notification-bar">{notification}</div>}
 
-      {/* Four metric cards across the top */}
-      <div className="db-metrics">
-        <div className="db-metric">
-          <div className="db-metric-label">Pending review</div>
-          <div className={`db-metric-value ${pendingTone}`}>{pendingReview.length}</div>
-        </div>
-        <div className="db-metric">
-          <div className="db-metric-label">Open maintenance</div>
-          <div className={`db-metric-value ${openTone}`}>{openMaint}</div>
-        </div>
-        <div className="db-metric">
-          <div className="db-metric-label">Active violations</div>
-          <div className={`db-metric-value ${violTone}`}>{activeViolations}</div>
-        </div>
-        <div className="db-metric">
-          <div className="db-metric-label">Avg resolution time</div>
-          <div className={`db-metric-value ${avgTone}`}>
-            {avgResolutionDays != null ? `${avgResolutionDays.toFixed(1)}d` : '—'}
-          </div>
-        </div>
-      </div>
-
-      <div className="db-grid">
-
-        {/* ── TOP LEFT: PENDING REVIEW ── */}
-        {isWidgetOn('pendingReview') && (
-        <div className="db-card">
-          <div className="db-card-head">
-            <div className="db-card-title db-terracotta">
-              PENDING REVIEW
-              {pendingReview.length > 0 && <span className="db-badge db-badge-terracotta">{pendingReview.length}</span>}
+      {/* Action items */}
+      {isWidgetOn('actionItems') && (
+        actionItems.length === 0 ? (
+          <div className="db-caught-up">No action items — all caught up <span className="db-check">✓</span></div>
+        ) : (
+          <div className="db-card">
+            <div className="db-card-head">
+              <h3 className="db-card-title">Action items</h3>
             </div>
-            {pendingReview.length > 0 && (
-              <button className="db-link" onClick={() => navigate('/inspections?status=SUBMITTED')}>View all &rarr;</button>
-            )}
-          </div>
-          <div className="db-card-body">
-            {pendingReview.length === 0 ? (
-              <div className="db-empty">✓ All caught up</div>
-            ) : (
-              pendingReview.slice(0, 4).map((p) => {
-                const tc = TYPE_COLORS[p.type] || { bg: '#F5F2EF', color: '#4A4543' };
-                const onClick = () => {
-                  if (p.isGroup) {
-                    navigate(`/quarterly-review/${p.propertyId}/${p.dateKey}`);
-                  } else {
-                    navigate(`/inspections/${p.id}/review`);
-                  }
-                };
-                const subtitle = p.isGroup
-                  ? `${p.roomCount} rooms${p.flagCount > 0 ? ` \u00b7 ${p.flagCount} flags` : ''}`
-                  : timeLabel(p.completedAt);
-                return (
-                  <div key={p.id} className="db-row" onClick={onClick}>
-                    <div className="db-row-left">
-                      <span className="db-type-pill" style={{ background: tc.bg, color: tc.color }}>
-                        {TYPE_LABELS[p.type] || p.type}
-                      </span>
-                      <div>
-                        <div className="db-row-title">
-                          {p.propertyName}{!p.isGroup && p.roomLabel ? ` \u2192 ${p.roomLabel}` : ''}
-                        </div>
-                        <div className="db-row-sub">{subtitle}</div>
-                      </div>
-                    </div>
-                    {p.flagCount > 0 && !p.isGroup && (
-                      <span className="db-flag">&para; {p.flagCount}</span>
-                    )}
-                    {p.isGroup && (
-                      <span className="db-flag">{timeLabel(p.completedAt)}</span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-        )}
-
-        {/* ── TOP RIGHT: MAINTENANCE THIS MONTH ── */}
-        {isWidgetOn('maintenanceMonth') && (
-        <div className="db-card">
-          <div className="db-card-head">
-            <div className="db-card-title db-sage">MAINTENANCE THIS MONTH</div>
-            <button className="db-link" onClick={() => navigate('/maintenance')}>View board &rarr;</button>
-          </div>
-          <div className="db-card-body">
-            <div className="db-stat-grid">
-              <button className="db-stat db-stat-open" onClick={() => navigate('/maintenance?status=OPEN')}>
-                <span className="db-stat-num">{sc.OPEN || 0}</span>
-                <span className="db-stat-label">OPEN</span>
-              </button>
-              <button className="db-stat db-stat-assigned" onClick={() => navigate('/maintenance?status=ASSIGNED')}>
-                <span className="db-stat-num">{sc.ASSIGNED || 0}</span>
-                <span className="db-stat-label">ASSIGNED</span>
-              </button>
-              <button className="db-stat db-stat-progress" onClick={() => navigate('/maintenance?status=IN_PROGRESS')}>
-                <span className="db-stat-num">{sc.IN_PROGRESS || 0}</span>
-                <span className="db-stat-label">IN PROGRESS</span>
-              </button>
-              <button className="db-stat db-stat-resolved" onClick={() => navigate('/maintenance?status=RESOLVED')}>
-                <span className="db-stat-num">{sc.RESOLVED || 0}</span>
-                <span className="db-stat-label">RESOLVED</span>
-              </button>
-            </div>
-          </div>
-        </div>
-        )}
-
-        {/* ── BOTTOM LEFT: PROPERTY HEALTH ── */}
-        {isWidgetOn('propertyHealth') && (
-        <div className="db-card">
-          <div className="db-card-head">
-            <div className="db-card-title db-sage">PROPERTY HEALTH</div>
-          </div>
-          <div className="db-card-body">
-            {propertyHealth.length === 0 ? (
-              <div className="db-empty">No properties yet</div>
-            ) : (
-              propertyHealth.map((p) => {
-                const dotColor = p.health === 'red' ? '#C0392B' : p.health === 'yellow' ? '#D4A017' : '#6B8F71';
-                const d = daysAgo(p.lastInspectionDate);
-                return (
-                  <div key={p.id} className="db-row" onClick={() => navigate(`/properties/${p.id}/overview`)}>
-                    <div className="db-row-left">
-                      <span className="db-health-dot" style={{ background: dotColor }} />
-                      <div>
-                        <div className="db-row-title">{p.name}</div>
-                        <div className="db-row-sub">
-                          {p.openMaintenanceCount} open issue{p.openMaintenanceCount !== 1 ? 's' : ''}
-                          {' \u00b7 '}
-                          Inspected {d === null ? 'never' : d === 0 ? 'today' : `${d}d ago`}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="db-health-count" style={{ color: dotColor }}>{p.openMaintenanceCount}</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-        )}
-
-        {/* ── BOTTOM RIGHT: NEEDS ATTENTION ── */}
-        {isWidgetOn('needsAttention') && (
-        <div className="db-card">
-          <div className="db-card-head">
-            <div className="db-card-title db-terracotta">NEEDS ATTENTION</div>
-          </div>
-          <div className="db-card-body">
-            {overdueRooms.length === 0 ? (
-              <div className="db-empty">{'\u2713'} All rooms on schedule</div>
-            ) : (
-              overdueRooms.slice(0, 5).map((r) => (
-                <div key={r.roomId} className="db-row">
-                  <div className="db-row-left">
-                    <div>
-                      <div className="db-row-title">{r.propertyName} &rarr; {r.roomLabel}</div>
-                      <div className="db-row-sub" style={{ color: r.daysSince === null ? '#C0392B' : '#C4703F' }}>
-                        {r.daysSince === null ? 'Never inspected' : `Last inspected ${r.daysSince} days ago`}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    className="db-inspect-btn"
-                    onClick={(e) => { e.stopPropagation(); startQuarterly(r.propertyId, r.roomId); }}
-                  >
-                    Inspect
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-        )}
-
-        {/* ── FINANCIAL SUMMARY ── */}
-        {isWidgetOn('financialSummary') && (
-          <FinancialSummaryCard data={financial} onView={() => navigate('/financials')} />
-        )}
-
-      </div>
-
-      {/* ── Recent Inspection Activity (Submitted + Reviewed) ── */}
-      {isWidgetOn('recentActivity') && (
-      <div className="db-card db-card-wide">
-        <div className="db-card-head">
-          <div className="db-card-title db-sage">RECENT INSPECTION ACTIVITY</div>
-          <button className="db-link" onClick={() => navigate('/inspections')}>View all &rarr;</button>
-        </div>
-        <div className="db-card-body">
-          {recentInspectionActivity.length === 0 ? (
-            <div className="db-empty">No inspections submitted yet</div>
-          ) : (
-            recentInspectionActivity.map((a) => {
-              const tc = TYPE_COLORS[a.type] || { bg: '#F5F2EF', color: '#4A4543' };
-              const onClick = () => {
-                if (a.isGroup) {
-                  navigate(`/quarterly-review/${a.propertyId}/${a.dateKey}`);
-                } else {
-                  navigate(`/inspections/${a.id}/review`);
-                }
-              };
-              const subtitle = a.isGroup
-                ? `${a.roomCount} room${a.roomCount !== 1 ? 's' : ''} \u00b7 ${timeLabel(a.completedAt)}`
-                : `${a.roomLabel ? a.roomLabel + ' \u00b7 ' : ''}${timeLabel(a.completedAt)}`;
-              return (
-                <div key={a.id} className="db-row" onClick={onClick}>
-                  <div className="db-row-left">
-                    <span className="db-type-pill" style={{ background: tc.bg, color: tc.color }}>
-                      {TYPE_LABELS[a.type] || a.type}
-                    </span>
-                    <div>
-                      <div className="db-row-title">{a.propertyName}</div>
-                      <div className="db-row-sub">{subtitle}</div>
-                    </div>
-                  </div>
-                  <span
-                    className="insp-status-badge"
-                    style={{ color: a.status === 'REVIEWED' ? '#8A8583' : '#6B8F71', borderColor: a.status === 'REVIEWED' ? '#8A8583' : '#6B8F71' }}
-                  >
-                    {a.status}
+            <div className="db-action-list">
+              {actionItems.map((it, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="db-action-row"
+                  onClick={() => navigate(it.link)}
+                >
+                  <span className={`db-dot db-dot-${it.severity}`} />
+                  <span className="db-action-main">
+                    <span className="db-action-msg">{it.message}</span>
+                    {it.context && <span className="db-action-ctx">{it.context}</span>}
                   </span>
-                </div>
-              );
-            })
-          )}
+                  <span className="db-action-link">{it.linkLabel || 'View'} →</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      )}
+
+      {/* Portfolio pulse — 4 metric cards */}
+      {isWidgetOn('portfolioPulse') && (
+        <div className="db-pulse">
+          <div className="db-card db-pulse-card">
+            <div className="db-pulse-label">Host earnings</div>
+            <div className="db-pulse-value">
+              {hasFinancialData
+                ? fmtMoneyShort(hostEarnings)
+                : <span className="db-dim">—</span>}
+            </div>
+            {hasFinancialData
+              ? <TrendArrow delta={finTrends?.hostEarnings} />
+              : (
+                <button className="db-link" onClick={() => navigate('/financials')}>
+                  Upload PadSplit data →
+                </button>
+              )}
+          </div>
+          <div className="db-card db-pulse-card">
+            <div className="db-pulse-label">Occupancy</div>
+            <div className="db-pulse-value">
+              {hasFinancialData && occupancy != null
+                ? `${occupancy.toFixed(1)}%`
+                : <span className="db-dim">—</span>}
+            </div>
+            {hasFinancialData
+              ? <TrendArrow delta={finTrends?.occupancy} />
+              : (
+                <button className="db-link" onClick={() => navigate('/financials')}>
+                  Upload PadSplit data →
+                </button>
+              )}
+          </div>
+          <div className="db-card db-pulse-card">
+            <div className="db-pulse-label">Open tickets</div>
+            <div className={`db-pulse-value ${openTickets > 5 ? 'db-pulse-bad' : ''}`}>
+              {openTickets}
+            </div>
+            <button className="db-link" onClick={() => navigate('/maintenance')}>
+              View board →
+            </button>
+          </div>
+          <div className="db-card db-pulse-card">
+            <div className="db-pulse-label">Turnovers</div>
+            <div className="db-pulse-value">
+              {turnoversThisMonth != null ? turnoversThisMonth : '0'}
+            </div>
+            {hasFinancialData && <TrendArrow delta={finTrends?.turnovers} lowerIsBetter />}
+          </div>
         </div>
+      )}
+
+      {/* Two-column row */}
+      <div className="db-twocol">
+        {isWidgetOn('propertiesAtAGlance') && (
+          <div className="db-card">
+            <div className="db-card-head">
+              <h3 className="db-card-title">Properties at a glance</h3>
+            </div>
+            {propertiesAtAGlance.length === 0 ? (
+              <p className="db-empty">No properties yet.</p>
+            ) : (
+              <ul className="db-prop-list">
+                {propertiesAtAGlance.map((p) => (
+                  <li
+                    key={p.id}
+                    className="db-prop-row"
+                    onClick={() => navigate(`/properties/${p.id}/overview`)}
+                  >
+                    <span className={`db-dot db-dot-${p.dot === 'red' ? 'red' : p.dot === 'amber' ? 'orange' : 'green'}`} />
+                    <span className="db-prop-name">{p.name}</span>
+                    <span className="db-prop-summary">{p.summary}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {isWidgetOn('recentActivity') && (
+          <div className="db-card">
+            <div className="db-card-head">
+              <h3 className="db-card-title">Recent activity</h3>
+              <button className="db-link" onClick={() => navigate('/notifications')}>View all →</button>
+            </div>
+            {recentActivity.length === 0 ? (
+              <p className="db-empty">No recent activity.</p>
+            ) : (
+              <ul className="db-activity-list">
+                {recentActivity.map((e, i) => (
+                  <li
+                    key={i}
+                    className="db-activity-row"
+                    onClick={() => e.link && navigate(e.link)}
+                  >
+                    <span className={`db-dot db-dot-${e.dot === 'red' ? 'red' : e.dot === 'amber' ? 'amber' : 'sage'}`} />
+                    <span className="db-activity-desc">{e.description}</span>
+                    <span className="db-activity-time">{timeAgo(e.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Insights */}
+      {isWidgetOn('insights') && portfolioInsights.length > 0 && (
+        <div className="db-card">
+          <div className="db-card-head">
+            <h3 className="db-card-title">Insights</h3>
+            {/* "Show all" links to the first property's insights tab if any. */}
+            {propertiesAtAGlance.length > 0 && (
+              <button
+                className="db-link"
+                onClick={() => navigate(`/properties/${propertiesAtAGlance[0].id}/overview`)}
+              >Show all →</button>
+            )}
+          </div>
+          <div className="db-insight-list">
+            {portfolioInsights.slice(0, 3).map((ins, i) => (
+              <button
+                key={i}
+                type="button"
+                className={`db-insight db-insight-${ins.kind}`}
+                onClick={() => ins.link && navigate(ins.link)}
+              >
+                <span className="db-insight-headline">{ins.headline}</span>
+                <span className="db-insight-detail">{ins.detail}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       <StartInspection open={showStart} onClose={() => setShowStart(false)} />
@@ -461,35 +366,33 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
       <Modal
         open={showWidgetSettings}
         onClose={() => setShowWidgetSettings(false)}
-        title="Customize dashboard widgets"
+        title="Customize widgets"
       >
         <div className="modal-form">
-          <p className="empty-text" style={{ marginTop: 0 }}>
-            Toggle widgets on or off. Your preferences are saved on this device.
-            Mobile always shows all widgets stacked.
+          {Object.keys(WIDGET_LABELS).map((key) => (
+            <label key={key} className="db-widget-toggle">
+              <input
+                type="checkbox"
+                checked={widgets[key] !== false}
+                onChange={() => toggleWidget(key)}
+              />
+              <span>{WIDGET_LABELS[key]}</span>
+            </label>
+          ))}
+          <p className="db-dim" style={{ marginTop: '0.5rem', fontSize: '12px' }}>
+            On mobile every widget is shown by default.
           </p>
-          <div className="widget-toggle-list">
-            {Object.keys(WIDGET_LABELS).map((key) => (
-              <label key={key} className="widget-toggle-row">
-                <span>{WIDGET_LABELS[key]}</span>
-                <input
-                  type="checkbox"
-                  checked={widgets[key] !== false}
-                  onChange={() => toggleWidget(key)}
-                />
-              </label>
-            ))}
-          </div>
-          <div className="modal-actions">
-            <button className="btn-primary" onClick={() => setShowWidgetSettings(false)}>Done</button>
-          </div>
         </div>
       </Modal>
     </div>
   );
 }
 
-function fmtMoneyShort(n) {
+// ─── Legacy helpers kept for the financial sparkline/card preview
+// (no longer rendered on the new dashboard, but other surfaces import
+// these). They're harmless if unused.
+
+function fmtMoneyShortLegacy(n) {
   if (n == null || isNaN(n)) return '$0';
   return Number(n).toLocaleString('en-US', {
     style: 'currency', currency: 'USD', maximumFractionDigits: 0,
@@ -503,83 +406,4 @@ function fmtMonth(s) {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
-function FinSparkline({ points }) {
-  if (!points || points.length === 0) return null;
-  const W = 200, H = 36, PAD = 2;
-  const values = points.map((p) => p.host || 0);
-  const max = Math.max(1, ...values);
-  const n = points.length;
-  const x = (i) => PAD + (n === 1 ? (W - 2 * PAD) / 2 : (i / (n - 1)) * (W - 2 * PAD));
-  const y = (v) => PAD + (H - 2 * PAD) - (v / max) * (H - 2 * PAD);
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(p.host || 0)}`).join(' ');
-  const fillPath = `${path} L${x(n - 1)},${H - PAD} L${x(0)},${H - PAD} Z`;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" aria-hidden>
-      <path d={fillPath} fill="#6B8F71" fillOpacity="0.18" />
-      <path d={path} fill="none" stroke="#6B8F71" strokeWidth="1.5"
-            strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function FinancialSummaryCard({ data, onView }) {
-  // Loading: render a placeholder to keep grid alignment.
-  if (data == null) {
-    return (
-      <div className="db-card db-fin-card">
-        <div className="db-card-head">
-          <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
-        </div>
-        <div className="db-card-body">
-          <div className="db-empty">Loading…</div>
-        </div>
-      </div>
-    );
-  }
-  if (!data.hasData) {
-    return (
-      <div className="db-card db-fin-card">
-        <div className="db-card-head">
-          <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
-        </div>
-        <div className="db-card-body">
-          <div className="db-fin-empty">
-            Upload PadSplit reports to see financial data.{' '}
-            <button className="db-link" onClick={onView}>Go to Financials &rarr;</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  const trend = data.hostEarningsTrend;
-  const trendStr = trend == null ? null
-    : `${trend > 0 ? '▲' : trend < 0 ? '▼' : '±'} ${Math.abs(trend).toFixed(1)}%`;
-  const trendClass = trend == null ? ''
-    : trend > 0 ? 'db-fin-trend-up' : trend < 0 ? 'db-fin-trend-down' : '';
-  return (
-    <div className="db-card db-fin-card">
-      <div className="db-card-head">
-        <div className="db-card-title db-sage">FINANCIAL SUMMARY</div>
-        <button className="db-link" onClick={onView}>View financials &rarr;</button>
-      </div>
-      <div className="db-card-body">
-        <div className="db-fin-row">
-          <div className="db-fin-block">
-            <div className="db-fin-label">Host earnings · {fmtMonth(data.latestMonth)}</div>
-            <div className="db-fin-value db-sage">{fmtMoneyShort(data.hostEarnings)}</div>
-            {trendStr && <div className={`db-fin-trend ${trendClass}`}>{trendStr}</div>}
-          </div>
-          <div className="db-fin-block">
-            <div className="db-fin-label">Portfolio occupancy</div>
-            <div className="db-fin-value">
-              {data.portfolioOccupancy != null ? `${data.portfolioOccupancy.toFixed(1)}%` : '—'}
-            </div>
-          </div>
-        </div>
-        <div className="db-fin-spark">
-          <FinSparkline points={data.sparkline} />
-        </div>
-      </div>
-    </div>
-  );
-}
+export { fmtMoneyShortLegacy, fmtMonth };

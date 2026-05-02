@@ -290,6 +290,299 @@ router.get('/', async (req, res) => {
     }
     const recentInspectionActivity = recentActivity.slice(0, 8);
 
+    // ─── New dashboard widgets (action items / activity / insights) ──
+
+    const DAY_MS = 86400000;
+    const now = Date.now();
+
+    // All active tickets — needed for several action item rules.
+    const allActiveTickets = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        ...scope,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        assignedUserId: true,
+        assignedTo: true,
+        assignedVendorId: true,
+        deferUntil: true,
+        deferredAt: true,
+        dueAt: true,
+        isLeaseFollowUp: true,
+        propertyId: true,
+        property: { select: { name: true } },
+      },
+    });
+
+    // Active violations per property (for propertiesAtAGlance + insights).
+    const activeViolations = await prisma.leaseViolation.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        archivedAt: null,
+        resolvedAt: null,
+        ...(scope.propertyId ? { propertyId: scope.propertyId } : {}),
+      },
+      select: { id: true, propertyId: true, createdAt: true, category: true,
+                room: { select: { label: true } } },
+    });
+    const violationCountByProp = {};
+    for (const v of activeViolations) {
+      violationCountByProp[v.propertyId] = (violationCountByProp[v.propertyId] || 0) + 1;
+    }
+
+    // ── Action items ──
+    const actionItems = [];
+
+    if (pendingReview.length > 0) {
+      const propsTouched = [...new Set(pendingReview.map((p) => p.propertyName).filter(Boolean))];
+      actionItems.push({
+        kind: 'pending_review',
+        severity: 'red',
+        message: `${pendingReview.length} inspection${pendingReview.length === 1 ? '' : 's'} pending review`,
+        context: propsTouched.slice(0, 2).join(', ') + (propsTouched.length > 2 ? ` +${propsTouched.length - 2} more` : ''),
+        link: '/inspections',
+        linkLabel: 'Review',
+      });
+    }
+
+    const stale = allActiveTickets
+      .filter((t) => !t.deferUntil)
+      .filter((t) => (now - new Date(t.createdAt).getTime()) > 7 * DAY_MS);
+    if (stale.length > 0) {
+      const oldest = stale.reduce((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? a : b));
+      const ageDays = Math.floor((now - new Date(oldest.createdAt).getTime()) / DAY_MS);
+      actionItems.push({
+        kind: 'stale_tickets',
+        severity: 'red',
+        message: `${stale.length} maintenance ticket${stale.length === 1 ? '' : 's'} open over 7 days`,
+        context: `Oldest ${ageDays}d old at ${oldest.property?.name || 'property'}`,
+        link: '/maintenance',
+        linkLabel: 'View',
+      });
+    }
+
+    // Properties overdue for room (>30d) and common-area (>14d) inspections.
+    const lastInspByPropType = {};
+    const lastInsps = await prisma.inspection.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { in: ['SUBMITTED', 'REVIEWED'] },
+        type: { in: ['QUARTERLY', 'COMMON_AREA'] },
+        ...(scope.propertyId ? { propertyId: scope.propertyId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { propertyId: true, type: true, createdAt: true },
+    });
+    for (const i of lastInsps) {
+      const k = `${i.propertyId}|${i.type}`;
+      if (!lastInspByPropType[k]) lastInspByPropType[k] = i.createdAt;
+    }
+    const propsOverdueRoom = [];
+    const propsOverdueCommon = [];
+    for (const p of allProperties) {
+      const lastQ = lastInspByPropType[`${p.id}|QUARTERLY`];
+      const lastC = lastInspByPropType[`${p.id}|COMMON_AREA`];
+      const qDays = lastQ ? Math.floor((now - new Date(lastQ).getTime()) / DAY_MS) : null;
+      const cDays = lastC ? Math.floor((now - new Date(lastC).getTime()) / DAY_MS) : null;
+      if (qDays === null || qDays > 30) propsOverdueRoom.push({ name: p.name, days: qDays });
+      if (cDays === null || cDays > 14) propsOverdueCommon.push({ name: p.name, days: cDays });
+    }
+    if (propsOverdueRoom.length > 0) {
+      const first = propsOverdueRoom[0];
+      actionItems.push({
+        kind: 'overdue_room_inspection',
+        severity: 'orange',
+        message: `${propsOverdueRoom.length} ${propsOverdueRoom.length === 1 ? 'property' : 'properties'} overdue for room inspection`,
+        context: `${first.name}${first.days != null ? ` — ${first.days}d ago` : ' — never inspected'}${propsOverdueRoom.length > 1 ? ` +${propsOverdueRoom.length - 1} more` : ''}`,
+        link: '/inspections',
+        linkLabel: 'Start',
+      });
+    }
+    if (propsOverdueCommon.length > 0) {
+      const first = propsOverdueCommon[0];
+      actionItems.push({
+        kind: 'overdue_common_inspection',
+        severity: 'orange',
+        message: `${propsOverdueCommon.length} ${propsOverdueCommon.length === 1 ? 'property' : 'properties'} overdue for common area inspection`,
+        context: `${first.name}${first.days != null ? ` — ${first.days}d ago` : ' — never inspected'}${propsOverdueCommon.length > 1 ? ` +${propsOverdueCommon.length - 1} more` : ''}`,
+        link: '/inspections',
+        linkLabel: 'Start',
+      });
+    }
+
+    const followUpsDueSoon = allActiveTickets.filter((t) =>
+      t.isLeaseFollowUp && t.dueAt && (new Date(t.dueAt).getTime() - now) <= 2 * DAY_MS && (new Date(t.dueAt).getTime() - now) > -DAY_MS,
+    );
+    if (followUpsDueSoon.length > 0) {
+      actionItems.push({
+        kind: 'lease_followup_due',
+        severity: 'amber',
+        message: `${followUpsDueSoon.length} lease follow-up${followUpsDueSoon.length === 1 ? '' : 's'} due within 48 hours`,
+        context: `${followUpsDueSoon[0].property?.name || ''}`,
+        link: '/maintenance',
+        linkLabel: 'View',
+      });
+    }
+
+    const deferredReactivating = allActiveTickets.filter((t) =>
+      t.deferUntil && (new Date(t.deferUntil).getTime() - now) <= 7 * DAY_MS && (new Date(t.deferUntil).getTime() - now) > 0,
+    );
+    if (deferredReactivating.length > 0) {
+      const propsTouched = [...new Set(deferredReactivating.map((t) => t.property?.name).filter(Boolean))];
+      actionItems.push({
+        kind: 'deferred_reactivating',
+        severity: 'amber',
+        message: `${deferredReactivating.length} deferred maintenance ticket${deferredReactivating.length === 1 ? '' : 's'} reactivating within 7 days`,
+        context: propsTouched.slice(0, 2).join(', '),
+        link: '/maintenance',
+        linkLabel: 'View',
+      });
+    }
+
+    const unassigned = allActiveTickets.filter(
+      (t) => !t.assignedUserId && !t.assignedVendorId && !(t.assignedTo && t.assignedTo.trim()),
+    );
+    if (unassigned.length > 0) {
+      actionItems.push({
+        kind: 'unassigned',
+        severity: 'orange',
+        message: `${unassigned.length} unassigned maintenance ticket${unassigned.length === 1 ? '' : 's'}`,
+        context: 'Assign to a vendor or team member',
+        link: '/maintenance',
+        linkLabel: 'View',
+      });
+    }
+
+    // Sort by severity (red → orange → amber).
+    const sevOrder = { red: 0, orange: 1, amber: 2 };
+    actionItems.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity]);
+
+    // ── Properties at a glance ──
+    const propertiesAtAGlance = propertyHealth.map((ph) => {
+      const violations = violationCountByProp[ph.id] || 0;
+      const open = ph.openMaintenanceCount || 0;
+      let dot = 'green';
+      if (open >= 3 || violations >= 3) dot = 'red';
+      else if (open >= 1 || violations >= 1) dot = 'amber';
+      const parts = [];
+      if (open > 0) parts.push(`${open} open`);
+      if (violations > 0) parts.push(`${violations} viol`);
+      const summary = parts.length > 0 ? parts.join(' · ') : 'All clear';
+      return {
+        id: ph.id,
+        name: ph.name,
+        openMaintenanceCount: open,
+        violationCount: violations,
+        dot,
+        summary,
+      };
+    }).sort((a, b) => {
+      const ord = { red: 0, amber: 1, green: 2 };
+      return ord[a.dot] - ord[b.dot];
+    });
+
+    // ── Recent activity (latest 5 across properties) ──
+    const recentEvents = [];
+    for (const a of recentInspectionActivity.slice(0, 8)) {
+      recentEvents.push({
+        kind: 'inspection_submitted',
+        dot: 'sage',
+        description: `${a.isGroup ? 'Quarterly' : (a.type || '').toLowerCase().replace('_', ' ')} inspection ${a.status === 'REVIEWED' ? 'reviewed' : 'submitted'} at ${a.propertyName || 'property'}`,
+        at: a.completedAt || a.createdAt,
+        link: a.isGroup
+          ? `/quarterly-review/${a.propertyId}/${a.dateKey}`
+          : `/inspections/${a.id}/review`,
+      });
+    }
+    const recentResolved = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        resolvedAt: { not: null, gte: new Date(now - 30 * DAY_MS) },
+        ...scope,
+      },
+      orderBy: { resolvedAt: 'desc' },
+      take: 5,
+      include: { property: { select: { name: true } } },
+    });
+    for (const m of recentResolved) {
+      recentEvents.push({
+        kind: 'ticket_resolved',
+        dot: 'sage',
+        description: `Ticket resolved at ${m.property?.name || 'property'}: ${m.description}`,
+        at: m.resolvedAt,
+        link: '/maintenance',
+      });
+    }
+    const recentTicketsCreated = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        createdAt: { gte: new Date(now - 14 * DAY_MS) },
+        ...scope,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: { property: { select: { name: true } } },
+    });
+    for (const m of recentTicketsCreated) {
+      recentEvents.push({
+        kind: 'ticket_created',
+        dot: 'amber',
+        description: `New ticket at ${m.property?.name || 'property'}: ${m.description}`,
+        at: m.createdAt,
+        link: '/maintenance',
+      });
+    }
+    const recentViolations = activeViolations
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5);
+    for (const v of recentViolations) {
+      recentEvents.push({
+        kind: 'violation_logged',
+        dot: 'red',
+        description: `Violation logged at ${v.room?.label || 'property'}: ${v.category || 'Lease'}`,
+        at: v.createdAt,
+        link: '/violations',
+      });
+    }
+    recentEvents.sort((a, b) => new Date(b.at) - new Date(a.at));
+    const recentActivityFeed = recentEvents.slice(0, 5);
+
+    // ── Portfolio insights (top 3 cross-property) ──
+    const portfolioInsights = [];
+    if (stale.length > 0) {
+      portfolioInsights.push({
+        kind: 'warning',
+        headline: `${stale.length} ticket${stale.length === 1 ? '' : 's'} open over 2 weeks`,
+        detail: 'Aging tickets correlate with resident dissatisfaction and turnover. Assign or escalate.',
+        link: '/maintenance',
+      });
+    }
+    if (propsOverdueRoom.length > 0) {
+      portfolioInsights.push({
+        kind: 'warning',
+        headline: `${propsOverdueRoom.length} ${propsOverdueRoom.length === 1 ? 'property is' : 'properties are'} overdue for room inspection`,
+        detail: `Schedule inspections to catch issues early. Starting with ${propsOverdueRoom[0].name}.`,
+        link: '/inspections',
+      });
+    }
+    if (actionItems.find((a) => a.kind === 'unassigned')) {
+      portfolioInsights.push({
+        kind: 'opportunity',
+        headline: `${unassigned.length} unassigned ticket${unassigned.length === 1 ? '' : 's'} waiting for an owner`,
+        detail: 'Tickets without an assignee tend to sit; assigning them reduces resolution time.',
+        link: '/maintenance',
+      });
+    }
+
     const openMaintenanceTotal = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
     return res.json({
       pendingReview,
@@ -303,6 +596,10 @@ router.get('/', async (req, res) => {
       combinedOpen: openMaintenanceTotal + taskOpenCount,
       propertyHealth,
       overdueRooms,
+      actionItems,
+      propertiesAtAGlance,
+      recentActivity: recentActivityFeed,
+      portfolioInsights,
     });
   } catch (error) {
     console.error('Dashboard error:', error);
