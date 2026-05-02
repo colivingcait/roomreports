@@ -77,20 +77,6 @@ export default function Sharing() {
   const base = `https://roomreport.co`;
   const links = [
     {
-      title: 'Move-In Inspection',
-      url: `${base}/movein/${slug}`,
-      flyerHref: `${base}/flyer/${slug}/movein`,
-      qrId: 'qr-movein',
-      description: 'Residents scan this at move-in to document their room condition with photos — protects both sides on security deposits.',
-    },
-    {
-      title: 'Resident Self-Check',
-      url: `${base}/selfcheck/${slug}`,
-      flyerHref: `${base}/flyer/${slug}/selfcheck`,
-      qrId: 'qr-selfcheck',
-      description: 'Residents submit a quick self-check of their room — handy for quarterly nudges.',
-    },
-    {
       title: 'Report Maintenance',
       url: `${base}/report/${slug}`,
       flyerHref: `${base}/flyer/${slug}/report`,
