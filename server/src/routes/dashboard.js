@@ -84,13 +84,15 @@ router.get('/', async (req, res) => {
     // ─── Maintenance Overview ─── Stats + recent items
     // Deferred tickets are intentionally excluded from dashboard counts
     // and property health — they shouldn't push the open maintenance
-    // metric up while they're parked off the board.
+    // metric up while they're parked off the board. Children of merged
+    // tickets are also excluded so a merged group of 4 reads as 1.
     const maintenanceCounts = await prisma.maintenanceItem.groupBy({
       by: ['status'],
       where: {
         organizationId: orgId,
         deletedAt: null,
         status: { not: 'DEFERRED' },
+        parentTicketId: null,
         ...scope,
       },
       _count: true,
@@ -161,6 +163,7 @@ router.get('/', async (req, res) => {
           where: {
             deletedAt: null,
             status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+            parentTicketId: null,
           },
           select: { id: true, priority: true, flagCategory: true },
         },
@@ -301,6 +304,7 @@ router.get('/', async (req, res) => {
         organizationId: orgId,
         deletedAt: null,
         status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        parentTicketId: null,
         ...scope,
       },
       select: {
@@ -460,18 +464,50 @@ router.get('/', async (req, res) => {
       });
     }
 
-    const unassigned = allActiveTickets.filter(
-      (t) => !t.assignedUserId && !t.assignedVendorId && !(t.assignedTo && t.assignedTo.trim()),
-    );
-    if (unassigned.length > 0) {
-      actionItems.push({
-        kind: 'unassigned',
-        severity: 'orange',
-        message: `${unassigned.length} unassigned maintenance ticket${unassigned.length === 1 ? '' : 's'}`,
-        context: 'Assign to a vendor or team member',
-        link: '/maintenance',
-        linkLabel: 'View',
+    // Financial upload reminder: shown for the first 5 days of each
+    // calendar month if the most recent uploaded month isn't the
+    // previous calendar month (i.e. the host is overdue on uploads).
+    const today = new Date();
+    if (today.getUTCDate() <= 5) {
+      const prev = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+      const prevKey = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
+      const latestUpload = await prisma.financialUpload.findFirst({
+        where: { organizationId: orgId },
+        orderBy: { earningsMonth: 'desc' },
+        select: { earningsMonth: true },
       });
+      if (!latestUpload || latestUpload.earningsMonth < prevKey) {
+        actionItems.push({
+          kind: 'upload_reminder',
+          severity: 'amber',
+          message: "Upload this month's PadSplit financial statements",
+          context: 'Keep your dashboard metrics current',
+          link: '/financials',
+          linkLabel: 'Upload',
+        });
+      }
+    }
+
+    // Average maintenance resolution time across the last 90 days
+    // (parents only, excluding child tickets). Used by the pulse card.
+    const ninetyDaysAgo = new Date(now - 90 * DAY_MS);
+    const recentlyResolved = await prisma.maintenanceItem.findMany({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        parentTicketId: null,
+        resolvedAt: { not: null, gte: ninetyDaysAgo },
+        ...scope,
+      },
+      select: { createdAt: true, resolvedAt: true },
+    });
+    let avgResolutionDays = null;
+    if (recentlyResolved.length > 0) {
+      const total = recentlyResolved.reduce(
+        (a, m) => a + (new Date(m.resolvedAt) - new Date(m.createdAt)) / DAY_MS,
+        0,
+      );
+      avgResolutionDays = total / recentlyResolved.length;
     }
 
     // Sort by severity (red → orange → amber).
@@ -479,16 +515,46 @@ router.get('/', async (req, res) => {
     actionItems.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity]);
 
     // ── Properties at a glance ──
+    // Days-since-last-inspection lookup so we can call out overdue
+    // inspections in the at-a-glance summary.
+    const lastQuarterlyByProp = {};
+    for (const i of lastInsps) {
+      if (i.type !== 'QUARTERLY') continue;
+      if (!lastQuarterlyByProp[i.propertyId]) lastQuarterlyByProp[i.propertyId] = i.createdAt;
+    }
+    // Pick the single most-pressing thing about each property so the
+    // glance row reads like a one-liner instead of duplicating the
+    // metric cards above.
     const propertiesAtAGlance = propertyHealth.map((ph) => {
       const violations = violationCountByProp[ph.id] || 0;
       const open = ph.openMaintenanceCount || 0;
+      const lastQ = lastQuarterlyByProp[ph.id];
+      const daysSinceQ = lastQ
+        ? Math.floor((now - new Date(lastQ).getTime()) / DAY_MS)
+        : null;
       let dot = 'green';
-      if (open >= 3 || violations >= 3) dot = 'red';
-      else if (open >= 1 || violations >= 1) dot = 'amber';
-      const parts = [];
-      if (open > 0) parts.push(`${open} open`);
-      if (violations > 0) parts.push(`${violations} viol`);
-      const summary = parts.length > 0 ? parts.join(' · ') : 'All clear';
+      let summary = 'All clear';
+      if (open >= 3 || violations >= 3) {
+        dot = 'red';
+        summary = open >= violations
+          ? `Needs attention — ${open} open ticket${open === 1 ? '' : 's'}`
+          : `Needs attention — ${violations} active violation${violations === 1 ? '' : 's'}`;
+      } else if (daysSinceQ != null && daysSinceQ > 60) {
+        dot = 'red';
+        summary = `Inspection overdue ${daysSinceQ} days`;
+      } else if (violations > 0) {
+        dot = 'amber';
+        summary = `${violations} active violation${violations === 1 ? '' : 's'}`;
+      } else if (open > 0) {
+        dot = 'amber';
+        summary = `${open} open ticket${open === 1 ? '' : 's'}`;
+      } else if (daysSinceQ != null && daysSinceQ > 30) {
+        dot = 'amber';
+        summary = `Inspection due (${daysSinceQ} days ago)`;
+      } else if (daysSinceQ == null) {
+        dot = 'amber';
+        summary = 'Never inspected';
+      }
       return {
         id: ph.id,
         name: ph.name,
@@ -538,25 +604,9 @@ router.get('/', async (req, res) => {
         link: '/maintenance',
       });
     }
-    const recentTicketsCreated = await prisma.maintenanceItem.findMany({
-      where: {
-        organizationId: orgId,
-        deletedAt: null,
-        ...scope,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      include: { property: { select: { name: true } } },
-    });
-    for (const m of recentTicketsCreated) {
-      recentEvents.push({
-        kind: 'ticket_created',
-        dot: 'amber',
-        description: `New ticket at ${m.property?.name || 'property'}: ${m.description}`,
-        at: m.createdAt,
-        link: '/maintenance',
-      });
-    }
+    // Ticket creation isn't a meaningful "event" for the activity feed
+    // — it shows up in Action items / the maintenance board already.
+    // Surface tickets only via resolved + violations + inspections.
     const recentViolations = activeViolations
       .slice()
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -623,6 +673,7 @@ router.get('/', async (req, res) => {
       propertiesAtAGlance,
       recentActivity: recentActivityFeed,
       portfolioInsights,
+      avgResolutionDays,
     });
   } catch (error) {
     console.error('Dashboard error:', error);

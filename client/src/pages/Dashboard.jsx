@@ -76,6 +76,34 @@ export default function Dashboard() {
   );
 }
 
+// Action item dismissal: tracked in localStorage with a 24-hour TTL,
+// keyed by the rule kind (e.g. "stale_tickets") so the same item
+// dismissed today reappears tomorrow if still relevant.
+const DISMISS_STORE_KEY = 'roomreport:dashboard-dismissed';
+const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
+
+function readDismissed() {
+  try {
+    const obj = JSON.parse(localStorage.getItem(DISMISS_STORE_KEY) || '{}');
+    const now = Date.now();
+    let changed = false;
+    for (const k of Object.keys(obj)) {
+      if (now - obj[k] > DISMISS_TTL_MS) { delete obj[k]; changed = true; }
+    }
+    if (changed) localStorage.setItem(DISMISS_STORE_KEY, JSON.stringify(obj));
+    return obj;
+  } catch { return {}; }
+}
+function isDismissed(kind) {
+  const obj = readDismissed();
+  return Boolean(obj[kind]);
+}
+function dismissKind(kind) {
+  const obj = readDismissed();
+  obj[kind] = Date.now();
+  localStorage.setItem(DISMISS_STORE_KEY, JSON.stringify(obj));
+}
+
 function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -96,6 +124,7 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   const [isDesktop, setIsDesktop] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
   );
+  const [, setDismissTick] = useState(0); // bump to re-render after dismiss
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener('resize', onResize);
@@ -157,9 +186,13 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
     recentActivity = [],
     portfolioInsights = [],
     maintenance = {},
+    avgResolutionDays = null,
   } = data;
   const sc = maintenance.statusCounts || {};
   const openTickets = (sc.OPEN || 0) + (sc.ASSIGNED || 0) + (sc.IN_PROGRESS || 0);
+
+  // Filter action items dismissed in the last 24 hours.
+  const visibleActionItems = actionItems.filter((it) => !isDismissed(it.kind));
 
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
@@ -168,7 +201,6 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   // Pull the latest-month financial signals from the financial dashboard.
   const finTotals = financial?.totals || null;
   const finTrends = financial?.trends || null;
-  const turnoversThisMonth = finTotals?.turnovers ?? null;
   const hostEarnings = finTotals?.hostEarnings ?? null;
   const occupancy = finTotals?.occupancy ?? null;
   const hasFinancialData = financial?.hasData;
@@ -219,28 +251,38 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
 
       {/* Action items */}
       {isWidgetOn('actionItems') && (
-        actionItems.length === 0 ? (
+        visibleActionItems.length === 0 ? (
           <div className="db-caught-up">No action items — all caught up <span className="db-check">✓</span></div>
         ) : (
-          <div className="db-card">
+          <div className="db-card db-action-card">
             <div className="db-card-head">
               <h3 className="db-card-title">Action items</h3>
             </div>
             <div className="db-action-list">
-              {actionItems.map((it, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="db-action-row"
-                  onClick={() => navigate(it.link)}
-                >
+              {visibleActionItems.map((it, i) => (
+                <div key={`${it.kind}-${i}`} className="db-action-row">
                   <span className={`db-dot db-dot-${it.severity}`} />
-                  <span className="db-action-main">
+                  <button
+                    type="button"
+                    className="db-action-main"
+                    onClick={() => navigate(it.link)}
+                  >
                     <span className="db-action-msg">{it.message}</span>
                     {it.context && <span className="db-action-ctx">{it.context}</span>}
-                  </span>
-                  <span className="db-action-link">{it.linkLabel || 'View'} →</span>
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    className="db-action-dismiss"
+                    title="Dismiss for 24 hours"
+                    aria-label="Dismiss"
+                    onClick={() => { dismissKind(it.kind); setDismissTick((n) => n + 1); }}
+                  >✕</button>
+                  <button
+                    type="button"
+                    className="db-action-link"
+                    onClick={() => navigate(it.link)}
+                  >{it.linkLabel || 'View'} →</button>
+                </div>
               ))}
             </div>
           </div>
@@ -290,11 +332,15 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
             </button>
           </div>
           <div className="db-card db-pulse-card">
-            <div className="db-pulse-label">Turnovers</div>
+            <div className="db-pulse-label">Avg resolution</div>
             <div className="db-pulse-value">
-              {turnoversThisMonth != null ? turnoversThisMonth : '0'}
+              {avgResolutionDays != null
+                ? `${avgResolutionDays.toFixed(1)}d`
+                : <span className="db-dim">—</span>}
             </div>
-            {hasFinancialData && <TrendArrow delta={finTrends?.turnovers} lowerIsBetter />}
+            <button className="db-link" onClick={() => navigate('/maintenance')}>
+              View board →
+            </button>
           </div>
         </div>
       )}
