@@ -11201,6 +11201,9 @@ img,
   border: none;
   padding: 12px 14px;
   margin-bottom: 0.75rem;
+  min-height: 0;
+  height: auto;
+  display: block;
 }
 .db-card-head {
   display: flex;
