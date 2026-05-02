@@ -327,9 +327,24 @@ router.get('/', async (req, res) => {
         resolvedAt: null,
         ...(scope.propertyId ? { propertyId: scope.propertyId } : {}),
       },
-      select: { id: true, propertyId: true, createdAt: true, category: true,
-                room: { select: { label: true } } },
+      select: {
+        id: true,
+        propertyId: true,
+        roomId: true,
+        createdAt: true,
+        category: true,
+      },
     });
+    // Resolve room labels for the rooms referenced by active violations.
+    const violationRoomIds = [...new Set(activeViolations.map((v) => v.roomId).filter(Boolean))];
+    const violationRoomMap = {};
+    if (violationRoomIds.length > 0) {
+      const rrRooms = await prisma.room.findMany({
+        where: { id: { in: violationRoomIds } },
+        select: { id: true, label: true },
+      });
+      for (const r of rrRooms) violationRoomMap[r.id] = r.label;
+    }
     const violationCountByProp = {};
     for (const v of activeViolations) {
       violationCountByProp[v.propertyId] = (violationCountByProp[v.propertyId] || 0) + 1;
@@ -500,11 +515,14 @@ router.get('/', async (req, res) => {
           : `/inspections/${a.id}/review`,
       });
     }
+    // Widen the resolve / create lookbacks so a relatively quiet system
+    // still has something in Recent activity. The list is later trimmed
+    // to the most recent 5.
     const recentResolved = await prisma.maintenanceItem.findMany({
       where: {
         organizationId: orgId,
         deletedAt: null,
-        resolvedAt: { not: null, gte: new Date(now - 30 * DAY_MS) },
+        resolvedAt: { not: null },
         ...scope,
       },
       orderBy: { resolvedAt: 'desc' },
@@ -524,7 +542,6 @@ router.get('/', async (req, res) => {
       where: {
         organizationId: orgId,
         deletedAt: null,
-        createdAt: { gte: new Date(now - 14 * DAY_MS) },
         ...scope,
       },
       orderBy: { createdAt: 'desc' },
@@ -548,7 +565,7 @@ router.get('/', async (req, res) => {
       recentEvents.push({
         kind: 'violation_logged',
         dot: 'red',
-        description: `Violation logged at ${v.room?.label || 'property'}: ${v.category || 'Lease'}`,
+        description: `Violation logged at ${violationRoomMap[v.roomId] || 'property'}: ${v.category || 'Lease'}`,
         at: v.createdAt,
         link: '/violations',
       });
@@ -584,6 +601,12 @@ router.get('/', async (req, res) => {
     }
 
     const openMaintenanceTotal = statusCounts.OPEN + statusCounts.ASSIGNED + statusCounts.IN_PROGRESS;
+    console.log(
+      `[dashboard] org=${orgId} role=${req.user.role} ` +
+      `properties=${propertyHealth.length} ` +
+      `actionItems=${actionItems.length} activity=${recentActivityFeed.length} ` +
+      `openTickets=${openMaintenanceTotal} violations=${activeViolations.length}`,
+    );
     return res.json({
       pendingReview,
       recentInspectionActivity,

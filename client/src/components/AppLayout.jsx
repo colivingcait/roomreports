@@ -52,8 +52,8 @@ const ROLE_NAV = {
 };
 
 const VIEW_AS_OPTIONS = [
-  { value: 'OWNER', label: 'Owner view' },
-  { value: 'PM', label: 'Property Manager' },
+  { value: 'OWNER', label: 'Owner' },
+  { value: 'PM', label: 'PM' },
   { value: 'CLEANER', label: 'Cleaner' },
   { value: 'HANDYPERSON', label: 'Handyperson' },
 ];
