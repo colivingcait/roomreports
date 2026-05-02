@@ -4,6 +4,7 @@ import StartInspection from '../components/StartInspection';
 import NewMaintenance from '../components/NewMaintenance';
 import LogViolation from '../components/LogViolation';
 import PropertyFinancialHealth from '../components/PropertyFinancialHealth';
+import PropertyHealthTab from '../components/PropertyHealthTab';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -53,6 +54,7 @@ export default function PropertyOverview() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
   const [showStart, setShowStart] = useState(false);
   const [showNewMaint, setShowNewMaint] = useState(false);
   const [showLogViolation, setShowLogViolation] = useState(false);
@@ -198,6 +200,20 @@ export default function PropertyOverview() {
         </div>
       </div>
 
+      <div className="pd-tabs">
+        <button
+          className={`pd-tab ${activeTab === 'overview' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('overview')}
+        >Overview</button>
+        <button
+          className={`pd-tab ${activeTab === 'health' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('health')}
+        >Property health</button>
+      </div>
+
+      {activeTab === 'health' && <PropertyHealthTab propertyId={id} />}
+
+      {activeTab === 'overview' && (<>
       <PropertyFinancialHealth propertyId={id} />
 
       {/* ─── ROOM ACCORDION LIST ─── */}
@@ -620,6 +636,7 @@ export default function PropertyOverview() {
           )}
         </section>
       </div>
+      </>)}
 
       <StartInspection
         open={showStart}
