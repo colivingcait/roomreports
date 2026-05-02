@@ -112,11 +112,32 @@ function OwnerDashboard({ canViewAs, viewAsRole, setViewAsRole, realRole }) {
   useEffect(() => {
     fetch('/api/dashboard', { credentials: 'include' })
       .then((r) => r.json())
-      .then(setData)
+      .then((d) => {
+        // eslint-disable-next-line no-console
+        console.log('[dashboard] /api/dashboard payload:', d);
+        setData(d);
+      })
       .finally(() => setLoading(false));
-    fetch('/api/financials/dashboard?month=all', { credentials: 'include' })
+
+    // Pulse cards need the LATEST month, not the all-time sum.
+    fetch('/api/financials/months', { credentials: 'include' })
       .then((r) => r.json())
-      .then(setFinancial)
+      .then((d) => {
+        const months = d?.months || [];
+        if (months.length === 0) {
+          setFinancial({ hasData: false });
+          return;
+        }
+        const latest = months[0];
+        fetch(`/api/financials/dashboard?month=${encodeURIComponent(latest)}`, { credentials: 'include' })
+          .then((r) => r.json())
+          .then((fin) => {
+            // eslint-disable-next-line no-console
+            console.log('[dashboard] /api/financials/dashboard payload:', fin);
+            setFinancial({ ...fin, hasData: true, latestMonth: latest });
+          })
+          .catch(() => setFinancial({ hasData: false }));
+      })
       .catch(() => setFinancial({ hasData: false }));
   }, []);
 
