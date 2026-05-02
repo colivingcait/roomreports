@@ -81,7 +81,17 @@ const MAINTENANCE_INCLUDE = {
   property: { select: { id: true, name: true, address: true } },
   room: { select: { id: true, label: true } },
   inspection: { select: { id: true, type: true } },
-  inspectionItem: { select: { id: true, text: true } },
+  // The user-facing modal needs the photos that were taken during the
+  // source inspection. Tickets don't get their own copy of those
+  // images — they live on the InspectionItem.
+  inspectionItem: {
+    select: {
+      id: true,
+      text: true,
+      note: true,
+      photos: { select: { id: true, url: true } },
+    },
+  },
   photos: true,
   attachments: { orderBy: { createdAt: 'desc' } },
   assignedUser: { select: { id: true, name: true, role: true, customRole: true } },

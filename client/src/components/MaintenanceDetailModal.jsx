@@ -105,23 +105,39 @@ export default function MaintenanceDetailModal({ ticketId, onClose }) {
             </div>
           )}
 
-          {data.photos?.length > 0 && (
-            <div className="md-modal-section">
-              <div className="md-modal-label">Photos ({data.photos.length})</div>
-              <div className="md-modal-photos">
-                {data.photos.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="md-modal-photo"
-                    onClick={() => setLightboxUrl(p.url)}
-                  >
-                    <img src={p.url} alt="" />
-                  </button>
-                ))}
+          {(() => {
+            // Photos can live on the ticket itself OR (more commonly)
+            // on the InspectionItem the ticket was created from.
+            // Merge by URL so we don't show duplicates.
+            const seen = new Set();
+            const all = [];
+            for (const p of (data.photos || [])) {
+              if (!p?.url || seen.has(p.url)) continue;
+              seen.add(p.url); all.push(p);
+            }
+            for (const p of (data.inspectionItem?.photos || [])) {
+              if (!p?.url || seen.has(p.url)) continue;
+              seen.add(p.url); all.push(p);
+            }
+            if (all.length === 0) return null;
+            return (
+              <div className="md-modal-section">
+                <div className="md-modal-label">Photos ({all.length})</div>
+                <div className="md-modal-photos">
+                  {all.map((p) => (
+                    <button
+                      key={p.id || p.url}
+                      type="button"
+                      className="md-modal-photo"
+                      onClick={() => setLightboxUrl(p.url)}
+                    >
+                      <img src={p.url} alt="" />
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="md-modal-actions">
             <button type="button" className="btn-primary-sm" onClick={goEdit}>
