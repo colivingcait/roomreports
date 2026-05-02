@@ -10348,10 +10348,10 @@ img,
 .fin-prop-stat-grid-revenue {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-/* Row 2 — operating metrics: 4-col grid that wraps to 4 + 3 on
-   desktop. Drops to 2-up on phones. */
+/* Row 2 — operating metrics: all 7 cards on one row at desktop.
+   Drops to 2-up on phones. */
 .fin-prop-stat-grid-ops {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 @media (max-width: 768px) {
   .fin-prop-stat-grid-revenue,
