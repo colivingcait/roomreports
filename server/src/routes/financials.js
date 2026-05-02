@@ -1203,12 +1203,25 @@ router.get('/timeseries', async (req, res) => {
 
       if (!buckets[norm]) buckets[norm] = {};
       if (!buckets[norm][r.earningsMonth]) {
-        buckets[norm][r.earningsMonth] = { gross: 0, fees: 0, host: 0 };
+        buckets[norm][r.earningsMonth] = {
+          gross: 0,
+          fees: 0,
+          host: 0,
+          duesGross: 0,
+          // roomKey → sum of dues that month, used to count occupied
+          // rooms (a room is "occupied" only when its dues sum > 0).
+          duesByRoom: {},
+        };
       }
       const b = buckets[norm][r.earningsMonth];
       b.gross += r.grossAmount || 0;
       b.fees += Math.abs(r.bookingFee || 0) + Math.abs(r.serviceFee || 0) + Math.abs(r.transactionFee || 0);
       b.host += r.hostEarnings || 0;
+      if (isDuesBillType(r.billType)) {
+        b.duesGross += r.grossAmount || 0;
+        const rk = (r.roomNumber || r.roomId || '').toString().trim();
+        if (rk) b.duesByRoom[rk] = (b.duesByRoom[rk] || 0) + (r.grossAmount || 0);
+      }
 
       // Rooms tracking
       const roomKey = (r.roomNumber || r.roomId || '').toString().trim();
@@ -1320,9 +1333,15 @@ router.get('/timeseries', async (req, res) => {
         // Maintenance cost for the month for this property (if mapped).
         const maint = propId ? (maintByPropMonth[`${propId}|${m}`] || 0) : 0;
 
-        // Avg room rate = month's gross collected / rooms onboarded.
-        // (simple, honest mean — doesn't separate vacant from occupied)
-        const avgRate = onboarded > 0 ? b.gross / onboarded : null;
+        // Avg room rate = membership-dues collected this month divided
+        // by the count of rooms that actually had a positive dues sum
+        // that month (vacant rooms are excluded from the denominator,
+        // late fees / other bill types excluded from the numerator).
+        const occupiedRoomsThisMonth = Object.values(b.duesByRoom || {})
+          .filter((v) => v > 0).length;
+        const avgRate = occupiedRoomsThisMonth > 0
+          ? b.duesGross / occupiedRoomsThisMonth
+          : null;
 
         return {
           month: m,
