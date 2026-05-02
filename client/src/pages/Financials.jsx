@@ -427,11 +427,15 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
 
       {expanded && (
         <div className="fin-prop-body">
-          <div className="fin-prop-stat-grid">
-            <div className="fin-prop-stat"><label>Booking fees</label><span>{fmtMoney(p.bookingFee)}</span></div>
+          {/* Line 1 — financial metrics (7 cards) */}
+          <div className="fin-prop-stat-grid fin-prop-stat-grid-7">
+            <div className="fin-prop-stat"><label>Total collected</label><span>{fmtMoney(p.gross)}</span></div>
+            <div className="fin-prop-stat">
+              <label>Booking/txn fees</label>
+              <span>{fmtMoney((p.bookingFee || 0) + (p.transactionFee || 0))}</span>
+            </div>
             <div className="fin-prop-stat"><label>Service fees (8%)</label><span>{fmtMoney(p.serviceFee)}</span></div>
-            <div className="fin-prop-stat"><label>Transaction fees</label><span>{fmtMoney(p.transactionFee)}</span></div>
-            <div className="fin-prop-stat"><label>Net host earnings</label><span>{fmtMoney(p.hostEarnings)}</span></div>
+            <div className="fin-prop-stat"><label>Net earnings</label><span>{fmtMoney(p.hostEarnings)}</span></div>
             <div className="fin-prop-stat">
               <label>Vacancy</label>
               <span>{fmtMoney(p.vacancy)}</span>
@@ -439,10 +443,37 @@ function PropertyCard({ p, expanded, onToggle, onRoomClick }) {
                 {p.vacantDays} {p.vacantDays === 1 ? 'day' : 'days'} vacant
               </small>
             </div>
-            <div className="fin-prop-stat"><label>Late fees collected</label><span>{fmtMoney(p.lateFees)}</span></div>
-            <div className="fin-prop-stat"><label>Avg rent / room</label><span>{fmtMoney(p.avgRentPerRoom)}</span></div>
-            <div className="fin-prop-stat"><label>Turnovers this month</label><span>{p.turnoversThisMonth}</span></div>
+            <div className="fin-prop-stat"><label>Turnovers</label><span>{p.turnoversThisMonth}</span></div>
             <div className="fin-prop-stat"><label>Maintenance cost</label><span>{fmtMoney(p.maintenanceCost)}</span></div>
+          </div>
+
+          {/* Line 2 — room insight metrics */}
+          <div className="fin-prop-stat-grid fin-prop-stat-grid-4">
+            {p.hasFeatureData ? (
+              <>
+                <div className="fin-prop-stat">
+                  <label>Avg private bath</label>
+                  <span>{p.avgPrivateBathRent != null ? fmtMoney(p.avgPrivateBathRent) : '—'}</span>
+                </div>
+                <div className="fin-prop-stat">
+                  <label>Avg shared bath</label>
+                  <span>{p.avgSharedBathRent != null ? fmtMoney(p.avgSharedBathRent) : '—'}</span>
+                </div>
+              </>
+            ) : (
+              <div className="fin-prop-stat">
+                <label>Avg rent / room</label>
+                <span>{fmtMoney(p.avgRentPerRoom)}</span>
+              </div>
+            )}
+            <div className="fin-prop-stat">
+              <label>Avg tenure</label>
+              <span>{p.avgTenureMonths != null ? `${p.avgTenureMonths} months` : '—'}</span>
+            </div>
+            <div className="fin-prop-stat">
+              <label>Avg days to fill</label>
+              <span>{p.avgDaysToFill != null ? `${p.avgDaysToFill} days` : '—'}</span>
+            </div>
           </div>
 
           <div className="fin-table-wrap">
@@ -505,6 +536,9 @@ export default function Financials() {
   const [timeseries, setTimeseries] = useState(null);
   const [chartMetric, setChartMetric] = useState('host');
   const [hiddenSeries, setHiddenSeries] = useState(() => new Set());
+  const [chartTimeline, setChartTimeline] = useState('all');
+  const [customRange, setCustomRange] = useState({ from: '', to: '' });
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [expandedProps, setExpandedProps] = useState({});
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -651,10 +685,33 @@ export default function Financials() {
     setExpandedProps((s) => ({ ...s, [id]: !s[id] }));
   };
 
-  const chartData = useMemo(() => {
+  // Filter the months array by the active timeline pill.
+  const filteredMonths = useMemo(() => {
     if (!timeseries || !timeseries.months || timeseries.months.length === 0) return [];
+    const all = timeseries.months;
+    if (chartTimeline === 'all') return all;
+    if (chartTimeline === 'custom') {
+      const { from, to } = customRange;
+      if (!from && !to) return all;
+      return all.filter((m) => (!from || m >= from) && (!to || m <= to));
+    }
+    const now = new Date();
+    const ym = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const curMonth = ym(now);
+    if (chartTimeline === 'ytd') {
+      const start = `${now.getUTCFullYear()}-01`;
+      return all.filter((m) => m >= start && m <= curMonth);
+    }
+    const window = { '1m': 1, '3m': 3, '6m': 6, '12m': 12 }[chartTimeline] || 12;
+    const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (window - 1), 1));
+    const startMonth = ym(cutoff);
+    return all.filter((m) => m >= startMonth && m <= curMonth);
+  }, [timeseries, chartTimeline, customRange]);
+
+  const chartData = useMemo(() => {
+    if (!timeseries || filteredMonths.length === 0) return [];
     const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
-    return timeseries.months.map((m) => {
+    return filteredMonths.map((m) => {
       const obj = { month: m };
       for (const s of timeseries.series) {
         const pt = s.points.find((p) => p.month === m);
@@ -663,7 +720,7 @@ export default function Financials() {
       }
       return obj;
     });
-  }, [timeseries, chartMetric]);
+  }, [timeseries, filteredMonths, chartMetric]);
 
   if (loading) return <div className="page-loading">Loading…</div>;
 
@@ -745,6 +802,13 @@ export default function Financials() {
               ))}
               <option value="all">All time</option>
             </select>
+            <button
+              type="button"
+              className="btn-secondary-sm fin-download-btn"
+              onClick={() => setShowDownloadModal(true)}
+            >
+              Download monthly report
+            </button>
           </div>
 
           {/* Portfolio overview — 4 cards: Host earnings, Platform fees,
@@ -794,6 +858,43 @@ export default function Financials() {
                   >{CHART_METRICS[key].label}</button>
                 ))}
               </div>
+            </div>
+            <div className="fin-timeline-row">
+              {[
+                { v: '1m', l: '1M' },
+                { v: '3m', l: '3M' },
+                { v: '6m', l: '6M' },
+                { v: '12m', l: '12M' },
+                { v: 'ytd', l: 'YTD' },
+                { v: 'all', l: 'All time' },
+                { v: 'custom', l: 'Custom' },
+              ].map((opt) => (
+                <button
+                  key={opt.v}
+                  className={`fin-timeline-pill ${chartTimeline === opt.v ? 'fin-timeline-active' : ''}`}
+                  onClick={() => setChartTimeline(opt.v)}
+                  type="button"
+                >{opt.l}</button>
+              ))}
+              {chartTimeline === 'custom' && (
+                <span className="fin-timeline-custom">
+                  <input
+                    type="month"
+                    className="fin-timeline-input"
+                    value={customRange.from}
+                    onChange={(e) => setCustomRange((r) => ({ ...r, from: e.target.value }))}
+                    placeholder="From"
+                  />
+                  <span className="fin-timeline-dash">–</span>
+                  <input
+                    type="month"
+                    className="fin-timeline-input"
+                    value={customRange.to}
+                    onChange={(e) => setCustomRange((r) => ({ ...r, to: e.target.value }))}
+                    placeholder="To"
+                  />
+                </span>
+              )}
             </div>
             <div className="fin-chart">
               {chartData.length === 0 ? (
@@ -948,6 +1049,19 @@ export default function Financials() {
           onClose={() => setShowMappingModal(false)}
         />
       </Modal>
+
+      <Modal
+        open={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        title="Download monthly report"
+      >
+        <DownloadReportBody
+          months={months}
+          properties={dashboard?.propertyBreakdown || []}
+          defaultMonth={selectedMonth}
+          onClose={() => setShowDownloadModal(false)}
+        />
+      </Modal>
     </div>
   );
 }
@@ -1033,15 +1147,20 @@ function TurnoverTracker({ rows }) {
                       <th>Turnovers</th>
                       <th>Annualized rate</th>
                       <th>Avg tenure (months)</th>
+                      <th>Turnover cost</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
                     {propertyRows.map((r) => {
                       const annualized = r.annualizedTurnovers || 0;
-                      // Only flag Problem when the annualized rate is
-                      // actually meaningful — at least 6 months of data.
                       const isProblem = !limitedData && annualized >= PROBLEM_TURNOVER_RATE;
+                      const annCost = r.annualizedTurnoverCost || 0;
+                      const costClass = annCost > 1000
+                        ? 'fin-tt-cost-bad'
+                        : annCost >= 500
+                          ? 'fin-tt-cost-warn'
+                          : 'fin-tt-cost-good';
                       return (
                         <tr key={`${name}-${r.roomNumber}`}
                             className={isProblem ? 'fin-tt-problem' : ''}>
@@ -1052,6 +1171,14 @@ function TurnoverTracker({ rows }) {
                             {limitedData && <span className="fin-tt-limited-tag"> (limited data)</span>}
                           </td>
                           <td>{(r.avgTenureMonths || 0).toFixed(1)}</td>
+                          <td className={r.turnovers > 0 ? costClass : ''}>
+                            {r.turnovers > 0 ? (
+                              <>
+                                <div>{fmtMoney(r.turnoverCostTotal)}</div>
+                                <small className="fin-tt-cost-sub">{fmtMoney(annCost)} / yr</small>
+                              </>
+                            ) : '—'}
+                          </td>
                           <td>{isProblem ? <span className="fin-pill-bad">Problem</span> : null}</td>
                         </tr>
                       );
@@ -1063,6 +1190,91 @@ function TurnoverTracker({ rows }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function DownloadReportBody({ months, properties, defaultMonth, onClose }) {
+  const [month, setMonth] = useState(defaultMonth || (months[0] || ''));
+  const [allChecked, setAllChecked] = useState(true);
+  const [propIds, setPropIds] = useState(() => new Set(properties.map((p) => p.propertyId).filter(Boolean)));
+
+  const togglePid = (id) => {
+    setAllChecked(false);
+    setPropIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
+  const toggleAll = () => {
+    if (allChecked) {
+      setAllChecked(false);
+      setPropIds(new Set());
+    } else {
+      setAllChecked(true);
+      setPropIds(new Set(properties.map((p) => p.propertyId).filter(Boolean)));
+    }
+  };
+
+  const handleDownload = () => {
+    const params = new URLSearchParams();
+    if (month && month !== 'all') {
+      params.set('from', month);
+      params.set('to', month);
+    }
+    if (!allChecked && propIds.size > 0) {
+      params.set('propertyIds', [...propIds].join(','));
+    }
+    const url = `/api/financials/report.pdf?${params.toString()}`;
+    window.open(url, '_blank');
+    onClose();
+  };
+
+  return (
+    <div className="modal-form" style={{ padding: '1rem 1.25rem 1.25rem' }}>
+      <label className="form-label">
+        Month
+        <select
+          className="filter-select"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          style={{ width: '100%', marginTop: '0.25rem' }}
+        >
+          {months.map((m) => (<option key={m} value={m}>{fmtMonth(m)}</option>))}
+          <option value="all">All time</option>
+        </select>
+      </label>
+      <div style={{ marginTop: '1rem' }}>
+        <strong>Properties</strong>
+        <div className="dl-prop-list">
+          <label className="dl-prop-item">
+            <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+            <span>All properties</span>
+          </label>
+          {properties.map((p) => (
+            <label key={p.propertyId || p.padsplitAddress} className="dl-prop-item">
+              <input
+                type="checkbox"
+                checked={allChecked || propIds.has(p.propertyId)}
+                onChange={() => p.propertyId && togglePid(p.propertyId)}
+                disabled={!p.propertyId}
+              />
+              <span>{p.propertyName || p.padsplitAddress}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button
+          className="btn-primary"
+          onClick={handleDownload}
+          disabled={!allChecked && propIds.size === 0}
+        >
+          Download
+        </button>
+      </div>
     </div>
   );
 }
