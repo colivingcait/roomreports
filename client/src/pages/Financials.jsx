@@ -60,7 +60,11 @@ function fmtMonthShort(s) {
 
 // Chart metric configs: which dataKey to render, what kind of chart,
 // how to format the Y-axis + tooltip, and which color category.
+// `aggregate: true` collapses all properties into a single "Total"
+// line so the chart shows portfolio-wide totals instead of per-property
+// series.
 const CHART_METRICS = {
+  total:       { label: 'Total earnings',  key: 'host',        kind: 'line', aggregate: true, yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   host:        { label: 'Host earnings',   key: 'host',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   gross:       { label: 'Gross collected', key: 'gross',       kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
   fees:        { label: 'Platform fees',   key: 'fees',        kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
@@ -69,7 +73,7 @@ const CHART_METRICS = {
   onboarded:   { label: 'Rooms onboarded', key: 'onboarded',   kind: 'line', yFmt: (v) => `${v}`, yAllowDecimals: false,  valFmt: (v) => `${v}` },
   maintenance: { label: 'Maintenance costs', key: 'maintenance', kind: 'line', yFmt: (v) => `$${(v / 1000).toFixed(0)}k`, valFmt: (v) => fmtMoney(v) },
 };
-const CHART_METRIC_ORDER = ['host', 'gross', 'fees', 'occupancy', 'turnovers', 'onboarded', 'maintenance'];
+const CHART_METRIC_ORDER = ['total', 'host', 'gross', 'fees', 'occupancy', 'turnovers', 'onboarded', 'maintenance'];
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -712,6 +716,21 @@ export default function Financials() {
   const chartData = useMemo(() => {
     if (!timeseries || filteredMonths.length === 0) return [];
     const cfg = CHART_METRICS[chartMetric] || CHART_METRICS.host;
+    // Aggregate mode: sum the metric across every (visible) property
+    // into a single "Total" series for each month.
+    if (cfg.aggregate) {
+      const visible = (timeseries.series || []).filter(
+        (s) => metroFilter === 'all' || (s.metroArea || '') === metroFilter,
+      );
+      return filteredMonths.map((m) => {
+        let total = 0;
+        for (const s of visible) {
+          const pt = s.points.find((p) => p.month === m);
+          if (pt && pt[cfg.key] != null) total += pt[cfg.key];
+        }
+        return { month: m, Total: total };
+      });
+    }
     return filteredMonths.map((m) => {
       const obj = { month: m };
       for (const s of timeseries.series) {
@@ -721,7 +740,7 @@ export default function Financials() {
       }
       return obj;
     });
-  }, [timeseries, filteredMonths, chartMetric]);
+  }, [timeseries, filteredMonths, chartMetric, metroFilter]);
 
   if (loading) return <div className="page-loading">Loading…</div>;
 
@@ -980,7 +999,12 @@ export default function Financials() {
 
                 const renderLegend = () => (
                   <ul className="fin-chart-legend">
-                    {allSeries.map((s, idx) => {
+                    {cfg.aggregate ? (
+                      <li className="fin-chart-legend-item">
+                        <span className="fin-chart-legend-dot" style={{ background: '#6B8F71' }} />
+                        <span>Total</span>
+                      </li>
+                    ) : allSeries.map((s, idx) => {
                       const color = PALETTE[idx % PALETTE.length];
                       const hidden = hiddenSeries.has(s.propertyName);
                       return (
@@ -1019,7 +1043,18 @@ export default function Financials() {
                         contentStyle={{ background: '#fff', border: '1px solid #F0EDE8', borderRadius: 8 }}
                       />
                       <Legend content={renderLegend} />
-                      {allSeries.map((s, idx) => {
+                      {cfg.aggregate ? (
+                        <Line
+                          key="Total"
+                          type="monotone"
+                          dataKey="Total"
+                          stroke="#6B8F71"
+                          strokeWidth={2}
+                          dot={{ r: 3, fill: '#6B8F71' }}
+                          activeDot={{ r: 5 }}
+                          connectNulls
+                        />
+                      ) : allSeries.map((s, idx) => {
                         if (hiddenSeries.has(s.propertyName)) return null;
                         const color = PALETTE[idx % PALETTE.length];
                         return cfg.kind === 'bar' ? (

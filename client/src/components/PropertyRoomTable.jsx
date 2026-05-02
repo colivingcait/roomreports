@@ -75,6 +75,7 @@ export default function PropertyRoomTable({
   maintItems,       // all maintenance items (from overview)
   violations,       // all violations (from overview)
   onTurn,           // (room) => void
+  onViolationClick, // (violationId) => void
 }) {
   const navigate = useNavigate();
   const [sortKey, setSortKey] = useState('roomNumber');
@@ -247,9 +248,19 @@ export default function PropertyRoomTable({
                         room={r.raw}
                         finRoom={r.finRoom}
                         deferred={deferredByRoom?.[r.id] || []}
-                        maintItems={(maintItems || []).filter((m) => m.roomId === r.id)}
+                        maintItems={(maintItems || []).filter((m) => (
+                          m.roomId === r.id
+                          // Match the badge count: active parents only,
+                          // not children, not resolved, not deferred,
+                          // not soft-deleted.
+                          && !m.parentTicketId
+                          && !m.deletedAt
+                          && !m.archivedAt
+                          && ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(m.status)
+                        ))}
                         violations={(violations || []).filter((v) => v.roomId === r.id)}
                         onNavigate={navigate}
+                        onViolationClick={onViolationClick}
                         propertyId={propertyId}
                       />
                     </td>
@@ -264,7 +275,7 @@ export default function PropertyRoomTable({
   );
 }
 
-function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, propertyId }) {
+function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, onViolationClick, propertyId }) {
   return (
     <div className="prt-detail">
       <div className="prt-detail-grid">
@@ -316,7 +327,7 @@ function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigat
           ) : (
             <ul className="prt-detail-list">
               {violations.slice(0, 5).map((v) => (
-                <li key={v.id}>
+                <li key={v.id} onClick={(e) => { e.stopPropagation(); onViolationClick?.(v.id); }}>
                   <span>{v.category || 'Violation'}</span>
                   <span className="prt-dim">{timeAgo(v.createdAt)}</span>
                 </li>

@@ -293,13 +293,16 @@ router.get('/:id/overview', async (req, res) => {
       return res.status(404).json({ error: 'Property not found' });
     }
 
-    // Open maintenance items grouped by room
+    // Open maintenance items grouped by room. Excludes children of
+    // merged tickets so a merged group of 4 reads as 1 in the room
+    // counts (matches the dashboard / maintenance board behaviour).
     const maintenance = await prisma.maintenanceItem.findMany({
       where: {
         propertyId: property.id,
         organizationId: req.user.organizationId,
         deletedAt: null,
         status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
+        parentTicketId: null,
       },
       include: {
         room: { select: { id: true, label: true } },
