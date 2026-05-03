@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateChecklist, buildChecklist, ROOM_TYPES } from '../lib/checklist.js';
 import { suggestPriority, PRIORITIES } from '../../../shared/index.js';
 import { notify, notifyMany, pmAndOwnerIds, summaryList, esc } from '../lib/notifications.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -2529,7 +2530,7 @@ async function sendBatchInspectionNotification({ inspections }) {
   const ids = await pmAndOwnerIds(orgId);
   if (ids.length === 0) return;
 
-  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const origin = appOrigin();
   // Link to the grouped review page: /quarterly-review/:propertyId/:dateKey
   const dateKey = String(completedAt).slice(0, 10);
   const link = `/quarterly-review/${head.propertyId}/${dateKey}`;
@@ -2665,7 +2666,7 @@ async function sendInspectionSubmittedNotification({
     email: {
       subject: title,
       ctaLabel: 'Review inspection',
-      ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}${link}`,
+      ctaHref: `${appOrigin()}${link}`,
       bodyHtml: `
         <p style="margin:0 0 12px;">${esc(inspector)} just submitted a ${esc(typeLabel)} at ${esc(locationStr)}.</p>
         ${summary}
@@ -2703,7 +2704,7 @@ async function sendInspectionApprovedNotification({ inspection, feedback }) {
     email: {
       subject: `Your inspection was reviewed — ${propertyName}`,
       ctaLabel: 'Open dashboard',
-      ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}${link}`,
+      ctaHref: `${appOrigin()}${link}`,
       bodyHtml: `
         <p style="margin:0 0 12px;">Your recent inspection at <strong>${esc(propertyName)}</strong> has been reviewed by a manager.</p>
         ${feedback ? `<p style="margin:0 0 12px;padding:12px;background:#F5F2EF;border-radius:6px;">${esc(feedback)}</p>` : ''}

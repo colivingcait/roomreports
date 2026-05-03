@@ -12,12 +12,9 @@ import {
   esc,
 } from '../lib/notifications.js';
 import { sendEmail } from '../lib/email.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
-
-function appOrigin() {
-  return (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
-}
 
 const upload = multer({
   storage: multer.memoryStorage(),

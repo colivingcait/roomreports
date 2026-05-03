@@ -16,6 +16,7 @@ import {
   residentEmailShell,
 } from '../lib/notifications.js';
 import { sendEmail } from '../lib/email.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -1366,7 +1367,7 @@ router.post('/:id/reactivate', requireRole('OWNER', 'PM'), async (req, res) => {
 // ─── Notification helpers ──────────────────────────────
 
 function originFromEnv() {
-  return (process.env.APP_URL || '').replace(/\/$/, '');
+  return appOrigin();
 }
 
 async function sendHandypersonStatusChangeNotification({ existing, updated, actor, note }) {

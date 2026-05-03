@@ -8,6 +8,7 @@ import { propertyScope } from '../lib/scope.js';
 import { computeHealth } from '../lib/healthGrade.js';
 import { notifyMany, summaryList, esc } from '../lib/notifications.js';
 import { planLimit, wouldExceed } from '../../../shared/features.js';
+import { appOrigin } from '../lib/appUrl.js';
 import { uploadFile, deleteFile } from '../lib/storage.js';
 
 const uploadImage = multer({
@@ -1505,7 +1506,7 @@ router.post('/:id/rooms/:roomId/turnover', requireRole('OWNER', 'PM'), async (re
 
     // ── Notifications (best-effort, don't block response) ─────────
     try {
-      const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+      const origin = appOrigin();
       const pmIds = (await prisma.user.findMany({
         where: { organizationId: req.user.organizationId, role: { in: ['OWNER', 'PM'] }, deletedAt: null },
         select: { id: true },

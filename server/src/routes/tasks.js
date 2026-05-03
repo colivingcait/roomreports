@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { propertyIdScope } from '../lib/scope.js';
 import { PRIORITIES } from '../../../shared/index.js';
 import { notify, summaryList, esc } from '../lib/notifications.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -275,7 +276,7 @@ router.delete('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
 
 async function notifyTaskAssigned({ task, actor }) {
   if (!task.assignedUserId) return;
-  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const origin = appOrigin();
   await notify({
     userId: task.assignedUserId,
     organizationId: task.organizationId,

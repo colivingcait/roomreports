@@ -21,8 +21,14 @@ const BRAND_MUTED = '#8A8583';
 const BRAND_BORDER = '#E8E4E1';
 
 // Resolve the URL used in emails so users land on the right deploy.
+// In production, APP_URL is expected to be set; we fall back to the
+// canonical production app domain so notifications never link to
+// localhost when the env var is missed in deploy config.
 function appOrigin() {
-  return (process.env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const fromEnv = process.env.APP_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (process.env.NODE_ENV === 'production') return 'https://app.roomreport.co';
+  return 'http://localhost:5173';
 }
 
 export function emailShell({ preheader = '', title, bodyHtml, ctaLabel, ctaHref, footerNote }) {

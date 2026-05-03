@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { planLimit, wouldExceed } from '../../../shared/features.js';
 import { sendEmail } from '../lib/email.js';
 import { notify } from '../lib/notifications.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -34,13 +35,6 @@ function generateInviteToken() {
   return crypto.randomBytes(32).toString('base64url');
 }
 
-function appUrl(req) {
-  const env = process.env.APP_URL;
-  if (env) return env.replace(/\/$/, '');
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}`;
-}
 
 function roleHuman(role, customRole) {
   if (role === 'OTHER' && customRole) return customRole;
@@ -55,7 +49,7 @@ function roleHuman(role, customRole) {
 }
 
 async function sendInviteEmail({ invite, org, inviter, req }) {
-  const link = `${appUrl(req)}/signup?invite=${encodeURIComponent(invite.token)}`;
+  const link = `${appOrigin()}/signup?invite=${encodeURIComponent(invite.token)}`;
   const roleStr = roleHuman(invite.role, invite.customRole);
   const inviterName = inviter?.name || 'Your team';
   const orgName = org?.name || 'your team';
@@ -96,7 +90,7 @@ async function sendInviteEmail({ invite, org, inviter, req }) {
 // `kind` controls the headline: 'reminder' for active-member nudge,
 // 'reactivated' for a just-reactivated user.
 async function sendLoginLinkEmail({ user, org, kind, req }) {
-  const origin = appUrl(req);
+  const origin = appOrigin();
   const link = `${origin}/login`;
   const orgName = org?.name || 'your team';
   const headline = kind === 'reactivated'
@@ -522,7 +516,7 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
             where: { id: { in: newlyAdded } },
             select: { id: true, name: true },
           });
-          const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+          const origin = appOrigin();
           await notify({
             userId: user.id,
             organizationId: req.user.organizationId,
