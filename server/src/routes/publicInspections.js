@@ -487,6 +487,300 @@ router.post('/report/:slug', async (req, res) => {
   }
 });
 
+// ─── GET /api/public/org/:slug/contact — phone for emergency popups ──
+
+router.get('/org/:slug/contact', async (req, res) => {
+  try {
+    const org = await findOrganizationBySlug(req.params.slug);
+    if (!org) return res.status(404).json({ error: 'Organization not found' });
+    return res.json({ phone: org.phone || null });
+  } catch (error) {
+    console.error('Public org contact lookup error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/public/draft/:slug — create resident DRAFT (after Step 3) ──
+//
+// Creates a maintenance row with status=DRAFT capturing the resident's
+// name, email, room, and property. The wizard then patches this row as
+// the resident progresses through Steps 4–5 and either submits it or
+// abandons/cancels.
+
+router.post('/draft/:slug', async (req, res) => {
+  try {
+    const {
+      propertyId,
+      roomId,
+      reporterName,
+      reporterEmail,
+      reporterNotifyOptIn,
+      lastStepCompleted,
+    } = req.body || {};
+
+    if (!propertyId || !reporterName?.trim()) {
+      return res.status(400).json({ error: 'propertyId and reporterName are required' });
+    }
+
+    const resolved = await resolveOrgAndProperty(req.params.slug, propertyId);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+    const { property } = resolved;
+
+    if (!checkRateLimit(roomId || property.id)) {
+      return res.status(429).json({ error: 'Too many submissions today' });
+    }
+
+    const cleanEmail = reporterEmail && String(reporterEmail).trim().toLowerCase();
+    const wantsUpdates = !!(cleanEmail && reporterNotifyOptIn !== false);
+    const trackingToken = newTrackingToken();
+
+    const maintenance = await prisma.maintenanceItem.create({
+      data: {
+        propertyId: property.id,
+        roomId: roomId || null,
+        organizationId: property.organization.id,
+        description: '(draft)',
+        zone: 'Reported Issue',
+        flagCategory: 'General',
+        status: 'DRAFT',
+        reportedByName: reporterName.trim(),
+        reportedByRole: 'RESIDENT',
+        reporterEmail: cleanEmail || null,
+        reporterNotifyOptIn: wantsUpdates,
+        trackingToken,
+        lastStepCompleted: Number.isFinite(+lastStepCompleted) ? +lastStepCompleted : 3,
+      },
+    });
+
+    return res.status(201).json({
+      draftId: maintenance.id,
+      trackingToken,
+    });
+  } catch (error) {
+    console.error('Public draft create error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PUT /api/public/draft/:slug/:id — patch draft progress ──
+
+router.put('/draft/:slug/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const draft = await prisma.maintenanceItem.findUnique({ where: { id } });
+    if (!draft || draft.status !== 'DRAFT') {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+
+    const {
+      roomId,
+      flagCategory,
+      description,
+      note,
+      triageAnswers,
+      lastStepCompleted,
+    } = req.body || {};
+
+    const data = {};
+    if (roomId !== undefined) data.roomId = roomId || null;
+    if (flagCategory) data.flagCategory = flagCategory;
+    if (description !== undefined) data.description = description?.trim() || '(draft)';
+    if (note !== undefined) data.note = note?.trim() || null;
+    if (triageAnswers !== undefined) data.triageAnswers = triageAnswers;
+    if (Number.isFinite(+lastStepCompleted)) data.lastStepCompleted = +lastStepCompleted;
+
+    await prisma.maintenanceItem.update({ where: { id }, data });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Public draft update error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/public/draft/:slug/:id/cancel ──
+//
+// Resident hit the explicit "Cancel report" button. Stays as DRAFT but
+// marks cancelledAt so PMs can see it's an intentional cancellation
+// rather than an abandonment.
+
+router.post('/draft/:slug/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const draft = await prisma.maintenanceItem.findUnique({ where: { id } });
+    if (!draft || draft.status !== 'DRAFT') {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+    await prisma.maintenanceItem.update({
+      where: { id },
+      data: { cancelledAt: new Date() },
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Public draft cancel error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/public/draft/:slug/:id/abandon ──
+//
+// Browser unload — best-effort marker. Called via navigator.sendBeacon
+// when the resident closes the tab without submitting or cancelling.
+
+router.post('/draft/:slug/:id/abandon', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const draft = await prisma.maintenanceItem.findUnique({ where: { id } });
+    if (!draft || draft.status !== 'DRAFT') {
+      return res.status(204).end();
+    }
+    await prisma.maintenanceItem.update({
+      where: { id },
+      data: { abandonedAt: new Date() },
+    });
+    return res.status(204).end();
+  } catch (error) {
+    console.error('Public draft abandon error:', error);
+    return res.status(204).end();
+  }
+});
+
+// ─── POST /api/public/draft/:slug/:id/submit ──
+//
+// Resident hit Submit. Promote DRAFT → OPEN, create linked inspection
+// records, fire PM/owner notifications + resident confirmation email.
+
+router.post('/draft/:slug/:id/submit', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const draft = await prisma.maintenanceItem.findUnique({
+      where: { id },
+      include: {
+        property: { include: { organization: true, rooms: { where: { deletedAt: null } } } },
+      },
+    });
+    if (!draft || draft.status !== 'DRAFT') {
+      return res.status(404).json({ error: 'Draft not found' });
+    }
+    if (!draft.description || draft.description === '(draft)') {
+      return res.status(400).json({ error: 'description is required' });
+    }
+
+    const org = draft.property.organization;
+    const owner = await prisma.user.findFirst({
+      where: { organizationId: org.id, role: 'OWNER', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!owner) return res.status(500).json({ error: 'No owner found for this organization' });
+
+    const now = new Date();
+    const trackingUrl = `${appOrigin()}/track/${draft.trackingToken}`;
+
+    await prisma.$transaction(async (tx) => {
+      const inspection = await tx.inspection.create({
+        data: {
+          type: 'RESIDENT_SELF_CHECK',
+          status: 'SUBMITTED',
+          propertyId: draft.propertyId,
+          roomId: draft.roomId,
+          inspectorId: owner.id,
+          inspectorName: draft.reportedByName || 'Resident',
+          inspectorRole: 'RESIDENT',
+          organizationId: org.id,
+          completedAt: now,
+          residentEmail: draft.reporterEmail,
+          residentNotifyOptIn: draft.reporterNotifyOptIn,
+        },
+      });
+      const item = await tx.inspectionItem.create({
+        data: {
+          inspectionId: inspection.id,
+          zone: 'Reported Issue',
+          text: draft.description,
+          options: [],
+          status: 'Fail',
+          flagCategory: draft.flagCategory || 'General',
+          note: draft.note,
+          isMaintenance: true,
+        },
+      });
+      await tx.maintenanceItem.update({
+        where: { id: draft.id },
+        data: {
+          status: 'OPEN',
+          submittedAt: now,
+          inspectionId: inspection.id,
+          inspectionItemId: item.id,
+          lastStepCompleted: 5,
+        },
+      });
+    });
+
+    // Fire-and-forget: PM/Owner notification + resident confirmation.
+    try {
+      const pmIds = await pmAndOwnerIds(org.id);
+      const roomLabel = draft.property.rooms?.find((r) => r.id === draft.roomId)?.label || '—';
+      await notifyMany({
+        userIds: pmIds,
+        organizationId: org.id,
+        type: 'MAINTENANCE_RESIDENT_REPORTED',
+        title: `New resident report — ${draft.property.name}`,
+        message: `${draft.reportedByName || 'Resident'}: ${draft.description}`,
+        link: `/maintenance?open=${draft.id}`,
+        email: {
+          subject: `New resident report — ${draft.property.name}`,
+          ctaLabel: 'Open ticket',
+          ctaHref: `${appOrigin()}/maintenance?open=${draft.id}`,
+          bodyHtml: `
+            <p style="margin:0 0 12px;">${esc(draft.reportedByName || 'A resident')} just submitted a maintenance report.</p>
+            ${summaryList([
+              ['Resident', draft.reportedByName || 'Resident'],
+              ['Property', draft.property.name],
+              ['Room', roomLabel],
+              ['Category', draft.flagCategory || 'General'],
+              ['Description', draft.description],
+              ['Note', draft.note || '—'],
+            ])}
+          `,
+        },
+      });
+    } catch (e) {
+      console.error('PM notification error:', e);
+    }
+
+    if (draft.reporterEmail && draft.reporterNotifyOptIn) {
+      try {
+        const html = residentEmailShell({
+          headline: 'We got your report',
+          bodyHtml: `
+            <p style="margin:0 0 8px;">Thanks for submitting a maintenance report for <strong>${esc(draft.property.name)}</strong>.</p>
+            <p style="margin:0 0 12px;">Your property manager has been notified. You can check the status of your report at any time using the tracking link below.</p>
+          `,
+          ctaLabel: 'Track your report',
+          ctaHref: trackingUrl,
+          unsubscribeHref: `${trackingUrl}?unsubscribe=1`,
+        });
+        await sendEmail({
+          to: draft.reporterEmail,
+          subject: 'We received your maintenance report',
+          html,
+          text: `Thanks — we received your report for "${draft.description}" at ${draft.property.name}. Track it at ${trackingUrl}`,
+        });
+      } catch (e) {
+        console.error('resident confirmation email error:', e);
+      }
+    }
+
+    return res.status(200).json({
+      maintenanceItemId: draft.id,
+      trackingToken: draft.trackingToken,
+      trackingUrl,
+    });
+  } catch (error) {
+    console.error('Public draft submit error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── POST /api/public/photo — upload photo for public inspection (no auth) ──
 
 router.post('/photo', upload.single('photo'), async (req, res) => {

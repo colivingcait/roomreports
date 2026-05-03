@@ -118,7 +118,7 @@ router.get('/', async (req, res) => {
       propertyId, status, flagCategory, priority, assignedTo,
       assignedUserId, assignedVendorId,
       startDate, endDate, includeArchived, includeDeferred,
-      deferredOnly, search,
+      deferredOnly, search, includeDrafts,
     } = req.query;
 
     const scope = await propertyIdScope(req.user);
@@ -159,6 +159,20 @@ router.get('/', async (req, res) => {
       where.status = 'DEFERRED';
     } else if (status !== 'DEFERRED' && includeDeferred !== 'true' && !status) {
       where.status = { not: 'DEFERRED' };
+    }
+
+    // Drafts (resident wizard rows that were never submitted) are
+    // hidden from the kanban by default. Pass includeDrafts=true to
+    // surface them — they render with a "Draft" badge so PMs can
+    // review abandoned/cancelled reports.
+    if (status !== 'DRAFT' && includeDrafts !== 'true') {
+      const exclude = { not: 'DRAFT' };
+      if (where.status && typeof where.status === 'object' && where.status.not !== undefined) {
+        // Combine with an existing { not: 'DEFERRED' } clause.
+        where.status = { notIn: ['DRAFT', where.status.not] };
+      } else if (!where.status) {
+        where.status = exclude;
+      }
     }
 
     // Children of merged tickets are hidden from the board — only the

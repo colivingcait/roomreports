@@ -19,7 +19,6 @@ import {
 } from '../../../shared/index.js';
 import MaintenanceDetail from '../components/MaintenanceDetail';
 import NewMaintenance from '../components/NewMaintenance';
-import MaintenanceToDoTabs from '../components/MaintenanceToDoTabs';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
@@ -260,6 +259,8 @@ export default function Maintenance() {
   const [includeArchived, setIncludeArchived] = useState(false);
   const [showDeferred, setShowDeferred] = useState(false);
   const [deferredItems, setDeferredItems] = useState([]);
+  const [showDrafts, setShowDrafts] = useState(false);
+  const [draftItems, setDraftItems] = useState([]);
   const [sortBy, setSortBy] = useState('recent'); // recent | priority
   const [search, setSearch] = useState('');
 
@@ -327,6 +328,21 @@ export default function Maintenance() {
     } catch { /* ignore */ }
   }, [showDeferred, filterProperty]);
   useEffect(() => { fetchDeferred(); }, [fetchDeferred]);
+
+  // Drafts — resident reports that never made it to OPEN. Fetched only
+  // when the PM toggles "Show drafts" so the default kanban load stays
+  // small. Includes both pure abandoned drafts and intentionally
+  // cancelled drafts.
+  const fetchDrafts = useCallback(async () => {
+    if (!showDrafts) { setDraftItems([]); return; }
+    const params = new URLSearchParams({ status: 'DRAFT', includeDrafts: 'true' });
+    if (filterProperty) params.set('propertyId', filterProperty);
+    try {
+      const data = await api(`/api/maintenance?${params}`);
+      setDraftItems(data.items || []);
+    } catch { /* ignore */ }
+  }, [showDrafts, filterProperty]);
+  useEffect(() => { fetchDrafts(); }, [fetchDrafts]);
 
   useEffect(() => {
     fetch('/api/properties', { credentials: 'include' })
@@ -433,7 +449,6 @@ export default function Maintenance() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <MaintenanceToDoTabs />
           <h1>Maintenance</h1>
           <p className="page-subtitle">{totalOpen} open item{totalOpen !== 1 ? 's' : ''}</p>
         </div>
@@ -509,6 +524,13 @@ export default function Maintenance() {
         >
           {showDeferred ? '✓ Show deferred' : 'Show deferred'}
         </button>
+        <button
+          className={`filter-toggle ${showDrafts ? 'active' : ''}`}
+          onClick={() => setShowDrafts((v) => !v)}
+          title="Show resident reports that were never submitted (cancelled or abandoned drafts)"
+        >
+          {showDrafts ? '✓ Show drafts' : 'Show drafts'}
+        </button>
       </div>
 
       {/* Board */}
@@ -572,6 +594,45 @@ export default function Maintenance() {
               items={deferredItems}
               onOpen={(id) => setDetailId(id)}
             />
+          )}
+        </section>
+      )}
+
+      {showDrafts && (
+        <section className="maint-deferred-section">
+          <h2 className="maint-deferred-heading">
+            Drafts
+            <span className="maint-deferred-count">{draftItems.length}</span>
+          </h2>
+          {draftItems.length === 0 ? (
+            <p className="maint-deferred-empty">No drafts.</p>
+          ) : (
+            <ul className="maint-draft-list">
+              {draftItems.map((d) => {
+                const flavor = d.cancelledAt
+                  ? `Cancelled · step ${d.lastStepCompleted ?? '?'}`
+                  : d.abandonedAt
+                    ? `Abandoned · step ${d.lastStepCompleted ?? '?'}`
+                    : `In progress · step ${d.lastStepCompleted ?? '?'}`;
+                return (
+                  <li
+                    key={d.id}
+                    className="maint-draft-row"
+                    onClick={() => setDetailId(d.id)}
+                  >
+                    <div className="maint-draft-row-main">
+                      <span className="maint-draft-badge">Draft</span>
+                      <strong>{d.reportedByName || 'Resident'}</strong>
+                      <span className="maint-draft-meta">
+                        {d.property?.name}
+                        {d.room?.label ? ` · ${d.room.label}` : ''}
+                      </span>
+                    </div>
+                    <span className="maint-draft-flavor">{flavor}</span>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
       )}

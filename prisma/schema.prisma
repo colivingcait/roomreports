@@ -34,6 +34,7 @@ enum InspectionStatus {
 }
 
 enum MaintenanceStatus {
+  DRAFT
   OPEN
   ASSIGNED
   IN_PROGRESS
@@ -75,6 +76,10 @@ model Organization {
   name      String
   slug      String?  @unique
   timezone  String?
+  // Phone number residents can call from emergency / advisory popups in
+  // the public maintenance report flow. Optional; rendered as muted
+  // "Contact your property manager" text when blank.
+  phone     String?
   plan      Plan     @default(OPERATOR)
   isBeta    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -427,6 +432,17 @@ model MaintenanceItem {
   leaseViolationId  String?
   dueAt             DateTime?
   dueNotifiedAt     DateTime?
+
+  // ── Resident draft tracking (public submission flow) ─────
+  // The resident wizard creates a row with status DRAFT after Step 3,
+  // then patches it through Steps 4-5. Submitted reports flip to OPEN.
+  // Cancelled/abandoned drafts stay DRAFT but are filtered out of the
+  // PM kanban unless "Show drafts" is enabled.
+  submittedAt       DateTime?
+  cancelledAt       DateTime?
+  abandonedAt       DateTime?
+  lastStepCompleted Int?
+  triageAnswers     Json?
 
   parent          MaintenanceItem?        @relation("MergedTickets", fields: [parentTicketId], references: [id])
   children        MaintenanceItem[]       @relation("MergedTickets")
