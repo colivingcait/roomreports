@@ -12,6 +12,7 @@
 
 import prisma from './prisma.js';
 import { notify, notifyMany, pmAndOwnerIds, summaryList } from './notifications.js';
+import { appOrigin } from './appUrl.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OVERDUE_THRESHOLD_DAYS = 7;
@@ -99,7 +100,7 @@ async function runOverdueJob() {
       email: {
         subject: `${items.length} overdue maintenance ticket${items.length === 1 ? '' : 's'}`,
         ctaLabel: 'Open maintenance board',
-        ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}/maintenance`,
+        ctaHref: `${appOrigin()}/maintenance`,
         bodyHtml: `
           <p style="margin:0 0 12px;">These tickets have been open for more than ${OVERDUE_THRESHOLD_DAYS} days:</p>
           <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">${rowsHtml}</table>
@@ -189,7 +190,7 @@ async function runWeeklyDigest() {
         email: {
           subject: `Weekly summary — ${org.name}`,
           ctaLabel: 'Open dashboard',
-          ctaHref: `${(process.env.APP_URL || '').replace(/\/$/, '')}/dashboard`,
+          ctaHref: `${appOrigin()}/dashboard`,
           bodyHtml,
         },
       });
@@ -245,7 +246,7 @@ async function runDeferredReactivateJob() {
     byOrg.get(item.organizationId).push(item);
   }
 
-  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const origin = appOrigin();
   for (const [orgId, items] of byOrg) {
     const ids = await pmAndOwnerIds(orgId);
     if (ids.length === 0) continue;
@@ -302,7 +303,7 @@ async function runFollowUpDueJob() {
   });
   if (due.length === 0) return;
 
-  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const origin = appOrigin();
   const byOrg = new Map();
   for (const item of due) {
     if (!byOrg.has(item.organizationId)) byOrg.set(item.organizationId, []);

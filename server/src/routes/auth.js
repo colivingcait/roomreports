@@ -10,6 +10,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { verifyPropertyInvite } from '../lib/propertyInvite.js';
 import { notify, notifyMany, esc } from '../lib/notifications.js';
 import { sendEmail } from '../lib/email.js';
+import { appOrigin } from '../lib/appUrl.js';
 
 const router = Router();
 
@@ -289,7 +290,7 @@ router.post('/signup', async (req, res) => {
 
 async function notifyInviteAccepted(invite, newUser) {
   if (!invite?.organizationId) return;
-  const origin = (process.env.APP_URL || '').replace(/\/$/, '');
+  const origin = appOrigin();
 
   // Notify the inviter plus every active OWNER in the org so the
   // account owner always sees these — even when a PM did the inviting.
@@ -659,13 +660,6 @@ router.get('/google/callback', async (req, res) => {
 
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function appOrigin(req) {
-  const env = process.env.APP_URL;
-  if (env) return env.replace(/\/$/, '');
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}`;
-}
 
 // POST /api/auth/forgot-password — { email }
 // Always returns success to avoid leaking which emails exist.
@@ -682,7 +676,7 @@ router.post('/forgot-password', async (req, res) => {
         data: { userId: user.id, token, expiresAt },
       });
 
-      const resetUrl = `${appOrigin(req)}/reset-password?token=${encodeURIComponent(token)}`;
+      const resetUrl = `${appOrigin()}/reset-password?token=${encodeURIComponent(token)}`;
       const html = `
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#3B3634;background:#FAF8F5;">
           <h1 style="margin:0 0 12px;font-size:22px;color:#3B3634;">Reset your RoomReport password</h1>
