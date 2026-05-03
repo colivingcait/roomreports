@@ -20,6 +20,14 @@ const INITIALS_PALETTE = [
   { bg: '#EAF3DE', fg: '#27500A' }, // green
 ];
 
+const GRADE_COLORS = {
+  A: { bg: '#E5F4E5', fg: '#27500A', border: '#B7DDB1' },
+  B: { bg: '#EDF6E2', fg: '#446B16', border: '#CDE3B0' },
+  C: { bg: '#FAEEDA', fg: '#7A4D08', border: '#E5CFA1' },
+  D: { bg: '#FCE7DA', fg: '#7A330C', border: '#E8B898' },
+  F: { bg: '#FCDDD9', fg: '#7A1A18', border: '#E8A39E' },
+};
+
 function fmtInspectionDate(date) {
   if (!date) return null;
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -32,6 +40,22 @@ const api = (path, opts = {}) =>
       if (!r.ok) throw new Error(d.error);
       return d;
     });
+
+function CountDot({ count, kind }) {
+  // kind: 'maint' | 'violation' — both follow the same red/amber/green
+  // ladder, just with different breakpoints. Maintenance lets 1–4 sit
+  // in amber; violations escalate to red on the very first one.
+  let color;
+  if (count === 0) color = '#639922';
+  else if (kind === 'maint') color = count >= 5 ? '#E24B4A' : '#BA7517';
+  else color = '#E24B4A';
+  return (
+    <span className="props-row-count">
+      <span className="props-row-count-dot" style={{ background: color }} />
+      <span className="props-row-count-num">{count}</span>
+    </span>
+  );
+}
 
 export default function PropertyHealth() {
   const [properties, setProperties] = useState([]);
@@ -117,6 +141,13 @@ export default function PropertyHealth() {
     }
   };
 
+  // Sort order is locked alphabetical; we keep a stable color per
+  // property by using its position in the alphabetized list.
+  const propsWithIdx = sorted.map((p, idx) => ({
+    ...p,
+    palette: INITIALS_PALETTE[idx % INITIALS_PALETTE.length],
+  }));
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -143,44 +174,93 @@ export default function PropertyHealth() {
           <button className="btn-outline-sm" onClick={handleAddClick}>Add your first property</button>
         </div>
       ) : (
-        <div className="props-grid">
-          {sorted.map((p, idx) => {
+        <div className="props-list">
+          <div className="props-list-header">
+            <div className="props-col-name">Property</div>
+            <div className="props-col-grade">Health</div>
+            <div className="props-col-rooms">Rooms</div>
+            <div className="props-col-maint">Maintenance</div>
+            <div className="props-col-viol">Violations</div>
+            <div className="props-col-inspected">Last Inspected</div>
+          </div>
+
+          {propsWithIdx.map((p) => {
             const open = p.health?.openMaintenanceCount || 0;
+            const violCount = p.health?.activeViolationCount || 0;
+            const grade = p.health?.grade || null;
             const last = p.health?.lastInspection;
             const roomCount = p._count?.rooms || 0;
-            const palette = INITIALS_PALETTE[idx % INITIALS_PALETTE.length];
-            const dotColor = open >= 5 ? '#E24B4A' : open > 0 ? '#BA7517' : '#639922';
-            const dotLabel = open === 0 ? 'All clear' : `${open} open`;
-            const inspectionLabel = last ? fmtInspectionDate(last.date) : 'Never inspected';
+            const inspectionLabel = last ? fmtInspectionDate(last.date) : 'Never';
+            const gradeStyle = grade ? GRADE_COLORS[grade] : null;
+
             return (
               <button
                 key={p.id}
-                className="props-card"
+                className="props-row"
                 onClick={() => navigate(`/properties/${p.id}/overview`)}
               >
-                <div className="props-card-head">
-                  <div
-                    className="props-card-initials"
-                    style={{ background: palette.bg, color: palette.fg }}
-                  >
-                    {initialsOf(p.name)}
-                  </div>
-                  <div className="props-card-id">
-                    <div className="props-card-name">{p.name}</div>
-                    <div className="props-card-rooms">
-                      {roomCount} {roomCount === 1 ? 'room' : 'rooms'}
+                <div className="props-row-name">
+                  {p.imageUrl ? (
+                    <img className="props-row-thumb" src={p.imageUrl} alt="" />
+                  ) : (
+                    <div
+                      className="props-row-initials"
+                      style={{ background: p.palette.bg, color: p.palette.fg }}
+                    >
+                      {initialsOf(p.name)}
                     </div>
+                  )}
+                  <div className="props-row-id">
+                    <div className="props-row-pname">{p.name}</div>
+                    {p.address && (
+                      <div className="props-row-address">{p.address}</div>
+                    )}
                   </div>
                 </div>
-                <div className="props-card-divider" />
-                <div className="props-card-foot">
-                  <span className="props-card-status">
-                    <span className="props-card-dot" style={{ background: dotColor }} />
-                    {dotLabel}
-                  </span>
-                  <span className={`props-card-inspected ${last ? '' : 'props-card-inspected-never'}`}>
-                    {inspectionLabel}
-                  </span>
+
+                <div className="props-row-grade">
+                  {grade ? (
+                    <span
+                      className="props-row-grade-badge"
+                      style={{
+                        background: gradeStyle.bg,
+                        color: gradeStyle.fg,
+                        borderColor: gradeStyle.border,
+                      }}
+                    >
+                      {grade}
+                    </span>
+                  ) : (
+                    <span className="props-row-dim">—</span>
+                  )}
+                </div>
+
+                <div className="props-row-rooms">
+                  {roomCount} {roomCount === 1 ? 'room' : 'rooms'}
+                </div>
+
+                <div className="props-row-maint">
+                  <CountDot count={open} kind="maint" />
+                </div>
+
+                <div className="props-row-viol">
+                  <CountDot count={violCount} kind="violation" />
+                </div>
+
+                <div className="props-row-inspected">
+                  {last ? (
+                    <span>{inspectionLabel}</span>
+                  ) : (
+                    <span className="props-row-dim">Never</span>
+                  )}
+                </div>
+
+                {/* Mobile-only summary line — hidden on desktop */}
+                <div className="props-row-mobile-meta">
+                  <CountDot count={open} kind="maint" />
+                  <span className="props-row-mobile-label">maintenance</span>
+                  <CountDot count={violCount} kind="violation" />
+                  <span className="props-row-mobile-label">violations</span>
                 </div>
               </button>
             );
