@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import LogViolation from '../components/LogViolation';
-import ViolationDetailSlideover from '../components/ViolationDetailSlideover';
+import LogViolation from './LogViolation';
+import ViolationDetailSlideover from './ViolationDetailSlideover';
 
 const VIOLATION_TYPE_LABELS = {
   MESSY: 'Messy', BAD_ODOR: 'Bad odor', SMOKING: 'Smoking',
@@ -27,7 +27,6 @@ const ESCALATION_COLORS = {
   FINAL_NOTICE:   '#A02420',
   RESOLVED:       '#2F7A48',
 };
-const ESCALATION_ORDER = ['FLAGGED', 'FIRST_WARNING', 'SECOND_WARNING', 'FINAL_NOTICE'];
 const ESCALATION_WEIGHT = {
   FINAL_NOTICE: 4, SECOND_WARNING: 3, FIRST_WARNING: 2, FLAGGED: 1,
 };
@@ -64,47 +63,46 @@ function SortHeader({ label, field, sortField, sortDir, onSort }) {
   );
 }
 
-export default function Violations() {
+export default function PropertyViolationsTab({ propertyId }) {
   const [violations, setViolations] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState([]);
-  const [showLog, setShowLog] = useState(false);
-  const [viewingId, setViewingId] = useState(null);
-
   const [filterStatus, setFilterStatus] = useState('ACTIVE');
   const [filterType, setFilterType] = useState('');
-  const [filterLevel, setFilterLevel] = useState('');
-  const [filterProp, setFilterProp] = useState('');
+  const [showLog, setShowLog] = useState(false);
+  const [viewingId, setViewingId] = useState(null);
   const [sortField, setSortField] = useState('default');
   const [sortDir, setSortDir] = useState('asc');
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ propertyId });
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (filterType) params.set('violationType', filterType);
-    if (filterLevel) params.set('escalationLevel', filterLevel);
-    if (filterProp) params.set('propertyId', filterProp);
     try {
       const r = await fetch(`/api/violations?${params}`, { credentials: 'include' });
       const d = await r.json();
       setViolations(d.violations || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [filterStatus, filterType, filterLevel, filterProp]);
+  }, [propertyId, filterStatus, filterType]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    fetch('/api/properties', { credentials: 'include' })
+    fetch(`/api/properties/${propertyId}/overview`, { credentials: 'include' })
       .then((r) => r.json())
-      .then((d) => setProperties(d.properties || []))
+      .then((d) => setRooms(d.rooms || []))
       .catch(() => {});
-  }, []);
+  }, [propertyId]);
 
   const handleSort = (field) => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortField(field); setSortDir('asc'); }
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
   };
 
   const sorted = useMemo(() => {
@@ -125,7 +123,6 @@ export default function Violations() {
     arr.sort((a, b) => {
       let av, bv;
       switch (sortField) {
-        case 'property': av = a.property?.name || ''; bv = b.property?.name || ''; break;
         case 'room': av = a.room?.label || ''; bv = b.room?.label || ''; break;
         case 'resident': av = a.residentName || ''; bv = b.residentName || ''; break;
         case 'type': av = a.typeLabel || a.category || ''; bv = b.typeLabel || b.category || ''; break;
@@ -150,19 +147,9 @@ export default function Violations() {
     return arr;
   }, [violations, sortField, sortDir]);
 
-  const hasActiveFilters = filterType || filterLevel || filterProp || filterStatus !== 'ACTIVE';
-
   return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1>Lease Violations</h1>
-          <p className="page-subtitle">{violations.length} record{violations.length === 1 ? '' : 's'}</p>
-        </div>
-        <button className="btn-primary" onClick={() => setShowLog(true)}>+ Log Violation</button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+    <div style={{ padding: '16px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <select className="filter-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="ACTIVE">Active</option>
           <option value="RESOLVED">Resolved</option>
@@ -174,30 +161,12 @@ export default function Violations() {
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <select className="filter-select" value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)}>
-          <option value="">All levels</option>
-          {ESCALATION_ORDER.map((l) => (
-            <option key={l} value={l}>{ESCALATION_LABELS[l] || l}</option>
-          ))}
-        </select>
-        {properties.length > 0 && (
-          <select className="filter-select" value={filterProp} onChange={(e) => setFilterProp(e.target.value)}>
-            <option value="">All properties</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        )}
-        {hasActiveFilters && (
-          <button
-            className="btn-text-sm"
-            onClick={() => { setFilterStatus('ACTIVE'); setFilterType(''); setFilterLevel(''); setFilterProp(''); }}
-          >
-            Clear filters
-          </button>
-        )}
+        <div style={{ flex: 1 }} />
+        <button className="btn-primary-sm" onClick={() => setShowLog(true)}>+ Log Violation</button>
       </div>
 
       {loading ? (
-        <div className="page-loading">Loading violations...</div>
+        <div className="page-loading" style={{ padding: 16 }}>Loading...</div>
       ) : sorted.length === 0 ? (
         <div className="empty-state" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
           <p className="empty-text">No violations recorded.</p>
@@ -210,7 +179,6 @@ export default function Violations() {
           <table className="fin-table">
             <thead>
               <tr>
-                <SortHeader label="Property" field="property" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Room" field="room" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Resident" field="resident" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Type" field="type" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
@@ -229,7 +197,6 @@ export default function Violations() {
                     className="fin-row-clickable"
                     onClick={() => setViewingId(v.id)}
                   >
-                    <td>{v.property?.name || '—'}</td>
                     <td>{v.room?.label || <span className="fin-muted">Property-wide</span>}</td>
                     <td>{v.residentName || <span className="fin-muted">—</span>}</td>
                     <td>{v.typeLabel || VIOLATION_TYPE_LABELS[v.violationType] || v.category || '—'}</td>
@@ -248,6 +215,8 @@ export default function Violations() {
       <LogViolation
         open={showLog}
         onClose={() => setShowLog(false)}
+        propertyId={propertyId}
+        rooms={rooms}
         onCreated={() => { setShowLog(false); load(); }}
       />
 

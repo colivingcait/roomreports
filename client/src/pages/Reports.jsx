@@ -610,15 +610,20 @@ function ViolationReports() {
       promptUpgrade({ feature: 'csvExport' });
       return;
     }
-    const rows = [['Property', 'Room', 'Category', 'Created', 'Resolved', 'Description']];
+    const rows = [['Property', 'Room', 'Resident', 'Violation Type', 'Escalation Level', 'Created', 'Status', 'Resolved', 'Resolution']];
     for (const v of filtered) {
+      const typeLabel = v.violationType ? (VIOLATION_TYPE_LABELS[v.violationType] || v.violationType) : (v.category || '');
+      const escalLabel = ESCALATION_LABELS[v.escalationLevel] || v.escalationLevel || 'Flagged';
       rows.push([
         v.property?.name || '',
         v.room?.label || '',
-        v.category || '',
+        v.residentName || '',
+        typeLabel,
+        escalLabel,
         v.createdAt ? new Date(v.createdAt).toISOString() : '',
+        v.resolvedAt ? 'Resolved' : 'Active',
         v.resolvedAt ? new Date(v.resolvedAt).toISOString() : '',
-        v.description || '',
+        v.resolvedType ? v.resolvedType.replace(/_/g, ' ').toLowerCase() : '',
       ]);
     }
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -629,6 +634,23 @@ function ViolationReports() {
     a.download = `violations-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const VIOLATION_TYPE_LABELS = {
+    MESSY: 'Messy', BAD_ODOR: 'Bad odor', SMOKING: 'Smoking',
+    UNAUTHORIZED_GUESTS: 'Unauthorized guests', PETS: 'Pets', OPEN_FOOD: 'Open food',
+    PESTS: 'Pests/bugs', OPEN_FLAMES: 'Open flames/candles',
+    OVERLOADED_OUTLETS: 'Overloaded outlets',
+    KITCHEN_APPLIANCES: 'Kitchen appliances', LITHIUM_BATTERIES: 'Lithium batteries',
+    MODIFICATIONS: 'Modifications', DRUG_PARAPHERNALIA: 'Drug paraphernalia',
+    WEAPONS: 'Weapons', UNCLEAR_EGRESS: 'Unclear egress path',
+    NOISE: 'Noise', OTHER: 'Other',
+  };
+  const ESCALATION_LABELS = { FLAGGED: 'Flagged', FIRST_WARNING: '1st Warning', SECOND_WARNING: '2nd Warning', FINAL_NOTICE: 'Final Notice' };
+  const ESCALATION_STYLES = {
+    FLAGGED: { bg: '#F3F0EC', color: '#8A8583' }, FIRST_WARNING: { bg: '#FEF3C7', color: '#B45309' },
+    SECOND_WARNING: { bg: '#FFEDD5', color: '#C2410C' }, FINAL_NOTICE: { bg: '#FEE2E2', color: '#991B1B' },
+    RESOLVED: { bg: '#DCFCE7', color: '#166534' },
   };
 
   if (!can('leaseViolations')) {
@@ -687,27 +709,33 @@ function ViolationReports() {
         <div className="violation-list">
           {filtered.length === 0 ? (
             <div className="empty-state"><p>No violations match these filters.</p></div>
-          ) : (
-            filtered.map((v) => (
-              <div key={v.id} className="violation-card">
-                <div className="violation-card-head">
-                  <div>
-                    <div className="violation-card-title">{v.category || 'Violation'}</div>
-                    <div className="violation-card-meta">
-                      {v.property?.name}{v.room ? ` — ${v.room.label}` : ''} &middot;{' '}
-                      {new Date(v.createdAt).toLocaleDateString()}
-                      {v.resolvedAt && <> &middot; Resolved {new Date(v.resolvedAt).toLocaleDateString()}</>}
+          ) : filtered.map((v) => {
+              const typeLabel = v.violationType ? (VIOLATION_TYPE_LABELS[v.violationType] || v.violationType) : (v.category || 'Violation');
+              const escalKey = v.resolvedAt ? 'RESOLVED' : (v.escalationLevel || 'FLAGGED');
+              const escalStyle = ESCALATION_STYLES[escalKey] || {};
+              const escalLabel = v.resolvedAt ? 'Resolved' : (ESCALATION_LABELS[v.escalationLevel] || v.escalationLevel || 'Flagged');
+              return (
+                <div key={v.id} className="violation-card">
+                  <div className="violation-card-head">
+                    <div>
+                      <div className="violation-card-title">{typeLabel}</div>
+                      <div className="violation-card-meta">
+                        {v.property?.name}{v.room ? ` — ${v.room.label}` : ''}
+                        {v.residentName && <> &middot; {v.residentName}</>}
+                        {' '}&middot; {new Date(v.createdAt).toLocaleDateString()}
+                        {v.resolvedAt && <> &middot; Resolved {new Date(v.resolvedAt).toLocaleDateString()}</>}
+                      </div>
                     </div>
+                    <span style={{
+                      display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
+                      background: escalStyle.bg, color: escalStyle.color,
+                    }}>{escalLabel}</span>
                   </div>
-                  <span className={`insp-status-badge ${v.resolvedAt ? 'resolved' : 'active'}`}>
-                    {v.resolvedAt ? 'Resolved' : 'Open'}
-                  </span>
+                  {v.note && <div className="violation-card-note">{v.note}</div>}
                 </div>
-                {v.description && <div className="violation-card-desc">{v.description}</div>}
-                {v.note && <div className="violation-card-note">{v.note}</div>}
-              </div>
-            ))
-          )}
+              );
+            })
+          }
         </div>
       )}
     </>

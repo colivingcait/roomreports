@@ -337,6 +337,7 @@ router.get('/', async (req, res) => {
         roomId: true,
         createdAt: true,
         category: true,
+        escalationLevel: true,
       },
     });
     // Resolve room labels for the rooms referenced by active violations.
@@ -350,8 +351,11 @@ router.get('/', async (req, res) => {
       for (const r of rrRooms) violationRoomMap[r.id] = r.label;
     }
     const violationCountByProp = {};
+    const violationsByEscalation = { FLAGGED: 0, FIRST_WARNING: 0, SECOND_WARNING: 0, FINAL_NOTICE: 0 };
     for (const v of activeViolations) {
       violationCountByProp[v.propertyId] = (violationCountByProp[v.propertyId] || 0) + 1;
+      const level = v.escalationLevel || 'FLAGGED';
+      if (level in violationsByEscalation) violationsByEscalation[level]++;
     }
 
     // ── Action items ──
@@ -729,6 +733,10 @@ router.get('/', async (req, res) => {
       recentActivity: recentActivityFeed,
       portfolioInsights,
       avgResolutionDays,
+      violations: {
+        total: activeViolations.length,
+        byEscalation: violationsByEscalation,
+      },
     });
   } catch (error) {
     console.error('Dashboard error:', error);

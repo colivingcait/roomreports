@@ -7,8 +7,9 @@ import PropertyHealthTab from '../components/PropertyHealthTab';
 import PropertyRoomTable from '../components/PropertyRoomTable';
 import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
 import PropertyInsightsTab from '../components/PropertyInsightsTab';
-import ViolationDetailModal from '../components/ViolationDetailModal';
+import ViolationDetailSlideover from '../components/ViolationDetailSlideover';
 import MaintenanceDetailModal from '../components/MaintenanceDetailModal';
+import PropertyViolationsTab from '../components/PropertyViolationsTab';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -217,10 +218,19 @@ export default function PropertyOverview() {
           className={`pd-tab ${activeTab === 'insights' ? 'pd-tab-active' : ''}`}
           onClick={() => setActiveTab('insights')}
         >Insights</button>
+        <button
+          className={`pd-tab ${activeTab === 'violations' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('violations')}
+        >
+          Violations{violations.filter((v) => !v.resolvedAt && !v.archivedAt).length > 0
+            ? ` (${violations.filter((v) => !v.resolvedAt && !v.archivedAt).length})`
+            : ''}
+        </button>
       </div>
 
       {activeTab === 'analytics' && <PropertyAnalyticsTab propertyId={id} />}
       {activeTab === 'insights' && <PropertyInsightsTab propertyId={id} />}
+      {activeTab === 'violations' && <PropertyViolationsTab propertyId={id} />}
 
       {activeTab === 'overview' && (<>
       {/* ─── ROOM TABLE ─── */}
@@ -365,10 +375,20 @@ export default function PropertyOverview() {
 
       </>)}
 
-      <ViolationDetailModal
-        violationId={viewingViolationId}
-        onClose={() => setViewingViolationId(null)}
-      />
+      {viewingViolationId && (
+        <ViolationDetailSlideover
+          violationId={viewingViolationId}
+          onClose={() => setViewingViolationId(null)}
+          onUpdated={() => {
+            // Refresh the property's violation list so badge counts and
+            // row state reflect any escalation/resolution changes.
+            fetch(`/api/violations?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
+              .then((r) => r.json())
+              .then((d) => setViolations(d.violations || []))
+              .catch(() => {});
+          }}
+        />
+      )}
       <MaintenanceDetailModal
         ticketId={viewingTicketId}
         onClose={() => setViewingTicketId(null)}

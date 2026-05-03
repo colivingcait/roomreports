@@ -531,11 +531,70 @@ model LeaseViolation {
   archivedReason   String?
   deletedAt        DateTime?
 
-  actions LeaseViolationAction[]
+  // ── v2 fields ──────────────────────────────────────────
+  residentName     String?
+  // violationType: MESSY | BAD_ODOR | SMOKING | UNAUTHORIZED_GUESTS | PETS |
+  //   OPEN_FOOD | PESTS | OPEN_FLAMES | OVERLOADED_OUTLETS | KITCHEN_APPLIANCES |
+  //   LITHIUM_BATTERIES | MODIFICATIONS | DRUG_PARAPHERNALIA | WEAPONS |
+  //   UNCLEAR_EGRESS | NOISE | OTHER
+  violationType    String?
+  otherDescription String?
+  // escalationLevel: FLAGGED | FIRST_WARNING | SECOND_WARNING | FINAL_NOTICE
+  escalationLevel  String    @default("FLAGGED")
+  // resolvedType: RESOLVED_BY_RESIDENT | WARNING_ISSUED | FINE_ASSESSED |
+  //   LEASE_TERMINATION | DISMISSED
+  resolvedType     String?
+  resolvedNote     String?
+  resolvedById     String?
+
+  actions         LeaseViolationAction[]
+  timelineEntries ViolationTimelineEntry[]
+  photos          ViolationPhoto[]
 
   @@index([organizationId])
   @@index([propertyId])
+  @@index([escalationLevel])
   @@map("lease_violations")
+}
+
+// ─── ViolationTimelineEntry ──────────────────────────────
+// Immutable legal record — no edit or delete allowed.
+
+model ViolationTimelineEntry {
+  id           String    @id @default(cuid())
+  violationId  String
+  // actionType: FLAGGED | FIRST_WARNING | SECOND_WARNING | FINAL_NOTICE | RESOLVED | NOTE
+  actionType   String
+  date         DateTime  @default(now())
+  // method: VERBAL | TEXT | EMAIL | POSTED_NOTICE | PADSPLIT_MESSAGE | OTHER
+  method       String?
+  notes        String?
+  loggedById   String?
+  loggedByName String
+  createdAt    DateTime  @default(now())
+
+  violation LeaseViolation @relation(fields: [violationId], references: [id])
+  photos    ViolationPhoto[]
+
+  @@index([violationId])
+  @@map("violation_timeline_entries")
+}
+
+// ─── ViolationPhoto ──────────────────────────────────────
+
+model ViolationPhoto {
+  id              String    @id @default(cuid())
+  violationId     String
+  timelineEntryId String?
+  url             String
+  key             String
+  createdAt       DateTime  @default(now())
+
+  violation     LeaseViolation          @relation(fields: [violationId], references: [id])
+  timelineEntry ViolationTimelineEntry? @relation(fields: [timelineEntryId], references: [id])
+
+  @@index([violationId])
+  @@map("violation_photos")
 }
 
 // ─── LeaseViolationAction ───────────────────────────────
