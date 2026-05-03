@@ -79,6 +79,13 @@ router.get('/invite/:token', async (req, res) => {
     else if (invite.revokedAt) status = 'REVOKED';
     else if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) status = 'EXPIRED';
 
+    // Tell the client whether the invited email already has an
+    // account so the signup page can route them to a "Sign in to
+    // accept" flow instead of the new-user signup form.
+    const existingUser = await prisma.user.findUnique({
+      where: { email: invite.email.toLowerCase() },
+      select: { id: true },
+    });
     return res.json({
       email: invite.email,
       name: invite.name,
@@ -88,6 +95,7 @@ router.get('/invite/:token', async (req, res) => {
       inviterName: invite.invitedBy?.name,
       status,
       expiresAt: invite.expiresAt,
+      existingUser: !!existingUser,
     });
   } catch (error) {
     console.error('Invite info error:', error);
@@ -554,6 +562,33 @@ router.get('/google/callback', async (req, res) => {
           where: { id: user.id },
           data: { googleId: googleUser.sub },
         });
+      }
+      // Existing user accepting a team invite via Google: add a
+      // membership row instead of creating a new account, copy
+      // property assignments, and switch their active org so they
+      // land on the right dashboard.
+      if (teamInvite) {
+        const { ensureMembership, switchActiveOrg } = await import('../lib/orgMembership.js');
+        await ensureMembership({
+          userId: user.id,
+          organizationId: teamInvite.organizationId,
+          role: teamInvite.role,
+          customRole: teamInvite.customRole,
+          invitedById: teamInvite.invitedById,
+        });
+        const propIds = Array.isArray(teamInvite.propertyIds) ? teamInvite.propertyIds : [];
+        if (propIds.length > 0) {
+          await prisma.propertyAssignment.createMany({
+            data: propIds.map((pid) => ({ userId: user.id, propertyId: pid })),
+            skipDuplicates: true,
+          });
+        }
+        await prisma.invitation.update({
+          where: { id: teamInvite.id },
+          data: { acceptedAt: new Date(), status: 'ACCEPTED' },
+        });
+        await switchActiveOrg(user.id, teamInvite.organizationId);
+        try { await notifyInviteAccepted(teamInvite, user); } catch (e) { console.error(e); }
       }
     } else if (teamInvite) {
       // New user accepting a team invite: join the inviter's org

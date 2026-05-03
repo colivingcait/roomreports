@@ -128,6 +128,31 @@ export default function Signup() {
     }
 
     const roleHuman = roleLabel(teamInviteInfo.role, teamInviteInfo.customRole);
+
+    // Existing-user path: send them to login with the invite token in
+    // the redirect; the login flow accepts the invite via
+    // /api/team/invitations/:token/accept-as-existing once they're
+    // signed in.
+    if (teamInviteInfo.existingUser) {
+      const next = `/login?invite=${encodeURIComponent(teamInviteToken)}`;
+      return (
+        <>
+          <h2>Join {teamInviteInfo.organizationName}</h2>
+          <p style={{ fontSize: '0.9rem', color: '#5A5550', marginTop: '-0.25rem', marginBottom: '1.25rem' }}>
+            You already have a RoomReport account.
+            {teamInviteInfo.inviterName ? ` ${teamInviteInfo.inviterName} invited you` : ' You\'ve been invited'}
+            {' '}as a {roleHuman}.
+          </p>
+          <p style={{ fontSize: '0.8rem', color: '#8A8583', marginBottom: '1.25rem' }}>
+            Sign in with <strong>{teamInviteInfo.email}</strong> to add this organization to your account.
+          </p>
+          <Link to={next} className="btn-primary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            Sign in to accept
+          </Link>
+        </>
+      );
+    }
+
     return (
       <>
         <form onSubmit={handleSubmit} className="auth-form">
