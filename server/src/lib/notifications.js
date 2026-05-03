@@ -27,8 +27,7 @@ const BRAND_BORDER = '#E8E4E1';
 function appOrigin() {
   const fromEnv = process.env.APP_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, '');
-  if (process.env.NODE_ENV === 'production') return 'https://app.roomreport.co';
-  return 'http://localhost:5173';
+  return 'https://app.roomreport.co';
 }
 
 export function emailShell({ preheader = '', title, bodyHtml, ctaLabel, ctaHref, footerNote }) {
