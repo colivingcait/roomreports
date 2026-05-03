@@ -216,6 +216,10 @@ model Property {
   address        String
   metroArea      String?
   imageUrl       String?
+  // Per-property common-area labels surfaced in the resident maintenance
+  // report flow (e.g. "Upstairs shared bath", "Downstairs kitchen").
+  // When empty, the resident wizard falls back to a generic default set.
+  commonAreas    String[] @default([])
   organizationId String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

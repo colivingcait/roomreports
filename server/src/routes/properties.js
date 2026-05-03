@@ -1176,14 +1176,22 @@ router.put('/:id', requireRole('OWNER', 'PM'), async (req, res) => {
       return res.status(404).json({ error: 'Property not found' });
     }
 
-    const { name, address, metroArea } = req.body;
+    const { name, address, metroArea, commonAreas } = req.body;
+    const data = {
+      ...(name !== undefined && { name }),
+      ...(address !== undefined && { address }),
+      ...(metroArea !== undefined && { metroArea: metroArea || null }),
+    };
+    if (commonAreas !== undefined) {
+      // Trim, drop empties, dedupe — keep input forgiving.
+      const cleaned = (Array.isArray(commonAreas) ? commonAreas : [])
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+      data.commonAreas = Array.from(new Set(cleaned));
+    }
     const updated = await prisma.property.update({
       where: { id: property.id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(address !== undefined && { address }),
-        ...(metroArea !== undefined && { metroArea: metroArea || null }),
-      },
+      data,
     });
 
     return res.json({ property: updated });

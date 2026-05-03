@@ -8831,16 +8831,15 @@ button.review-photo-thumb {
 }
 .rr-wiz-cat {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
   background: #fff;
   border: 1px solid #E8E4E1;
   border-radius: 12px;
-  padding: 14px;
+  padding: 16px 12px;
   cursor: pointer;
   font-family: inherit;
-  text-align: left;
+  text-align: center;
   min-height: 88px;
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
@@ -8852,8 +8851,43 @@ button.review-photo-thumb {
   background: #F5F8F5;
   box-shadow: 0 0 0 1px #6B8F71;
 }
-.rr-wiz-cat-emoji { font-size: 22px; }
-.rr-wiz-cat-label { font-size: 13px; font-weight: 500; line-height: 1.3; color: #3A3331; }
+.rr-wiz-cat-label { font-size: 14px; font-weight: 500; line-height: 1.3; color: #3A3331; }
+
+/* Subcategory chips on Step 5 */
+.rr-wiz-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.rr-wiz-chip {
+  background: #fff;
+  border: 1px solid #D4D0CE;
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 38px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #3A3331;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.rr-wiz-chip:hover:not(:disabled) { border-color: #B5B0AB; }
+.rr-wiz-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.rr-wiz-chip-selected {
+  background: #F5F8F5;
+  border-color: #6B8F71;
+  color: #2F5034;
+  font-weight: 600;
+}
+
+/* Back / Next nav row at the bottom of every step */
+.rr-wiz-nav {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.rr-wiz-nav .rr-wiz-btn { flex: 1; margin-top: 0; }
 
 .rr-wiz-choice-row,
 .rr-wiz-choice-grid {
@@ -8938,6 +8972,17 @@ button.review-photo-thumb {
   font-size: 16px;
   cursor: pointer;
   line-height: 1;
+}
+.rr-wiz-photo-blur {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: #BA7517;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 /* ─── Modals (cancel confirm + emergency/advisory) ──── */
