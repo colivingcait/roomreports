@@ -51,9 +51,53 @@ function Sparkline({ points }) {
   return (
     <svg width={W} height={H} className="prt-spark">
       <path d={path} fill="none" stroke="#6B8F71" strokeWidth="1.5" />
+      {points.map((p, i) => {
+        const x = i * step;
+        const y = H - ((p.host - min) / range) * H;
+        const monthLabel = p.month
+          ? new Date(`${p.month}-01`).toLocaleString('en-US', { month: 'short', year: '2-digit' })
+          : '';
+        const valLabel = `$${Math.round(p.host || 0).toLocaleString()}`;
+        return (
+          <circle key={i} cx={x} cy={y} r={3} fill="#6B8F71">
+            <title>{monthLabel ? `${monthLabel}: ${valLabel}` : valLabel}</title>
+          </circle>
+        );
+      })}
     </svg>
   );
 }
+
+// Maintenance ticket status colors — mirrors MaintenanceDetailModal so the
+// expanded room badges match the rest of the app.
+const MAINT_STATUS_LABELS = {
+  OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress',
+  RESOLVED: 'Resolved', DEFERRED: 'Deferred',
+};
+const MAINT_STATUS_COLORS = {
+  OPEN: '#C0392B', ASSIGNED: '#BA7517', IN_PROGRESS: '#3B6D8A',
+  RESOLVED: '#2F7A48', DEFERRED: '#8A8580',
+};
+
+const VIOLATION_TYPE_LABELS = {
+  MESSY: 'Messy', BAD_ODOR: 'Bad odor', SMOKING: 'Smoking',
+  UNAUTHORIZED_GUESTS: 'Unauthorized guests', PETS: 'Pets',
+  OPEN_FOOD: 'Open food', PESTS: 'Pests/bugs',
+  OPEN_FLAMES: 'Open flames/candles', OVERLOADED_OUTLETS: 'Overloaded outlets',
+  KITCHEN_APPLIANCES: 'Kitchen appliances', LITHIUM_BATTERIES: 'Lithium batteries',
+  MODIFICATIONS: 'Modifications', DRUG_PARAPHERNALIA: 'Drug paraphernalia',
+  WEAPONS: 'Weapons', UNCLEAR_EGRESS: 'Unclear egress', NOISE: 'Noise', OTHER: 'Other',
+};
+const ESCALATION_LABELS = {
+  FLAGGED: 'Flagged', FIRST_WARNING: '1st Warning',
+  SECOND_WARNING: '2nd Warning', FINAL_NOTICE: 'Final Notice',
+};
+const ESCALATION_COLORS = {
+  FLAGGED:        '#8A8580',
+  FIRST_WARNING:  '#BA7517',
+  SECOND_WARNING: '#C0392B',
+  FINAL_NOTICE:   '#A02420',
+};
 
 const COLUMNS = [
   { key: 'roomNumber', label: 'Room', sortable: true },
@@ -77,6 +121,7 @@ export default function PropertyRoomTable({
   onTurn,           // (room) => void
   onViolationClick, // (violationId) => void
   onTicketClick,    // (ticketId) => void
+  onLogViolation,   // (room) => void  — opens LogViolation pre-filled
 }) {
   const navigate = useNavigate();
   const [sortKey, setSortKey] = useState('roomNumber');
@@ -255,10 +300,19 @@ export default function PropertyRoomTable({
                           && !m.archivedAt
                           && ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(m.status)
                         ))}
-                        violations={(violations || []).filter((v) => v.roomId === r.id)}
+                        violations={(violations || []).filter((v) => (
+                          // Quick-glance operational view — only show
+                          // ACTIVE violations. Resolved/archived live in
+                          // the violation history.
+                          v.roomId === r.id
+                          && !v.resolvedAt
+                          && !v.archivedAt
+                          && !v.deletedAt
+                        ))}
                         onNavigate={navigate}
                         onViolationClick={onViolationClick}
                         onTicketClick={onTicketClick}
+                        onLogViolation={onLogViolation}
                         propertyId={propertyId}
                       />
                     </td>
@@ -273,9 +327,12 @@ export default function PropertyRoomTable({
   );
 }
 
-function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, onViolationClick, onTicketClick, propertyId }) {
+function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigate, onViolationClick, onTicketClick, onLogViolation, propertyId }) {
+  // Stop expand/collapse from firing when the user clicks anywhere inside
+  // the expanded panel — only the row header should toggle.
+  const stop = (e) => e.stopPropagation();
   return (
-    <div className="prt-detail">
+    <div className="prt-detail" onClick={stop}>
       <div className="prt-detail-grid">
         <div>
           <div className="prt-detail-label">Features</div>
@@ -304,17 +361,29 @@ function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigat
           {maintItems.length === 0 ? (
             <span className="prt-dim">None</span>
           ) : (
-            <ul className="prt-detail-list">
-              {maintItems.slice(0, 5).map((m) => (
-                <li
-                  key={m.id}
-                  onClick={(e) => { e.stopPropagation(); onTicketClick?.(m.id); }}
-                >
-                  <span>{m.description}</span>
-                  <span className="prt-dim">{m.flagCategory}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="prt-chip-list">
+              {maintItems.slice(0, 5).map((m) => {
+                const color = MAINT_STATUS_COLORS[m.status] || '#8A8580';
+                const label = MAINT_STATUS_LABELS[m.status] || m.status;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="prt-maint-chip"
+                    onClick={(e) => { e.stopPropagation(); onTicketClick?.(m.id); }}
+                    title={`${m.description} · ${label}`}
+                  >
+                    <span className="prt-chip-title">{m.description}</span>
+                    <span
+                      className="prt-status-pill"
+                      style={{ color, borderColor: color }}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -323,37 +392,72 @@ function RoomDetail({ room, finRoom, deferred, maintItems, violations, onNavigat
           {violations.length === 0 ? (
             <span className="prt-dim">None</span>
           ) : (
-            <ul className="prt-detail-list">
-              {violations.slice(0, 5).map((v) => (
-                <li key={v.id} onClick={(e) => { e.stopPropagation(); onViolationClick?.(v.id); }}>
-                  <span>{v.category || 'Violation'}</span>
-                  <span className="prt-dim">{timeAgo(v.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="prt-chip-list">
+              {violations.slice(0, 5).map((v) => {
+                const typeLabel = v.typeLabel
+                  || VIOLATION_TYPE_LABELS[v.violationType]
+                  || v.category
+                  || 'Violation';
+                const lvl = v.escalationLevel || 'FLAGGED';
+                const lvlColor = ESCALATION_COLORS[lvl] || ESCALATION_COLORS.FLAGGED;
+                const lvlLabel = ESCALATION_LABELS[lvl] || lvl;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className="prt-violation-chip"
+                    onClick={(e) => { e.stopPropagation(); onViolationClick?.(v.id); }}
+                    title={`${typeLabel} · ${lvlLabel}`}
+                  >
+                    <span
+                      className="prt-violation-dot"
+                      style={{ background: lvlColor }}
+                      aria-label={lvlLabel}
+                    />
+                    <span className="prt-chip-title">{typeLabel}</span>
+                    <span className="prt-chip-meta">· {lvlLabel}</span>
+                    <span className="prt-chip-meta">· {timeAgo(v.createdAt)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {onLogViolation && (
+            <button
+              type="button"
+              className="prt-add-link"
+              onClick={(e) => { e.stopPropagation(); onLogViolation(room); }}
+            >
+              + Log Violation
+            </button>
           )}
         </div>
 
         {deferred.length > 0 && (
           <div>
             <div className="prt-detail-label">Deferred maintenance</div>
-            <ul className="prt-detail-list">
+            <div className="prt-chip-list">
               {deferred.map((d) => (
-                <li
+                <button
                   key={d.id}
-                  onClick={() => onNavigate(`/maintenance?propertyId=${propertyId}&roomId=${room.id}`)}
+                  type="button"
+                  className="prt-maint-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(`/maintenance?propertyId=${propertyId}&roomId=${room.id}`);
+                  }}
                 >
-                  <span>{d.description}</span>
-                  <span className="prt-dim">
+                  <span className="prt-chip-title">{d.description}</span>
+                  <span className="prt-chip-meta">
                     {d.deferType === 'ROOM_TURN'
                       ? 'Until room turn'
                       : d.deferUntil
                         ? `Until ${fmtDate(d.deferUntil)}`
                         : 'Deferred'}
                   </span>
-                </li>
+                </button>
               ))}
-            </ul>
+            </div>
           </div>
         )}
       </div>

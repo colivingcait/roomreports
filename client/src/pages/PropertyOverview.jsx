@@ -63,6 +63,21 @@ export default function PropertyOverview() {
   const [showStart, setShowStart] = useState(false);
   const [showNewMaint, setShowNewMaint] = useState(false);
   const [showLogViolation, setShowLogViolation] = useState(false);
+  const [logViolationRoomId, setLogViolationRoomId] = useState('');
+
+  // Refresh the violations list AND the overview payload so the
+  // per-room activeViolationCount badges update immediately after a
+  // resolve/escalate/log action.
+  const refreshViolations = () => {
+    fetch(`/api/violations?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setViolations(d.violations || []))
+      .catch(() => {});
+    fetch(`/api/properties/${id}/overview`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {});
+  };
   const [turnoverTarget, setTurnoverTarget] = useState(null);
   const [turningOver, setTurningOver] = useState(false);
   const [turnoverPlan, setTurnoverPlan] = useState(null);
@@ -246,6 +261,10 @@ export default function PropertyOverview() {
           onTurn={openTurnoverModal}
           onViolationClick={setViewingViolationId}
           onTicketClick={setViewingTicketId}
+          onLogViolation={(room) => {
+            setLogViolationRoomId(room?.id || '');
+            setShowLogViolation(true);
+          }}
         />
       </section>
 
@@ -379,14 +398,7 @@ export default function PropertyOverview() {
         <ViolationDetailSlideover
           violationId={viewingViolationId}
           onClose={() => setViewingViolationId(null)}
-          onUpdated={() => {
-            // Refresh the property's violation list so badge counts and
-            // row state reflect any escalation/resolution changes.
-            fetch(`/api/violations?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
-              .then((r) => r.json())
-              .then((d) => setViolations(d.violations || []))
-              .catch(() => {});
-          }}
+          onUpdated={refreshViolations}
         />
       )}
       <MaintenanceDetailModal
@@ -407,10 +419,15 @@ export default function PropertyOverview() {
       />
       <LogViolation
         open={showLogViolation}
-        onClose={() => setShowLogViolation(false)}
+        onClose={() => { setShowLogViolation(false); setLogViolationRoomId(''); }}
         propertyId={property.id}
         rooms={roomCards}
-        onCreated={() => { setShowLogViolation(false); }}
+        defaultRoomId={logViolationRoomId}
+        onCreated={() => {
+          setShowLogViolation(false);
+          setLogViolationRoomId('');
+          refreshViolations();
+        }}
       />
 
       {turnoverTarget && (

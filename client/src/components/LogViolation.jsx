@@ -21,11 +21,11 @@ const VIOLATION_TYPES = [
   { value: 'OTHER',               label: 'Other' },
 ];
 
-export default function LogViolation({ open, onClose, propertyId, rooms = [], onCreated }) {
+export default function LogViolation({ open, onClose, propertyId, rooms = [], defaultRoomId, onCreated }) {
   const [propId, setPropId] = useState(propertyId || '');
   const [properties, setProperties] = useState([]);
   const [propRooms, setPropRooms] = useState(rooms);
-  const [roomId, setRoomId] = useState('');
+  const [roomId, setRoomId] = useState(defaultRoomId || '');
   const [residentName, setResidentName] = useState('');
   const [violationType, setViolationType] = useState('');
   const [otherDescription, setOtherDescription] = useState('');
@@ -60,7 +60,7 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
   useEffect(() => {
     if (!open) {
       setPropId(propertyId || '');
-      setRoomId('');
+      setRoomId(defaultRoomId || '');
       setResidentName('');
       setViolationType('');
       setOtherDescription('');
@@ -70,8 +70,9 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
       setError('');
     } else {
       setPropId(propertyId || '');
+      setRoomId(defaultRoomId || '');
     }
-  }, [open, propertyId]);
+  }, [open, propertyId, defaultRoomId]);
 
   const handlePhotoPick = (e) => {
     const files = Array.from(e.target.files).slice(0, 5);
