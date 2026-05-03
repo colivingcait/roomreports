@@ -38,6 +38,7 @@ export default function Settings() {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [timezone, setTimezone] = useState('');
+  const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
@@ -58,6 +59,7 @@ export default function Settings() {
         setName(d.organization?.name || '');
         setSlug(d.organization?.slug || '');
         setTimezone(d.organization?.timezone || '');
+        setPhone(d.organization?.phone || '');
       })
       .catch((err) => setLoadError(err.message || 'Failed to load organization'))
       .finally(() => setLoading(false));
@@ -75,12 +77,14 @@ export default function Settings() {
           name: name.trim() || undefined,
           slug: slug.trim() || undefined,
           timezone: timezone || null,
+          phone: phone.trim() || null,
         }),
       });
       setOrg(d.organization);
       setName(d.organization.name);
       setSlug(d.organization.slug || '');
       setTimezone(d.organization.timezone || '');
+      setPhone(d.organization.phone || '');
       setSaveMsg('Saved.');
       setTimeout(() => setSaveMsg(''), 2000);
     } catch (err) {
@@ -157,6 +161,23 @@ export default function Settings() {
             disabled
             title="Owner email is set at signup"
           />
+        </label>
+
+        <label>
+          Property manager phone
+          <input
+            type="tel"
+            className="maint-input"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="(555) 123-4567"
+            disabled={!isOwner}
+          />
+          <span className="form-hint">
+            {phone.trim()
+              ? "Residents see this number on emergency popups in the maintenance report flow."
+              : "Add your phone number so residents can reach you in emergencies."}
+          </span>
         </label>
 
         <label>

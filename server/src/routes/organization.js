@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
 // PATCH /api/organization — update name / slug / timezone (OWNER only)
 router.patch('/', requireRole('OWNER'), async (req, res) => {
   try {
-    const { name, slug, timezone } = req.body || {};
+    const { name, slug, timezone, phone } = req.body || {};
     const data = {};
     if (name !== undefined) {
       if (!String(name).trim()) return res.status(400).json({ error: 'name cannot be empty' });
@@ -51,6 +51,7 @@ router.patch('/', requireRole('OWNER'), async (req, res) => {
       data.slug = clean;
     }
     if (timezone !== undefined) data.timezone = timezone || null;
+    if (phone !== undefined) data.phone = String(phone || '').trim() || null;
 
     const updated = await prisma.organization.update({
       where: { id: req.user.organizationId },
