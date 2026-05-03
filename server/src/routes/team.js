@@ -566,55 +566,103 @@ router.put('/:userId', requireRole('OWNER'), async (req, res) => {
   }
 });
 
-// ─── DELETE /api/team/:userId — deactivate user ─────────
-
+// ─── DELETE /api/team/:userId — deactivate user from THIS org ──
+// Multi-org aware: if the user has memberships in other orgs, only
+// the membership row for the current org is marked DEACTIVATED so
+// their access to other orgs is preserved. If this was their only
+// remaining active org, fall back to the legacy soft-delete +
+// session purge so they're effectively logged out.
 router.delete('/:userId', requireRole('OWNER'), async (req, res) => {
   try {
-    const user = await prisma.user.findFirst({
-      where: {
-        id: req.params.userId,
-        organizationId: req.user.organizationId,
-        deletedAt: null,
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    if (user.id === req.user.id) {
+    const orgId = req.user.organizationId;
+    const targetUserId = req.params.userId;
+    if (targetUserId === req.user.id) {
       return res.status(400).json({ error: 'Cannot deactivate yourself' });
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { deletedAt: new Date() },
+    const membership = await prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId: targetUserId, organizationId: orgId } },
+    });
+    if (!membership || membership.status !== 'active') {
+      return res.status(404).json({ error: 'User not found in this organization' });
+    }
+    const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+    // Other active orgs the user still belongs to.
+    const otherActive = await prisma.organizationMember.findMany({
+      where: {
+        userId: targetUserId,
+        status: 'active',
+        organizationId: { not: orgId },
+        organization: { deletedAt: null },
+      },
+      orderBy: { acceptedAt: 'desc' },
+      select: { organizationId: true, role: true, customRole: true },
     });
 
-    await prisma.session.deleteMany({ where: { userId: user.id } });
+    await prisma.organizationMember.update({
+      where: { id: membership.id },
+      data: { status: 'deactivated', deactivatedAt: new Date() },
+    });
 
-    return res.json({ success: true });
+    if (otherActive.length === 0) {
+      // Last org — soft-delete the user and purge sessions so they
+      // can't keep using the app with stale data.
+      await prisma.user.update({
+        where: { id: targetUserId },
+        data: { deletedAt: new Date() },
+      });
+      await prisma.session.deleteMany({ where: { userId: targetUserId } });
+    } else if (targetUser.organizationId === orgId) {
+      // User is currently active in this org — repoint their active
+      // org to the next available membership so the next request
+      // they make goes to a real org instead of a deactivated one.
+      const next = otherActive[0];
+      await prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          organizationId: next.organizationId,
+          role: next.role,
+          customRole: next.customRole,
+        },
+      });
+    }
+    // Property assignments inside this org stay attached to userId;
+    // they're naturally hidden because every query intersects with
+    // the property's organizationId.
+
+    return res.json({
+      success: true,
+      removedFromOrg: orgId,
+      remainingOrgs: otherActive.length,
+    });
   } catch (error) {
     console.error('Deactivate user error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ─── POST /api/team/:userId/reactivate — restore a deactivated user ─
-
+// ─── POST /api/team/:userId/reactivate — restore a user to this org ──
+// Multi-org aware: flip the membership row back to active. If the
+// user was fully soft-deleted (single-org case), un-soft-delete and
+// repoint their active org to this one.
 router.post('/:userId/reactivate', requireRole('OWNER'), async (req, res) => {
   try {
-    const user = await prisma.user.findFirst({
-      where: {
-        id: req.params.userId,
-        organizationId: req.user.organizationId,
-        deletedAt: { not: null },
-      },
-    });
+    const orgId = req.user.organizationId;
+    const targetUserId = req.params.userId;
 
-    if (!user) {
-      return res.status(404).json({ error: 'Deactivated user not found' });
+    const membership = await prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId: targetUserId, organizationId: orgId } },
+    });
+    if (!membership) {
+      return res.status(404).json({ error: 'No prior membership in this org' });
     }
+    if (membership.status === 'active') {
+      return res.status(400).json({ error: 'User is already active in this org' });
+    }
+    const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
     // Plan-limit check: re-adding this user must not push us past the cap.
     const org = await prisma.organization.findUnique({
@@ -633,9 +681,26 @@ router.post('/:userId/reactivate', requireRole('OWNER'), async (req, res) => {
       });
     }
 
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { deletedAt: null },
+    // Flip membership back to active.
+    await prisma.organizationMember.update({
+      where: { id: membership.id },
+      data: { status: 'active', deactivatedAt: null, acceptedAt: membership.acceptedAt || new Date() },
+    });
+    // If the user was fully soft-deleted (single-org case), restore
+    // them and point their active org at this one.
+    if (targetUser.deletedAt) {
+      await prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          deletedAt: null,
+          organizationId: orgId,
+          role: membership.role,
+          customRole: membership.customRole,
+        },
+      });
+    }
+    const updated = await prisma.user.findUnique({
+      where: { id: targetUserId },
       select: {
         id: true,
         email: true,

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import UpgradeModal from '../components/UpgradeModal';
@@ -27,6 +28,37 @@ export default function More() {
   const navigate = useNavigate();
   const { user, organization, logout, effectiveRole } = useAuth();
   const { can, isBeta, gate, promptUpgrade, dismiss } = useFeatureGate();
+  const [memberships, setMemberships] = useState([]);
+  const [showOrgPicker, setShowOrgPicker] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/auth/orgs', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setMemberships(d?.memberships || []))
+      .catch(() => setMemberships([]));
+  }, [user?.id]);
+
+  const switchOrg = async (organizationId) => {
+    if (organizationId === user?.organizationId) {
+      setShowOrgPicker(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId }),
+      });
+      if (!res.ok) throw new Error((await res.json())?.error || 'Could not switch org');
+      try { localStorage.setItem('roomreport:active-org', organizationId); } catch { /* ignore */ }
+      window.location.assign('/dashboard');
+    } catch (err) {
+      console.error(err);
+      setShowOrgPicker(false);
+    }
+  };
 
   const items = ITEMS.filter((it) => !it.ownerOnly || effectiveRole === 'OWNER');
 
@@ -41,6 +73,37 @@ export default function More() {
           </p>
         </div>
       </div>
+
+      {memberships.length > 1 && (
+        <div className="more-org-switcher">
+          <button
+            type="button"
+            className="more-org-current"
+            onClick={() => setShowOrgPicker((v) => !v)}
+          >
+            <span className="more-org-current-label">Organization</span>
+            <span className="more-org-current-name">
+              {organization?.name}
+              <span className="more-org-chev">▾</span>
+            </span>
+          </button>
+          {showOrgPicker && (
+            <div className="more-org-list">
+              {memberships.map((m) => (
+                <button
+                  key={m.organizationId}
+                  type="button"
+                  className={`more-org-item ${m.organizationId === user?.organizationId ? 'more-org-item-active' : ''}`}
+                  onClick={() => switchOrg(m.organizationId)}
+                >
+                  <span className="more-org-item-name">{m.organizationName}</span>
+                  <span className="more-org-item-role">{m.role}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="more-list">
         {items.map((it) => {
