@@ -19,7 +19,6 @@ import {
 } from '../../../shared/index.js';
 import MaintenanceDetail from '../components/MaintenanceDetail';
 import NewMaintenance from '../components/NewMaintenance';
-import MaintenanceToDoTabs from '../components/MaintenanceToDoTabs';
 
 const STATUSES = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
 const STATUS_LABELS = { OPEN: 'Open', ASSIGNED: 'Assigned', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved' };
@@ -433,7 +432,6 @@ export default function Maintenance() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <MaintenanceToDoTabs />
           <h1>Maintenance</h1>
           <p className="page-subtitle">{totalOpen} open item{totalOpen !== 1 ? 's' : ''}</p>
         </div>

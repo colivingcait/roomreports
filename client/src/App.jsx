@@ -21,8 +21,6 @@ import QuarterlyReview from './pages/QuarterlyReview';
 import CommonAreaFlow from './pages/CommonAreaFlow';
 import Maintenance from './pages/Maintenance';
 import Team from './pages/Team';
-import Tasks from './pages/Tasks';
-import MaintenanceToDoAll from './pages/MaintenanceToDoAll';
 import Calendar from './pages/Calendar';
 import Reports from './pages/Reports';
 import Violations from './pages/Violations';
@@ -109,9 +107,6 @@ function App() {
                 <Route path="/sharing" element={<Sharing />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/suggest" element={<Suggest />} />
-                <Route path="/todo" element={<Tasks />} />
-                <Route path="/tasks" element={<Tasks />} />
-                <Route path="/all" element={<MaintenanceToDoAll />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/financials" element={<Financials />} />
