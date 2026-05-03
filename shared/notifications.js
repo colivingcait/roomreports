@@ -66,6 +66,16 @@ export const NOTIFICATION_TYPES = {
     icon: '📊',
   },
 
+  VIOLATION_ESCALATED: {
+    label: 'Lease violation escalated to 2nd Warning or Final Notice',
+    desc: 'When a lease violation is escalated to Second Warning or Final Notice.',
+    defaultEmail: true,
+    category: 'Violations',
+    roles: ['OWNER', 'PM'],
+    color: '#A02420',
+    icon: '⚠️',
+  },
+
   // Cleaner
   ROOM_TURN_NEEDED: {
     label: 'New room turn needed',

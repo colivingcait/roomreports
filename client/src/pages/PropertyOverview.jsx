@@ -9,6 +9,7 @@ import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
 import PropertyInsightsTab from '../components/PropertyInsightsTab';
 import ViolationDetailModal from '../components/ViolationDetailModal';
 import MaintenanceDetailModal from '../components/MaintenanceDetailModal';
+import PropertyViolationsTab from '../components/PropertyViolationsTab';
 
 const TYPE_LABELS = {
   COMMON_AREA: 'Common Area', COMMON_AREA_QUICK: 'Common Area Quick Check',
@@ -217,10 +218,19 @@ export default function PropertyOverview() {
           className={`pd-tab ${activeTab === 'insights' ? 'pd-tab-active' : ''}`}
           onClick={() => setActiveTab('insights')}
         >Insights</button>
+        <button
+          className={`pd-tab ${activeTab === 'violations' ? 'pd-tab-active' : ''}`}
+          onClick={() => setActiveTab('violations')}
+        >
+          Violations{violations.filter((v) => !v.resolvedAt && !v.archivedAt).length > 0
+            ? ` (${violations.filter((v) => !v.resolvedAt && !v.archivedAt).length})`
+            : ''}
+        </button>
       </div>
 
       {activeTab === 'analytics' && <PropertyAnalyticsTab propertyId={id} />}
       {activeTab === 'insights' && <PropertyInsightsTab propertyId={id} />}
+      {activeTab === 'violations' && <PropertyViolationsTab propertyId={id} />}
 
       {activeTab === 'overview' && (<>
       {/* ─── ROOM TABLE ─── */}
