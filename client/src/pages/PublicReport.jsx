@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   CATEGORIES,
-  COMMON_AREAS,
-  triageStepsFor,
+  DEFAULT_COMMON_AREAS,
+  getCategory,
+  popupForSub,
+  photoPolicyFor,
+  makeTicketTitle,
   PM_PHONE_TOKEN,
 } from '../lib/residentReportConfig.js';
 
@@ -25,7 +28,6 @@ function renderPopupHtml(html, phone) {
   return html.replace(PM_PHONE_TOKEN, replacement);
 }
 
-// Compress an image client-side to keep uploads fast on cellular.
 async function compressImage(file, maxDim = 1920, quality = 0.82) {
   if (!file.type.startsWith('image/')) return file;
   const url = URL.createObjectURL(file);
@@ -54,6 +56,58 @@ async function compressImage(file, maxDim = 1920, quality = 0.82) {
   }
 }
 
+// Cheap blur heuristic: downsample to a thumb, run a Sobel-ish gradient,
+// estimate edge variance. Higher = sharper. Below threshold = warn.
+async function looksBlurry(file) {
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    URL.revokeObjectURL(url);
+    const W = 96;
+    const H = Math.max(1, Math.round((img.height / img.width) * W));
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, W, H);
+    const { data } = ctx.getImageData(0, 0, W, H);
+    // Convert to luminance and run a simple Laplacian.
+    const lum = new Float32Array(W * H);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      lum[j] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+    let mean = 0;
+    const lap = new Float32Array(W * H);
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const idx = y * W + x;
+        const v = -4 * lum[idx]
+          + lum[idx - 1] + lum[idx + 1]
+          + lum[idx - W] + lum[idx + W];
+        lap[idx] = v;
+        mean += v;
+      }
+    }
+    const N = (W - 2) * (H - 2);
+    mean /= N;
+    let variance = 0;
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const v = lap[y * W + x] - mean;
+        variance += v * v;
+      }
+    }
+    variance /= N;
+    return variance < 80; // empirical cutoff
+  } catch {
+    return false;
+  }
+}
+
 // ─── Top-level component ───────────────────────────────────
 
 export default function PublicReport() {
@@ -74,15 +128,18 @@ export default function PublicReport() {
   // Step 3 — your info
   const [reporterName, setReporterName] = useState('');
   const [reporterEmail, setReporterEmail] = useState('');
-  const [roomId, setRoomId] = useState(''); // either a room.id, or "common:kitchen", etc.
+  const [roomId, setRoomId] = useState('');
 
-  // Step 4 — issue
+  // Step 4 — category
   const [category, setCategory] = useState('');
-  const [description, setDescription] = useState('');
-  const [triage, setTriage] = useState({}); // { stepId: value }
 
-  // Step 5 — photos
-  const [photos, setPhotos] = useState([]); // { file, previewUrl }
+  // Step 5 — subs + description
+  const [subs, setSubs] = useState([]);
+  const [followUps, setFollowUps] = useState({}); // { stoveType: 'Gas' }
+  const [description, setDescription] = useState('');
+
+  // Step 6 — photos
+  const [photos, setPhotos] = useState([]); // { file, previewUrl, blurry }
   const fileRef = useRef();
   const [photoError, setPhotoError] = useState('');
 
@@ -97,15 +154,13 @@ export default function PublicReport() {
   const [cancelled, setCancelled] = useState(false);
   const [activePopup, setActivePopup] = useState(null);
 
-  // Boot — verify org slug + pull contact phone.
+  // Boot
   useEffect(() => {
     Promise.all([
       fetch(`/api/public/org/${slug}`).then((r) => r.ok ? r.json() : Promise.reject(new Error('Organization not found'))),
       fetch(`/api/public/org/${slug}/contact`).then((r) => r.ok ? r.json() : { phone: null }).catch(() => ({ phone: null })),
     ])
-      .then(([, contact]) => {
-        setOrgPhone(contact?.phone || null);
-      })
+      .then(([, contact]) => setOrgPhone(contact?.phone || null))
       .catch((err) => setBootError(err.message))
       .finally(() => setBootLoading(false));
   }, [slug]);
@@ -127,8 +182,7 @@ export default function PublicReport() {
     return () => clearTimeout(t);
   }, [searchQuery, slug, step]);
 
-  // Abandonment — sendBeacon when the resident closes the tab without
-  // submitting or cancelling. Best-effort; failures are ignored.
+  // Abandonment via beforeunload
   useEffect(() => {
     const handler = () => {
       if (!draftId || done || cancelled) return;
@@ -154,7 +208,7 @@ export default function PublicReport() {
     }
   };
 
-  // Save the draft when transitioning out of Step 3.
+  // Save draft after Step 3
   const finishStep3 = async () => {
     if (!reporterName.trim() || !roomId) return;
     if (!draftId) {
@@ -168,12 +222,6 @@ export default function PublicReport() {
           reporterNotifyOptIn: !!reporterEmail.trim(),
           lastStepCompleted: 3,
         };
-        // Capture the common-area choice in the description so the PM
-        // sees it even though it isn't a real room row.
-        if (isCommon) {
-          const ca = COMMON_AREAS.find((c) => `common:${c.id}` === roomId);
-          if (ca) body.note = `Reported area: ${ca.label}`;
-        }
         const res = await fetch(`/api/public/draft/${slug}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -191,35 +239,36 @@ export default function PublicReport() {
     setStep(4);
   };
 
-  // Patch the draft when transitioning out of Step 4.
-  const finishStep4 = async () => {
+  // Patch draft when leaving Step 5 (after subs + description)
+  const finishStep5 = async () => {
     if (!category || !description.trim() || !draftId) return;
-    const cat = CATEGORIES.find((c) => c.value === category);
+    const cat = getCategory(category);
     try {
       const isCommon = roomId.startsWith('common:');
-      const ca = isCommon ? COMMON_AREAS.find((c) => `common:${c.id}` === roomId) : null;
+      const commonLabel = isCommon ? roomId.replace(/^common:/, '') : null;
       const noteParts = [];
-      if (ca) noteParts.push(`Reported area: ${ca.label}`);
-      const triageEntries = Object.entries(triage).filter(([, v]) => v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0));
-      if (triageEntries.length) {
-        noteParts.push(triageEntries.map(([, v]) => Array.isArray(v) ? v.join(', ') : v).join(' · '));
-      }
+      if (commonLabel) noteParts.push(`Reported area: ${commonLabel}`);
+      if (subs.length) noteParts.push(`Selected: ${subs.join(', ')}`);
+      const followLines = Object.entries(followUps).filter(([, v]) => v);
+      for (const [k, v] of followLines) noteParts.push(`${k}: ${v}`);
+
+      const ticketTitle = makeTicketTitle(description.trim());
       const res = await fetch(`/api/public/draft/${slug}/${draftId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           flagCategory: cat?.flagCategory || 'General',
-          description: description.trim(),
-          note: noteParts.join(' · ') || null,
-          triageAnswers: triage,
-          lastStepCompleted: 4,
+          description: ticketTitle, // becomes ticket title
+          note: [description.trim(), noteParts.join(' · ')].filter(Boolean).join('\n\n'),
+          triageAnswers: { subcategories: subs, followUps, residentCategory: category },
+          lastStepCompleted: 5,
         }),
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error);
       }
-      setStep(5);
+      setStep(6);
     } catch (err) {
       setSubmitError(err.message);
     }
@@ -227,15 +276,15 @@ export default function PublicReport() {
 
   const handleSubmit = async () => {
     if (!draftId) return;
-    const cat = CATEGORIES.find((c) => c.value === category);
-    if (cat?.photos === 'required' && photos.length === 0) {
+    const cat = getCategory(category);
+    const policy = photoPolicyFor(cat, subs);
+    if (policy === 'required' && photos.length === 0) {
       setPhotoError('Please add at least one photo so we can assess the issue.');
       return;
     }
     setSubmitting(true);
     setSubmitError('');
     try {
-      // Upload photos first (best-effort) so they're attached on submit.
       for (const p of photos) {
         try {
           const compressed = await compressImage(p.file);
@@ -246,10 +295,7 @@ export default function PublicReport() {
           await fetch('/api/public/photo', { method: 'POST', body: form });
         } catch { /* keep going */ }
       }
-      const res = await fetch(`/api/public/draft/${slug}/${draftId}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const res = await fetch(`/api/public/draft/${slug}/${draftId}/submit`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setTrackingUrl(data.trackingUrl);
@@ -264,16 +310,14 @@ export default function PublicReport() {
   const handleCancel = async () => {
     setShowCancelConfirm(false);
     if (draftId) {
-      try {
-        await fetch(`/api/public/draft/${slug}/${draftId}/cancel`, { method: 'POST' });
-      } catch { /* ignore */ }
+      try { await fetch(`/api/public/draft/${slug}/${draftId}/cancel`, { method: 'POST' }); } catch { /* ignore */ }
     }
     setCancelled(true);
   };
 
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
-  const totalSteps = 5;
+  const totalSteps = 6;
 
   // ─── Render ──────────────────────────────────────────────
 
@@ -325,11 +369,7 @@ export default function PublicReport() {
             </p>
           )}
           <p style={{ marginTop: 16 }}>
-            <button
-              type="button"
-              className="rr-wiz-link"
-              onClick={() => window.location.reload()}
-            >
+            <button type="button" className="rr-wiz-link" onClick={() => window.location.reload()}>
               Submit another issue
             </button>
           </p>
@@ -342,17 +382,6 @@ export default function PublicReport() {
     <div className="rr-wiz-shell">
       <div className="rr-wiz-card">
         <ProgressDots step={step} total={totalSteps} />
-
-        {step > 1 && (
-          <button
-            type="button"
-            className="rr-wiz-back"
-            onClick={() => (step <= 2 ? setStep(1) : goBack())}
-            aria-label="Back"
-          >
-            ←
-          </button>
-        )}
 
         {step === 1 || step === 2 ? (
           <StepFindProperty
@@ -373,26 +402,38 @@ export default function PublicReport() {
             setReporterEmail={setReporterEmail}
             roomId={roomId}
             setRoomId={setRoomId}
+            onBack={goBack}
             onNext={finishStep3}
           />
         )}
 
         {step === 4 && (
-          <StepDescribe
+          <StepCategory
             category={category}
-            setCategory={setCategory}
-            description={description}
-            setDescription={setDescription}
-            triage={triage}
-            setTriage={setTriage}
-            onPopup={setActivePopup}
-            onNext={finishStep4}
+            onPick={(value) => { setCategory(value); setSubs([]); setFollowUps({}); setStep(5); }}
+            onBack={goBack}
           />
         )}
 
         {step === 5 && (
+          <StepDetails
+            category={category}
+            subs={subs}
+            setSubs={setSubs}
+            followUps={followUps}
+            setFollowUps={setFollowUps}
+            description={description}
+            setDescription={setDescription}
+            onPopup={setActivePopup}
+            onBack={() => { setStep(4); setSubs([]); setFollowUps({}); }}
+            onNext={finishStep5}
+          />
+        )}
+
+        {step === 6 && (
           <StepPhotos
             category={category}
+            subs={subs}
             photos={photos}
             setPhotos={setPhotos}
             fileRef={fileRef}
@@ -400,6 +441,7 @@ export default function PublicReport() {
             setPhotoError={setPhotoError}
             submitting={submitting}
             submitError={submitError}
+            onBack={goBack}
             onSubmit={handleSubmit}
           />
         )}
@@ -490,8 +532,9 @@ function StepFindProperty({ searchQuery, setSearchQuery, searchResults, searchin
   );
 }
 
-function StepYourInfo({ property, reporterName, setReporterName, reporterEmail, setReporterEmail, roomId, setRoomId, onNext }) {
+function StepYourInfo({ property, reporterName, setReporterName, reporterEmail, setReporterEmail, roomId, setRoomId, onBack, onNext }) {
   const numberedRooms = (property?.rooms || []).filter((r) => /\d/.test(r.label));
+  const customCommon = property?.commonAreas?.length ? property.commonAreas : DEFAULT_COMMON_AREAS;
   const valid = reporterName.trim() && roomId;
   return (
     <>
@@ -530,59 +573,26 @@ function StepYourInfo({ property, reporterName, setReporterName, reporterEmail, 
           onChange={(e) => setRoomId(e.target.value)}
           required
         >
-          <option value="">— Select your room or area —</option>
+          <option value="" disabled>— Select your room or area —</option>
           {numberedRooms.map((r) => (
             <option key={r.id} value={r.id}>{r.label}</option>
           ))}
           {numberedRooms.length > 0 && <option disabled>──────────</option>}
-          {COMMON_AREAS.map((c) => (
-            <option key={c.id} value={`common:${c.id}`}>{c.label}</option>
+          {customCommon.map((label) => (
+            <option key={label} value={`common:${label}`}>{label}</option>
           ))}
         </select>
       </label>
 
-      <button
-        type="button"
-        className="rr-wiz-btn rr-wiz-btn-primary"
-        onClick={onNext}
-        disabled={!valid}
-      >
-        Next
-      </button>
+      <NavButtons onBack={onBack} onNext={onNext} nextDisabled={!valid} nextLabel="Next" />
     </>
   );
 }
 
-function StepDescribe({ category, setCategory, description, setDescription, triage, setTriage, onPopup, onNext }) {
-  const cat = CATEGORIES.find((c) => c.value === category);
-  const triageSteps = useMemo(() => triageStepsFor(category), [category]);
-
-  // Trigger popup callback. We delegate to parent so popups can survive
-  // re-renders; the parent re-shows them only when the trigger fires.
-  const fire = useCallback((popup) => {
-    if (popup) onPopup(popup);
-  }, [onPopup]);
-
-  const setAnswer = (id, value, popup) => {
-    setTriage((t) => ({ ...t, [id]: value }));
-    if (popup) fire(popup);
-  };
-
-  const allTriageDone = triageSteps.every((t) => {
-    if (t.dependsOn) {
-      const dep = triage[t.dependsOn.id];
-      if (dep !== t.dependsOn.value) return true;
-    }
-    const v = triage[t.id];
-    if (t.kind === 'multi') return Array.isArray(v) && v.length > 0;
-    return v !== undefined && v !== '';
-  });
-
-  const valid = category && description.trim() && allTriageDone;
-
+function StepCategory({ category, onPick, onBack }) {
   return (
     <>
-      <h1 className="rr-wiz-title">Describe the issue</h1>
+      <h1 className="rr-wiz-title">What&apos;s the problem with?</h1>
 
       <div className="rr-wiz-banner">
         <span className="rr-wiz-banner-icon">📞</span>
@@ -595,132 +605,126 @@ function StepDescribe({ category, setCategory, description, setDescription, tria
             key={c.value}
             type="button"
             className={`rr-wiz-cat ${category === c.value ? 'rr-wiz-cat-selected' : ''}`}
-            onClick={() => setCategory(c.value)}
+            onClick={() => onPick(c.value)}
           >
-            <span className="rr-wiz-cat-emoji">{c.emoji}</span>
             <span className="rr-wiz-cat-label">{c.label}</span>
           </button>
         ))}
       </div>
 
-      {cat && (
-        <>
-          {triageSteps.map((t) => {
-            if (t.dependsOn) {
-              const dep = triage[t.dependsOn.id];
-              if (dep !== t.dependsOn.value) return null;
-            }
-            return (
-              <TriageQuestion
-                key={t.id}
-                step={t}
-                value={triage[t.id]}
-                onChange={(value, popup) => setAnswer(t.id, value, popup)}
-              />
-            );
-          })}
-
-          <label className="rr-wiz-field">
-            Briefly describe the issue
-            <textarea
-              className="rr-wiz-input rr-wiz-textarea"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. Kitchen sink is leaking under the cabinet"
-              rows={3}
-              required
-            />
-          </label>
-        </>
-      )}
-
-      <button
-        type="button"
-        className="rr-wiz-btn rr-wiz-btn-primary"
-        onClick={onNext}
-        disabled={!valid}
-      >
-        Next
-      </button>
+      <NavButtons onBack={onBack} onNext={null} backOnly />
     </>
   );
 }
 
-function TriageQuestion({ step, value, onChange }) {
-  if (step.kind === 'yesno') {
-    return (
-      <div className="rr-wiz-field">
-        <div className="rr-wiz-field-label">{step.question}</div>
-        <div className="rr-wiz-choice-row">
-          {['Yes', 'No'].map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              className={`rr-wiz-choice ${value === opt ? 'rr-wiz-choice-selected' : ''}`}
-              onClick={() => onChange(opt, opt === 'Yes' ? step.onYes : step.onNo)}
-            >
-              {opt}
-            </button>
-          ))}
+function StepDetails({ category, subs, setSubs, followUps, setFollowUps, description, setDescription, onPopup, onBack, onNext }) {
+  const cat = getCategory(category);
+  const hasSubs = (cat?.subcategories || []).length > 0;
+
+  const toggleSub = (sub) => {
+    const isOn = subs.includes(sub);
+    if (isOn) {
+      setSubs(subs.filter((s) => s !== sub));
+      // Clear inline follow-up if its trigger was deselected.
+      if (cat?.inlineFollowUp?.[sub]) {
+        const fid = cat.inlineFollowUp[sub].id;
+        setFollowUps((prev) => { const next = { ...prev }; delete next[fid]; return next; });
+      }
+      return;
+    }
+    if (subs.length >= 3) return; // cap at 3
+    setSubs([...subs, sub]);
+    const popup = popupForSub(cat, sub);
+    if (popup) onPopup(popup);
+  };
+
+  const setFollowUp = (key, value, popup) => {
+    setFollowUps((prev) => ({ ...prev, [key]: value }));
+    if (popup) onPopup(popup);
+  };
+
+  // Inline follow-ups whose trigger sub is currently selected.
+  const activeFollowUps = useMemo(() => {
+    if (!cat?.inlineFollowUp) return [];
+    return Object.entries(cat.inlineFollowUp)
+      .filter(([sub]) => subs.includes(sub))
+      .map(([, def]) => def);
+  }, [cat, subs]);
+
+  const valid = description.trim() && (!hasSubs || subs.length > 0)
+    && activeFollowUps.every((f) => followUps[f.id]);
+
+  return (
+    <>
+      <h1 className="rr-wiz-title">{cat?.label}</h1>
+
+      {hasSubs && (
+        <>
+          <div className="rr-wiz-field-label" style={{ marginTop: 4 }}>What&apos;s going on? <span className="rr-wiz-hint">(pick up to 3)</span></div>
+          <div className="rr-wiz-chip-grid">
+            {cat.subcategories.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`rr-wiz-chip ${subs.includes(s) ? 'rr-wiz-chip-selected' : ''}`}
+                onClick={() => toggleSub(s)}
+                disabled={!subs.includes(s) && subs.length >= 3}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {activeFollowUps.map((f) => (
+        <div className="rr-wiz-field" key={f.id}>
+          <div className="rr-wiz-field-label">{f.question}</div>
+          <div className="rr-wiz-choice-row">
+            {f.options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                className={`rr-wiz-choice ${followUps[f.id] === opt ? 'rr-wiz-choice-selected' : ''}`}
+                onClick={() => setFollowUp(f.id, opt, f.popupsByOption?.[opt])}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-    );
-  }
-  if (step.kind === 'choice') {
-    return (
-      <div className="rr-wiz-field">
-        <div className="rr-wiz-field-label">{step.question}</div>
-        <div className="rr-wiz-choice-grid">
-          {step.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              className={`rr-wiz-choice ${value === opt ? 'rr-wiz-choice-selected' : ''}`}
-              onClick={() => onChange(opt, step.popupsByOption?.[opt])}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (step.kind === 'multi') {
-    const arr = Array.isArray(value) ? value : [];
-    const toggle = (opt) => {
-      const next = arr.includes(opt) ? arr.filter((x) => x !== opt) : [...arr, opt];
-      onChange(next, !arr.includes(opt) ? step.popupsByOption?.[opt] : undefined);
-    };
-    return (
-      <div className="rr-wiz-field">
-        <div className="rr-wiz-field-label">{step.question}</div>
-        <div className="rr-wiz-choice-grid">
-          {step.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              className={`rr-wiz-choice ${arr.includes(opt) ? 'rr-wiz-choice-selected' : ''}`}
-              onClick={() => toggle(opt)}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  return null;
+      ))}
+
+      <label className="rr-wiz-field">
+        Describe the issue
+        <textarea
+          className="rr-wiz-input rr-wiz-textarea"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="e.g. Kitchen sink is leaking under the cabinet"
+          rows={3}
+          required
+        />
+      </label>
+
+      <NavButtons onBack={onBack} onNext={onNext} nextDisabled={!valid} nextLabel="Next" />
+    </>
+  );
 }
 
-function StepPhotos({ category, photos, setPhotos, fileRef, photoError, setPhotoError, submitting, submitError, onSubmit }) {
-  const cat = CATEGORIES.find((c) => c.value === category);
-  const policy = cat?.photos || 'optional';
+function StepPhotos({ category, subs, photos, setPhotos, fileRef, photoError, setPhotoError, submitting, submitError, onBack, onSubmit }) {
+  const cat = getCategory(category);
+  const policy = photoPolicyFor(cat, subs);
 
-  const handlePick = (e) => {
+  const handlePick = async (e) => {
     const files = Array.from(e.target.files || []).slice(0, 5 - photos.length);
-    const next = files
-      .filter((f) => f.type.startsWith('image/'))
-      .map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+    const next = [];
+    for (const f of files) {
+      if (!f.type.startsWith('image/')) continue;
+      // Check blur on the original; warn but don't block.
+      const blurry = await looksBlurry(f);
+      next.push({ file: f, previewUrl: URL.createObjectURL(f), blurry });
+    }
     setPhotos((prev) => [...prev, ...next]);
     setPhotoError('');
     e.target.value = '';
@@ -732,7 +736,7 @@ function StepPhotos({ category, photos, setPhotos, fileRef, photoError, setPhoto
     <>
       <h1 className="rr-wiz-title">Photos</h1>
       {policy === 'required' && (
-        <p className="rr-wiz-sub" style={{ color: '#A02420' }}>At least 1 photo required</p>
+        <p className="rr-wiz-sub" style={{ color: '#A02420' }}>At least 1 photo required.</p>
       )}
       {policy === 'encouraged' && (
         <p className="rr-wiz-sub">Photos help us fix this faster.</p>
@@ -762,6 +766,7 @@ function StepPhotos({ category, photos, setPhotos, fileRef, photoError, setPhoto
           {photos.map((p, i) => (
             <div key={i} className="rr-wiz-photo">
               <img src={p.previewUrl} alt="" />
+              {p.blurry && <span className="rr-wiz-photo-blur" title="This photo looks blurry — try taking another one.">⚠</span>}
               <button
                 type="button"
                 className="rr-wiz-photo-x"
@@ -772,19 +777,35 @@ function StepPhotos({ category, photos, setPhotos, fileRef, photoError, setPhoto
           ))}
         </div>
       )}
+      {photos.some((p) => p.blurry) && (
+        <p className="rr-wiz-hint" style={{ color: '#BA7517' }}>This photo looks blurry — try taking another one.</p>
+      )}
 
       {photoError && <div className="auth-error" style={{ marginTop: 12 }}>{photoError}</div>}
       {submitError && <div className="auth-error" style={{ marginTop: 12 }}>{submitError}</div>}
 
-      <button
-        type="button"
-        className="rr-wiz-btn rr-wiz-btn-primary"
-        onClick={onSubmit}
-        disabled={submitting}
-      >
-        {submitting ? 'Submitting...' : 'Submit Report'}
-      </button>
+      <NavButtons
+        onBack={onBack}
+        onNext={onSubmit}
+        nextDisabled={submitting}
+        nextLabel={submitting ? 'Submitting...' : 'Submit Report'}
+      />
     </>
+  );
+}
+
+function NavButtons({ onBack, onNext, nextDisabled, nextLabel = 'Next', backOnly }) {
+  return (
+    <div className="rr-wiz-nav">
+      <button type="button" className="rr-wiz-btn rr-wiz-btn-secondary" onClick={onBack}>
+        Back
+      </button>
+      {!backOnly && (
+        <button type="button" className="rr-wiz-btn rr-wiz-btn-primary" onClick={onNext} disabled={!!nextDisabled}>
+          {nextLabel}
+        </button>
+      )}
+    </div>
   );
 }
 

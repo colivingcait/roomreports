@@ -1,56 +1,27 @@
 // ─── Resident maintenance wizard configuration ───────────
 //
-// Single source of truth for the resident-facing categories, triage
-// questions, and popup copy. The PM-side `flagCategory` is mapped from
-// the resident category so the existing maintenance kanban / priority
-// rules continue to work.
+// Single source of truth for the resident-facing categories,
+// subcategories, and emergency / advisory popups. The wizard maps the
+// resident-friendly category to an internal flagCategory so the
+// existing PM kanban + priority rules continue to work.
 
-export const COMMON_AREAS = [
-  { id: 'kitchen',   label: 'Kitchen' },
-  { id: 'bath',      label: 'Bathroom (shared)' },
-  { id: 'living',    label: 'Living room' },
-  { id: 'laundry',   label: 'Laundry' },
-  { id: 'exterior',  label: 'Exterior / yard' },
-  { id: 'garage',    label: 'Garage / parking' },
-  { id: 'common',    label: 'Other common area' },
+export const DEFAULT_COMMON_AREAS = [
+  'Kitchen',
+  'Bathroom (shared)',
+  'Living room',
+  'Laundry',
+  'Exterior / yard',
+  'Garage / parking',
+  'Other common area',
 ];
-
-// Each entry maps to the existing FLAG_CATEGORIES set in shared/index.js.
-// The label and emoji are resident-facing.
-export const CATEGORIES = [
-  { value: 'plumbing',   label: 'Plumbing (sink, toilet, shower)',                emoji: '💧', flagCategory: 'Plumbing',     photos: 'required'  },
-  { value: 'electrical', label: 'Electrical (outlets, lights, switches)',         emoji: '⚡', flagCategory: 'Electrical',   photos: 'encouraged'},
-  { value: 'hvac',       label: 'Heating & cooling (AC, heat, thermostat)',       emoji: '🌡️', flagCategory: 'HVAC',         photos: 'encouraged'},
-  { value: 'lock',       label: 'Lock or key issue',                              emoji: '🔑', flagCategory: 'General',      photos: 'encouraged'},
-  { value: 'appliance',  label: 'Appliance not working (fridge, stove, washer)',  emoji: '🔌', flagCategory: 'Appliance',    photos: 'required'  },
-  { value: 'pests',      label: 'Pests or bugs',                                  emoji: '🐛', flagCategory: 'Pest Control', photos: 'required'  },
-  { value: 'leak',       label: 'Leak or water damage',                           emoji: '💦', flagCategory: 'Plumbing',     photos: 'required'  },
-  { value: 'door',       label: 'Door or window problem',                         emoji: '🚪', flagCategory: 'General',      photos: 'required'  },
-  { value: 'internet',   label: 'Internet or cable',                              emoji: '📶', flagCategory: 'General',      photos: 'optional'  },
-  { value: 'cleaning',   label: 'Cleaning issue',                                 emoji: '🧹', flagCategory: 'General',      photos: 'encouraged'},
-  { value: 'safety',     label: 'Safety concern (smoke detector, CO detector)',   emoji: '🚨', flagCategory: 'Safety',       photos: 'required'  },
-  { value: 'other',      label: 'Something else',                                 emoji: '❓', flagCategory: 'General',      photos: 'optional'  },
-];
-
-// ─── Triage configuration ─────────────────────────────────
-//
-// Each triage step is one of:
-//   - { id, kind: 'yesno',    question, onYes?: <popup>, onNo?: <popup> }
-//   - { id, kind: 'choice',   question, options: [string, ...], popupsByOption?: { option: <popup> } }
-//   - { id, kind: 'multi',    question, options: [string, ...], popupsByOption?: { option: <popup> } }
-//
-// A popup is { tone: 'emergency' | 'advisory', title, html, dismissLabel? }.
-// Popups DO NOT block submission — the resident dismisses them and
-// continues. Their primary job is harm-reduction guidance.
 
 const PM_PHONE_PLACEHOLDER = '__PM_PHONE__';
+export const PM_PHONE_TOKEN = PM_PHONE_PLACEHOLDER;
 function pmCall() {
-  // Placeholder replaced at render time with a tappable tel: link or
-  // muted "Contact your property manager" text when no phone is set.
   return `<p style="margin:8px 0 0;">${PM_PHONE_PLACEHOLDER}</p>`;
 }
 
-export const PM_PHONE_TOKEN = PM_PHONE_PLACEHOLDER;
+// ─── Popups ───────────────────────────────────────────────
 
 const POPUP_WATER_SHUTOFF = {
   tone: 'emergency',
@@ -60,7 +31,7 @@ const POPUP_WATER_SHUTOFF = {
     <p style="margin:0 0 6px;"><strong>Toilet:</strong> Look behind the toilet near the floor. Turn the oval valve clockwise (righty-tighty) until it stops.</p>
     <p style="margin:0 0 6px;"><strong>Sink:</strong> Open the cabinet below the sink. Turn the valve(s) on the supply lines clockwise until closed.</p>
     <p style="margin:0 0 6px;"><strong>If you can't find a shutoff valve, or water is coming from the ceiling or walls:</strong> Turn off the main water supply. This is usually a large valve near the water heater or where the main water line enters the house.</p>
-    <p style="margin:0 0 0;">Place towels or buckets to catch water and move electronics and valuables away from the water.</p>
+    <p style="margin:0;">Place towels or buckets to catch water and move electronics and valuables away from the water.</p>
     ${pmCall()}
   `,
 };
@@ -76,7 +47,7 @@ const POPUP_ELECTRICAL = {
       <li>Do <strong>NOT</strong> use water on an electrical fire.</li>
     </ol>
     <p style="margin:0 0 8px;font-weight:600;">If there is sparking or burning smell but no flames:</p>
-    <ol style="margin:0 0 0;padding-left:18px;">
+    <ol style="margin:0;padding-left:18px;">
       <li>Do <strong>NOT</strong> touch the outlet, switch, or fixture.</li>
       <li>Locate the electrical panel (usually in a closet, garage, basement, or laundry area — look for a gray metal box).</li>
       <li>If there is a main breaker (the large switch at the top), flip it to OFF.</li>
@@ -92,7 +63,7 @@ const POPUP_GAS = {
   title: 'Do you smell gas?',
   html: `
     <p style="margin:0 0 8px;"><strong>If you smell gas:</strong> Do NOT turn on any lights, light matches, or use electronics near the stove. Open windows, leave the unit, and call 911 or your gas company's emergency line from outside.</p>
-    <p style="margin:0 0 0;">If you do NOT smell gas, continue with your report.</p>
+    <p style="margin:0;">If you do NOT smell gas, continue with your report.</p>
     ${pmCall()}
   `,
 };
@@ -102,7 +73,7 @@ const POPUP_CO = {
   title: 'Carbon monoxide detected — leave now',
   html: `
     <p style="margin:0 0 8px;">If your carbon monoxide detector is beeping continuously, leave the house immediately and call 911 from outside. Do not re-enter until emergency services say it's safe.</p>
-    <p style="margin:0 0 0;">A single beep every 30–60 seconds usually means low battery — but continuous beeping or 4 short beeps means CO is detected. When in doubt, leave and call 911.</p>
+    <p style="margin:0;">A single beep every 30–60 seconds usually means low battery — but continuous beeping or 4 short beeps means CO is detected. When in doubt, leave and call 911.</p>
     ${pmCall()}
   `,
 };
@@ -111,7 +82,7 @@ const POPUP_BED_BUGS = {
   tone: 'advisory',
   title: 'Bed bug protocol',
   html: `
-    <ul style="margin:0 0 0;padding-left:18px;">
+    <ul style="margin:0;padding-left:18px;">
       <li>Do NOT move your mattress, bedding, or furniture to another room — this spreads them to other areas.</li>
       <li>Do NOT throw out your mattress or furniture without talking to your property manager first.</li>
       <li>Bag and seal your bedding in plastic bags.</li>
@@ -143,13 +114,19 @@ const POPUP_LOCKED_OUT = {
   tone: 'advisory',
   title: "Locked out? Here's what to do",
   html: `
-    <ul style="margin:0 0 0;padding-left:18px;">
+    <ul style="margin:0;padding-left:18px;">
       <li>Call your property manager for help.</li>
       <li>If it's late at night or you can't reach your PM, check if any housemates can let you in.</li>
       <li>Do NOT try to force the door or window open.</li>
     </ul>
     ${pmCall()}
   `,
+};
+
+const POPUP_LOCK_BATTERY = {
+  tone: 'advisory',
+  title: 'Lock battery tip',
+  html: `<p style="margin:0;">This usually means the batteries need replacing. If you have 4 AA batteries, you can try replacing them yourself — the battery compartment is usually on the inside of the lock. Otherwise, submit this report and we'll take care of it.</p>`,
 };
 
 const POPUP_FRIDGE = {
@@ -161,13 +138,13 @@ const POPUP_FRIDGE = {
 const POPUP_BROKEN_GLASS = {
   tone: 'advisory',
   title: 'Be careful around broken glass',
-  html: `<p style="margin:0;">Be careful around broken glass. If the window is shattered, cover the opening with cardboard or plastic and tape to keep weather and pests out until it's repaired.</p>`,
+  html: `<p style="margin:0;">If the window is shattered, cover the opening with cardboard or plastic and tape to keep weather and pests out until it's repaired.</p>`,
 };
 
 const POPUP_ROUTER_TIP = {
   tone: 'advisory',
-  title: 'Where is the router?',
-  html: `<p style="margin:0;">The router is usually in a common area — check the living room, hallway closet, or laundry area for a small box with blinking lights. Unplug it, wait 30 seconds, then plug it back in.</p>`,
+  title: 'Try restarting the router',
+  html: `<p style="margin:0;">Unplug it, wait 30 seconds, plug it back in. The router is usually in a common area — check the living room, hallway closet, or laundry area for a small box with blinking lights.</p>`,
 };
 
 const POPUP_SMOKE_LOW_BATT = {
@@ -200,204 +177,191 @@ function popupHeatWinter() {
   };
 }
 
-// ─── Per-category triage ──────────────────────────────────
+// ─── Categories ───────────────────────────────────────────
+//
+// `flagCategory` maps to one of FLAG_CATEGORIES in shared/index.js so
+// the PM kanban + priority rules continue to work without changes.
+// `photos`: 'required' | 'encouraged' | 'optional'
+// `subcategories`: array of strings
+// `popupsBySub`: { subLabel: popup }
+// `requirePhotosForSub`: optional Set; only those subs trigger required-photos
+// `inlineFollowUp`: { sub: { question, options, popupsByOption } }
 
-export function triageStepsFor(categoryValue) {
-  switch (categoryValue) {
-    case 'plumbing':
-      return [
-        {
-          id: 'activeWater', kind: 'yesno',
-          question: 'Is there active water leaking right now?',
-          onYes: POPUP_WATER_SHUTOFF,
-        },
-        {
-          id: 'leakSource', kind: 'choice',
-          question: 'Is the leak coming from a pipe, fixture, or appliance?',
-          options: ['Pipe', 'Fixture', 'Appliance', 'Not sure'],
-        },
-      ];
+export const CATEGORIES = [
+  {
+    value: 'plumbing',
+    label: 'Water & Plumbing',
+    flagCategory: 'Plumbing',
+    photos: 'required',
+    subcategories: ['Sink issue', 'Toilet issue', 'Shower/tub issue', 'Active leak', 'Water damage/stain', 'Mold', 'Other'],
+    popupsBySub: {
+      'Active leak': POPUP_WATER_SHUTOFF,
+      'Mold': POPUP_MOLD,
+    },
+  },
+  {
+    value: 'electrical',
+    label: 'Electrical & Power',
+    flagCategory: 'Electrical',
+    photos: 'encouraged',
+    subcategories: ['Outlet not working', 'Lights not working', 'Breaker tripping', 'Sparking/burning smell', 'Other'],
+    popupsBySub: {
+      'Sparking/burning smell': POPUP_ELECTRICAL,
+    },
+  },
+  {
+    value: 'hvac',
+    label: 'Heating & Cooling',
+    flagCategory: 'HVAC',
+    photos: 'encouraged',
+    subcategories: ['AC not working', 'Heat not working', 'Thermostat issue', 'Unusual noises', 'Other'],
+    // Seasonal popups resolved at render time.
+    seasonalPopups: {
+      'AC not working': { months: [5, 6, 7, 8], popup: popupHeatSummer },   // Jun-Sep
+      'Heat not working': { months: [10, 11, 0, 1], popup: popupHeatWinter }, // Nov-Feb
+    },
+  },
+  {
+    value: 'doors',
+    label: 'Doors, Locks & Windows',
+    flagCategory: 'Locks & Security',
+    photos: 'optional', // overridden per-sub below
+    subcategories: [
+      'Electronic lock beeping/low battery',
+      'Lock not opening',
+      'Key not working',
+      'Keypad not responding',
+      'Locked out',
+      "Door won't close/latch",
+      "Window won't open/close",
+      'Broken glass',
+      'Screen damage',
+      'Draft/air leak',
+      'Other',
+    ],
+    popupsBySub: {
+      'Electronic lock beeping/low battery': POPUP_LOCK_BATTERY,
+      'Locked out': POPUP_LOCKED_OUT,
+      'Broken glass': POPUP_BROKEN_GLASS,
+    },
+    requirePhotosForSub: new Set(['Broken glass', 'Screen damage']),
+  },
+  {
+    value: 'appliances',
+    label: 'Appliances',
+    flagCategory: 'Appliances',
+    photos: 'required',
+    subcategories: ['Refrigerator', 'Stove/oven', 'Dishwasher', 'Washer', 'Dryer', 'Garbage disposal', 'Microwave', 'Other'],
+    popupsBySub: {
+      Refrigerator: POPUP_FRIDGE,
+    },
+    inlineFollowUp: {
+      'Stove/oven': {
+        id: 'stoveType',
+        question: 'Is this a gas or electric stove?',
+        options: ['Gas', 'Electric', 'Not sure'],
+        popupsByOption: { Gas: POPUP_GAS, 'Not sure': POPUP_GAS },
+      },
+    },
+  },
+  {
+    value: 'pests',
+    label: 'Pests',
+    flagCategory: 'Pest Control',
+    photos: 'required',
+    subcategories: ['Ants', 'Roaches', 'Mice/rats', 'Bed bugs', 'Spiders', 'Flies/gnats', 'Wasps/bees', 'Other'],
+    popupsBySub: {
+      'Bed bugs': POPUP_BED_BUGS,
+      'Wasps/bees': POPUP_WASPS,
+      'Mice/rats': POPUP_RODENTS,
+    },
+  },
+  {
+    value: 'damage',
+    label: 'Damage & Surfaces',
+    flagCategory: 'Surfaces',
+    photos: 'required',
+    subcategories: ['Hole in wall', 'Peeling paint', 'Ceiling damage', 'Floor damage', 'Furniture broken/damaged', 'Blinds broken', 'Other'],
+  },
+  {
+    value: 'cleaning',
+    label: 'Cleaning & Trash',
+    flagCategory: 'Cleaning',
+    photos: 'encouraged',
+    subcategories: ['Common area dirty', 'Trash not taken out', 'Trash bins full', 'Bathroom needs cleaning', 'Other'],
+  },
+  {
+    value: 'internet',
+    label: 'Internet & Cable',
+    flagCategory: 'Internet & Tech',
+    photos: 'optional',
+    subcategories: ['No internet', 'Slow internet', 'Router issue', 'Cable not working', 'Other'],
+    popupsBySub: {
+      'No internet': POPUP_ROUTER_TIP,
+      'Router issue': POPUP_ROUTER_TIP,
+    },
+  },
+  {
+    value: 'safety',
+    label: 'Safety',
+    flagCategory: 'Safety',
+    photos: 'required',
+    subcategories: ['Smoke detector beeping', 'Smoke detector missing', 'CO detector beeping', 'Fire extinguisher missing', 'Egress blocked', 'Other'],
+    popupsBySub: {
+      'CO detector beeping': POPUP_CO,
+      'Smoke detector beeping': POPUP_SMOKE_LOW_BATT,
+    },
+  },
+  {
+    value: 'parking',
+    label: 'Parking',
+    flagCategory: 'General',
+    photos: 'optional',
+    subcategories: ['Someone in my spot', 'Blocked in', 'Parking lot issue', 'Other'],
+  },
+  {
+    value: 'other',
+    label: 'Something else',
+    flagCategory: 'General',
+    photos: 'optional',
+    subcategories: [],
+  },
+];
 
-    case 'electrical':
-      return [
-        {
-          id: 'sparking', kind: 'yesno',
-          question: 'Are any outlets, switches, or lights sparking, smoking, or producing a burning smell?',
-          onYes: POPUP_ELECTRICAL,
-        },
-        {
-          id: 'electricalIssue', kind: 'choice',
-          question: "What's happening?",
-          options: [
-            'Sparking outlet',
-            'Burning smell',
-            'Flickering lights',
-            'Breaker keeps tripping',
-            'Outlet not working',
-            'Multiple outlets not working',
-          ],
-        },
-      ];
+// Helpers -------------------------------------------------
 
-    case 'hvac': {
-      const month = new Date().getMonth(); // 0-11
-      const summer = month >= 5 && month <= 8;   // Jun–Sep
-      const winter = month >= 10 || month <= 1;  // Nov–Feb
-      const popupsByOption = {};
-      if (summer) popupsByOption['Completely off'] = popupHeatSummer();
-      else if (winter) popupsByOption['Completely off'] = popupHeatWinter();
-      return [
-        {
-          id: 'hvacState', kind: 'choice',
-          question: 'Is the unit completely not working, or partially working?',
-          options: [
-            'Completely off',
-            'Running but not heating/cooling properly',
-            'Making unusual noises',
-            'Thermostat issue',
-          ],
-          popupsByOption,
-        },
-      ];
-    }
+export function getCategory(value) {
+  return CATEGORIES.find((c) => c.value === value);
+}
 
-    case 'lock':
-      return [
-        {
-          id: 'lockedOut', kind: 'yesno',
-          question: 'Are you locked out right now?',
-          onYes: POPUP_LOCKED_OUT,
-        },
-        {
-          id: 'lockIssue', kind: 'choice',
-          question: "What's the issue?",
-          options: [
-            "Can't lock my door",
-            "Key doesn't work",
-            'Lock is jammed',
-            'Keypad not responding',
-            'Other',
-          ],
-        },
-      ];
-
-    case 'pests':
-      return [
-        {
-          id: 'pestTypes', kind: 'multi',
-          question: 'What type of pests are you seeing?',
-          options: [
-            'Ants',
-            'Roaches',
-            'Mice or rats',
-            'Bed bugs',
-            'Spiders',
-            'Flies or gnats',
-            'Wasps or bees',
-            'Other',
-          ],
-          popupsByOption: {
-            'Bed bugs': POPUP_BED_BUGS,
-            'Wasps or bees': POPUP_WASPS,
-            'Mice or rats': POPUP_RODENTS,
-          },
-        },
-      ];
-
-    case 'leak':
-      return [
-        {
-          id: 'activeWater', kind: 'yesno',
-          question: 'Is there active water leaking right now?',
-          onYes: POPUP_WATER_SHUTOFF,
-        },
-        {
-          id: 'leakLocation', kind: 'choice',
-          question: 'Where is the water coming from?',
-          options: ['Ceiling', 'Wall', 'Floor / baseboard', 'Around a window', 'Not sure'],
-        },
-        {
-          id: 'mold', kind: 'yesno',
-          question: 'Is there visible mold?',
-          onYes: POPUP_MOLD,
-        },
-      ];
-
-    case 'appliance':
-      return [
-        {
-          id: 'appliance', kind: 'choice',
-          question: 'Which appliance?',
-          options: [
-            'Refrigerator',
-            'Stove / oven',
-            'Dishwasher',
-            'Washer',
-            'Dryer',
-            'Garbage disposal',
-            'Microwave',
-            'Other',
-          ],
-          popupsByOption: { Refrigerator: POPUP_FRIDGE },
-        },
-        {
-          id: 'stoveType', kind: 'choice',
-          question: 'Is this a gas or electric stove?',
-          options: ['Gas', 'Electric', 'Not sure'],
-          dependsOn: { id: 'appliance', value: 'Stove / oven' },
-          popupsByOption: { Gas: POPUP_GAS, 'Not sure': POPUP_GAS },
-        },
-      ];
-
-    case 'door':
-      return [
-        {
-          id: 'doorIssue', kind: 'choice',
-          question: "What's the issue?",
-          options: [
-            "Won't close or lock properly",
-            'Cracked or broken glass',
-            'Screen damage',
-            "Won't open",
-            'Draft or air leak',
-          ],
-          popupsByOption: { 'Cracked or broken glass': POPUP_BROKEN_GLASS },
-        },
-      ];
-
-    case 'internet':
-      return [
-        {
-          id: 'restartedRouter', kind: 'choice',
-          question: 'Have you tried restarting the router?',
-          options: ['Yes', 'No', 'Where is it?'],
-          popupsByOption: { 'Where is it?': POPUP_ROUTER_TIP },
-        },
-      ];
-
-    case 'safety':
-      return [
-        {
-          id: 'safetyType', kind: 'choice',
-          question: 'What type of safety issue?',
-          options: [
-            'Smoke detector beeping',
-            'CO detector beeping',
-            'Smoke detector missing',
-            'Fire extinguisher missing',
-            'Egress blocked',
-            'Other',
-          ],
-          popupsByOption: {
-            'CO detector beeping': POPUP_CO,
-            'Smoke detector beeping': POPUP_SMOKE_LOW_BATT,
-          },
-        },
-      ];
-
-    case 'cleaning':
-    case 'other':
-    default:
-      return [];
+// Returns a popup for the given subcategory pick, considering seasonal
+// rules. Used when the resident taps a chip.
+export function popupForSub(category, sub, now = new Date()) {
+  if (!category) return null;
+  const direct = category.popupsBySub?.[sub];
+  if (direct) return direct;
+  const seasonal = category.seasonalPopups?.[sub];
+  if (seasonal && seasonal.months.includes(now.getMonth())) {
+    return seasonal.popup();
   }
+  return null;
+}
+
+// Whether photos are required given the category + selected subs.
+export function photoPolicyFor(category, subs = []) {
+  if (!category) return 'optional';
+  if (category.requirePhotosForSub) {
+    if (subs.some((s) => category.requirePhotosForSub.has(s))) return 'required';
+  }
+  return category.photos || 'optional';
+}
+
+// Truncate a description to a tidy ticket title (~60 chars). Cuts on
+// the previous word boundary when possible so we don't slice mid-word.
+export function makeTicketTitle(description, max = 60) {
+  const s = String(description || '').trim().replace(/\s+/g, ' ');
+  if (s.length <= max) return s;
+  const slice = s.slice(0, max);
+  const lastSpace = slice.lastIndexOf(' ');
+  return (lastSpace > max * 0.6 ? slice.slice(0, lastSpace) : slice).trim() + '…';
 }

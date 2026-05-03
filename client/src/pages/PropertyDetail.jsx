@@ -522,6 +522,12 @@ export default function PropertyDetail() {
       <SpaceSection title="Kitchens" items={property.kitchens} propertyId={id} endpoint="kitchens" onRefresh={fetchProperty} />
       <SpaceSection title="Shared Bathrooms" items={property.bathrooms} propertyId={id} endpoint="bathrooms" onRefresh={fetchProperty} />
 
+      <CommonAreasSection
+        propertyId={id}
+        commonAreas={property.commonAreas || []}
+        onSave={(next) => handleUpdateProperty('commonAreas', next)}
+      />
+
       <div className="detail-section">
         <div className="section-header">
           <h3>Rooms</h3>
@@ -632,6 +638,76 @@ export default function PropertyDetail() {
           )}
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// ─── Common areas editor ──────────────────────────────────
+//
+// Lets the PM define per-property common-area labels surfaced on the
+// resident maintenance report room dropdown. Free text — additions go
+// in via Enter or the + button, deletions via the × on each chip.
+
+function CommonAreasSection({ commonAreas, onSave }) {
+  const [draft, setDraft] = useState('');
+
+  const add = () => {
+    const v = draft.trim();
+    if (!v) return;
+    if (commonAreas.includes(v)) { setDraft(''); return; }
+    onSave([...commonAreas, v]);
+    setDraft('');
+  };
+  const remove = (label) => onSave(commonAreas.filter((c) => c !== label));
+
+  return (
+    <div className="detail-section">
+      <div className="section-header">
+        <h3>Common Areas</h3>
+      </div>
+      <p className="empty-text" style={{ marginBottom: '0.5rem' }}>
+        Custom locations residents can pick from when reporting an issue (e.g. &quot;Upstairs shared bath&quot;, &quot;Back patio&quot;). If left blank, residents see a default list.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+        {commonAreas.length === 0 ? (
+          <span className="empty-text">No custom areas yet — defaults will be shown.</span>
+        ) : (
+          commonAreas.map((label) => (
+            <span
+              key={label}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', borderRadius: 999,
+                background: '#F3F0EC', border: '1px solid #E0DCDA',
+                fontSize: 13, color: '#4A4543',
+              }}
+            >
+              {label}
+              <button
+                type="button"
+                onClick={() => remove(label)}
+                aria-label={`Remove ${label}`}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8A8583', fontSize: 14, padding: 0, lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          className="maint-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="e.g. Upstairs shared bath"
+        />
+        <button type="button" className="btn-secondary-sm" onClick={add} disabled={!draft.trim()}>
+          + Add
+        </button>
+      </div>
     </div>
   );
 }

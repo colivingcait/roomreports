@@ -152,6 +152,7 @@ router.get('/org/:slug/property/:propertyId', async (req, res) => {
       propertyId: property.id,
       address: property.address,
       rooms: property.rooms.map((r) => ({ id: r.id, label: r.label, features: r.features })),
+      commonAreas: property.commonAreas || [],
     });
   } catch (error) {
     console.error('Public property rooms error:', error);
@@ -719,6 +720,8 @@ router.post('/draft/:slug/:id/submit', async (req, res) => {
     try {
       const pmIds = await pmAndOwnerIds(org.id);
       const roomLabel = draft.property.rooms?.find((r) => r.id === draft.roomId)?.label || '—';
+      const triage = draft.triageAnswers || {};
+      const subs = Array.isArray(triage.subcategories) ? triage.subcategories : [];
       await notifyMany({
         userIds: pmIds,
         organizationId: org.id,
@@ -727,18 +730,19 @@ router.post('/draft/:slug/:id/submit', async (req, res) => {
         message: `${draft.reportedByName || 'Resident'}: ${draft.description}`,
         link: `/maintenance?open=${draft.id}`,
         email: {
-          subject: `New resident report — ${draft.property.name}`,
+          subject: `[${draft.property.name}] — New maintenance report: ${draft.description}`,
           ctaLabel: 'Open ticket',
           ctaHref: `${appOrigin()}/maintenance?open=${draft.id}`,
           bodyHtml: `
             <p style="margin:0 0 12px;">${esc(draft.reportedByName || 'A resident')} just submitted a maintenance report.</p>
             ${summaryList([
+              ['Title', draft.description],
               ['Resident', draft.reportedByName || 'Resident'],
               ['Property', draft.property.name],
               ['Room', roomLabel],
               ['Category', draft.flagCategory || 'General'],
-              ['Description', draft.description],
-              ['Note', draft.note || '—'],
+              ['Selected', subs.length ? subs.join(', ') : '—'],
+              ['Description', draft.note || '—'],
             ])}
           `,
         },
