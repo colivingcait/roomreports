@@ -5,6 +5,7 @@ import UpgradeModal from '../components/UpgradeModal';
 import { useFeatureGate } from '../hooks/useFeatureGate';
 
 const ITEMS = [
+  { label: 'Lease Violations', path: '/violations', desc: 'Track resident violations and warnings' },
   { label: 'Team', path: '/team', desc: 'Members, invitations, roles' },
   { label: 'Notifications', path: '/notifications/settings', desc: 'Email alerts and in-app bell' },
   { label: 'Vendors', path: '/vendors', desc: 'Vendor directory', feature: 'vendors' },

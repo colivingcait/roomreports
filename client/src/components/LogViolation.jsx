@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Modal from './Modal';
-import { pillColors } from '../../../shared/index.js';
 
 const VIOLATION_TYPES = [
   { value: 'MESSY',               label: 'Messy' },
@@ -11,62 +10,102 @@ const VIOLATION_TYPES = [
   { value: 'OPEN_FOOD',           label: 'Open food' },
   { value: 'PESTS',               label: 'Pests/bugs' },
   { value: 'OPEN_FLAMES',         label: 'Open flames/candles' },
+  { value: 'OVERLOADED_OUTLETS',  label: 'Overloaded outlets' },
   { value: 'KITCHEN_APPLIANCES',  label: 'Kitchen appliances in room' },
   { value: 'LITHIUM_BATTERIES',   label: 'Lithium batteries' },
   { value: 'MODIFICATIONS',       label: 'Modifications (paint, holes, etc.)' },
   { value: 'DRUG_PARAPHERNALIA',  label: 'Drug paraphernalia' },
   { value: 'WEAPONS',             label: 'Weapons' },
+  { value: 'UNCLEAR_EGRESS',      label: 'Unclear egress path' },
   { value: 'NOISE',               label: 'Noise' },
   { value: 'OTHER',               label: 'Other' },
 ];
 
-const api = (path, opts = {}) =>
-  fetch(path, { credentials: 'include', ...opts })
-    .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
-
 export default function LogViolation({ open, onClose, propertyId, rooms = [], onCreated }) {
+  const [propId, setPropId] = useState(propertyId || '');
+  const [properties, setProperties] = useState([]);
+  const [propRooms, setPropRooms] = useState(rooms);
   const [roomId, setRoomId] = useState('');
   const [residentName, setResidentName] = useState('');
   const [violationType, setViolationType] = useState('');
   const [otherDescription, setOtherDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const fileRef = useRef();
+
+  // If no propertyId is supplied (portfolio-wide entry point), fetch the
+  // property list so the user can pick.
+  useEffect(() => {
+    if (!open || propertyId) return;
+    fetch('/api/properties', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setProperties(d.properties || []))
+      .catch(() => {});
+  }, [open, propertyId]);
+
+  // When the property changes (or opens with a default), load its rooms.
+  useEffect(() => {
+    if (!open) return;
+    if (propertyId) { setPropRooms(rooms); return; }
+    if (!propId) { setPropRooms([]); return; }
+    fetch(`/api/properties/${propId}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setPropRooms(d.property?.rooms || []))
+      .catch(() => setPropRooms([]));
+  }, [open, propId, propertyId, rooms]);
 
   useEffect(() => {
     if (!open) {
+      setPropId(propertyId || '');
       setRoomId('');
       setResidentName('');
       setViolationType('');
       setOtherDescription('');
       setNotes('');
       setPhotos([]);
+      setPhotoPreviews([]);
       setError('');
+    } else {
+      setPropId(propertyId || '');
     }
-  }, [open]);
+  }, [open, propertyId]);
+
+  const handlePhotoPick = (e) => {
+    const files = Array.from(e.target.files).slice(0, 5);
+    setPhotos(files);
+    setPhotoPreviews(files.map((f) => URL.createObjectURL(f)));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!violationType) { setError('Pick a violation type'); return; }
-    if (violationType === 'OTHER' && !otherDescription.trim()) { setError('Describe the violation'); return; }
+    if (!propId) { setError('Select a property'); return; }
+    if (!violationType) { setError('Select a violation type'); return; }
+    if (violationType === 'OTHER' && !otherDescription.trim()) {
+      setError('Describe the violation');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       const form = new FormData();
-      form.append('propertyId', propertyId);
+      form.append('propertyId', propId);
       if (roomId) form.append('roomId', roomId);
       if (residentName.trim()) form.append('residentName', residentName.trim());
       form.append('violationType', violationType);
       if (otherDescription.trim()) form.append('otherDescription', otherDescription.trim());
       if (notes.trim()) form.append('notes', notes.trim());
       for (const file of photos) form.append('photos', file);
-      await fetch('/api/violations', {
+      const res = await fetch('/api/violations', {
         method: 'POST',
         credentials: 'include',
         body: form,
-      }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });
-      onCreated?.();
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed to log violation');
+      onCreated?.(d.violation);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,11 +116,35 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
   return (
     <Modal open={open} onClose={onClose} title="Log Lease Violation">
       <form className="modal-form" onSubmit={submit}>
+        {error && <div className="auth-error">{error}</div>}
+
+        {!propertyId && (
+          <label>
+            Property
+            <select
+              className="form-select"
+              value={propId}
+              onChange={(e) => { setPropId(e.target.value); setRoomId(''); }}
+              required
+            >
+              <option value="">Select a property...</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label>
-          Room <span className="form-optional">(optional)</span>
-          <select className="form-select" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+          Room <span className="form-optional">(optional — leave blank for property-wide)</span>
+          <select
+            className="form-select"
+            value={roomId}
+            onChange={(e) => setRoomId(e.target.value)}
+            disabled={!propId || propRooms.length === 0}
+          >
             <option value="">Property-wide</option>
-            {rooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            {propRooms.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
         </label>
 
@@ -89,7 +152,7 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
           Resident name <span className="form-optional">(optional)</span>
           <input
             type="text"
-            className="form-input"
+            className="maint-input"
             value={residentName}
             onChange={(e) => setResidentName(e.target.value)}
             placeholder="e.g. Jane Smith"
@@ -97,34 +160,26 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
         </label>
 
         <label>
-          Violation type <span style={{ color: '#A02420' }}>*</span>
+          Violation type
+          <select
+            className="form-select"
+            value={violationType}
+            onChange={(e) => setViolationType(e.target.value)}
+            required
+          >
+            <option value="">Select a violation type...</option>
+            {VIOLATION_TYPES.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </label>
-        <div className="q-compliance-grid">
-          {VIOLATION_TYPES.map(({ value, label }) => {
-            const col = pillColors(label);
-            return (
-              <button
-                key={value}
-                type="button"
-                className={`q-compliance-card ${violationType === value ? 'selected' : ''}`}
-                style={{
-                  '--pill-bg': col.bg, '--pill-fg': col.fg,
-                  '--pill-border': col.border, '--pill-sel-bg': col.selBg, '--pill-sel-fg': col.selFg,
-                }}
-                onClick={() => setViolationType(value)}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
 
         {violationType === 'OTHER' && (
           <label>
-            Describe the violation <span style={{ color: '#A02420' }}>*</span>
+            Describe the violation
             <input
               type="text"
-              className="form-input"
+              className="maint-input"
               value={otherDescription}
               onChange={(e) => setOtherDescription(e.target.value)}
               placeholder="Brief description..."
@@ -146,19 +201,29 @@ export default function LogViolation({ open, onClose, propertyId, rooms = [], on
 
         <label>
           Photos <span className="form-optional">(optional, up to 5)</span>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(e) => setPhotos(Array.from(e.target.files).slice(0, 5))}
-          />
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotoPick}
+              style={{ display: 'none' }}
+            />
+            <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}>
+              {photos.length > 0 ? `Change photos (${photos.length})` : '+ Add photos'}
+            </button>
+            {photoPreviews.map((src, i) => (
+              <div key={i} className="photo-thumb-sm"><img src={src} alt="" /></div>
+            ))}
+          </div>
         </label>
 
-        {error && <div className="auth-error">{error}</div>}
-
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className="btn-primary" disabled={saving || !violationType}>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={saving}>
             {saving ? 'Logging...' : 'Log Violation'}
           </button>
         </div>

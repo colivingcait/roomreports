@@ -7,7 +7,7 @@ import PropertyHealthTab from '../components/PropertyHealthTab';
 import PropertyRoomTable from '../components/PropertyRoomTable';
 import PropertyAnalyticsTab from '../components/PropertyAnalyticsTab';
 import PropertyInsightsTab from '../components/PropertyInsightsTab';
-import ViolationDetailModal from '../components/ViolationDetailModal';
+import ViolationDetailSlideover from '../components/ViolationDetailSlideover';
 import MaintenanceDetailModal from '../components/MaintenanceDetailModal';
 import PropertyViolationsTab from '../components/PropertyViolationsTab';
 
@@ -375,10 +375,20 @@ export default function PropertyOverview() {
 
       </>)}
 
-      <ViolationDetailModal
-        violationId={viewingViolationId}
-        onClose={() => setViewingViolationId(null)}
-      />
+      {viewingViolationId && (
+        <ViolationDetailSlideover
+          violationId={viewingViolationId}
+          onClose={() => setViewingViolationId(null)}
+          onUpdated={() => {
+            // Refresh the property's violation list so badge counts and
+            // row state reflect any escalation/resolution changes.
+            fetch(`/api/violations?propertyId=${id}&includeArchived=true`, { credentials: 'include' })
+              .then((r) => r.json())
+              .then((d) => setViolations(d.violations || []))
+              .catch(() => {});
+          }}
+        />
+      )}
       <MaintenanceDetailModal
         ticketId={viewingTicketId}
         onClose={() => setViewingTicketId(null)}

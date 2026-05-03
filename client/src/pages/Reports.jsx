@@ -640,9 +640,11 @@ function ViolationReports() {
     MESSY: 'Messy', BAD_ODOR: 'Bad odor', SMOKING: 'Smoking',
     UNAUTHORIZED_GUESTS: 'Unauthorized guests', PETS: 'Pets', OPEN_FOOD: 'Open food',
     PESTS: 'Pests/bugs', OPEN_FLAMES: 'Open flames/candles',
+    OVERLOADED_OUTLETS: 'Overloaded outlets',
     KITCHEN_APPLIANCES: 'Kitchen appliances', LITHIUM_BATTERIES: 'Lithium batteries',
     MODIFICATIONS: 'Modifications', DRUG_PARAPHERNALIA: 'Drug paraphernalia',
-    WEAPONS: 'Weapons', NOISE: 'Noise', OTHER: 'Other',
+    WEAPONS: 'Weapons', UNCLEAR_EGRESS: 'Unclear egress path',
+    NOISE: 'Noise', OTHER: 'Other',
   };
   const ESCALATION_LABELS = { FLAGGED: 'Flagged', FIRST_WARNING: '1st Warning', SECOND_WARNING: '2nd Warning', FINAL_NOTICE: 'Final Notice' };
   const ESCALATION_STYLES = {

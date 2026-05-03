@@ -26,7 +26,6 @@ import MaintenanceToDoAll from './pages/MaintenanceToDoAll';
 import Calendar from './pages/Calendar';
 import Reports from './pages/Reports';
 import Violations from './pages/Violations';
-import ViolationDetail from './pages/ViolationDetail';
 import PropertyHealth from './pages/PropertyHealth';
 import Templates from './pages/Templates';
 import More from './pages/More';
@@ -117,7 +116,6 @@ function App() {
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/financials" element={<Financials />} />
                 <Route path="/violations" element={<Violations />} />
-                <Route path="/violations/:id" element={<ViolationDetail />} />
                 <Route path="/health" element={<PropertyHealth />} />
                 <Route path="/templates" element={<Templates />} />
                 <Route path="/vendors/:id" element={<VendorProfile />} />

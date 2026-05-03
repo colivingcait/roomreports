@@ -88,7 +88,7 @@ export default function ResolveViolationModal({ open, onClose, violationId, onUp
 
         <div className="modal-actions">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className="btn-primary" style={{ background: '#6B8F71' }} disabled={saving}>
+          <button type="submit" className="btn-primary" disabled={saving}>
             {saving ? 'Resolving...' : 'Resolve Violation'}
           </button>
         </div>

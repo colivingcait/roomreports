@@ -22,11 +22,13 @@ function categoryToViolationType(category) {
   if (c.includes('food')) return 'OPEN_FOOD';
   if (c.includes('pest') || c.includes('bug')) return 'PESTS';
   if (c.includes('flame') || c.includes('candle')) return 'OPEN_FLAMES';
+  if (c.includes('outlet') || c.includes('overload')) return 'OVERLOADED_OUTLETS';
   if (c.includes('appliance') || c.includes('kitchen')) return 'KITCHEN_APPLIANCES';
   if (c.includes('lithium') || c.includes('battery')) return 'LITHIUM_BATTERIES';
   if (c.includes('modif') || c.includes('paint') || c.includes('hole')) return 'MODIFICATIONS';
   if (c.includes('drug')) return 'DRUG_PARAPHERNALIA';
   if (c.includes('weapon')) return 'WEAPONS';
+  if (c.includes('egress') || c.includes('exit')) return 'UNCLEAR_EGRESS';
   if (c.includes('noise')) return 'NOISE';
   return 'OTHER';
 }

@@ -17,9 +17,9 @@ router.use(requireAuth);
 
 export const VIOLATION_TYPES = [
   'MESSY', 'BAD_ODOR', 'SMOKING', 'UNAUTHORIZED_GUESTS', 'PETS',
-  'OPEN_FOOD', 'PESTS', 'OPEN_FLAMES', 'KITCHEN_APPLIANCES',
-  'LITHIUM_BATTERIES', 'MODIFICATIONS', 'DRUG_PARAPHERNALIA',
-  'WEAPONS', 'NOISE', 'OTHER',
+  'OPEN_FOOD', 'PESTS', 'OPEN_FLAMES', 'OVERLOADED_OUTLETS',
+  'KITCHEN_APPLIANCES', 'LITHIUM_BATTERIES', 'MODIFICATIONS',
+  'DRUG_PARAPHERNALIA', 'WEAPONS', 'UNCLEAR_EGRESS', 'NOISE', 'OTHER',
 ];
 
 export const VIOLATION_TYPE_LABELS = {
@@ -31,11 +31,13 @@ export const VIOLATION_TYPE_LABELS = {
   OPEN_FOOD: 'Open food',
   PESTS: 'Pests/bugs',
   OPEN_FLAMES: 'Open flames/candles',
+  OVERLOADED_OUTLETS: 'Overloaded outlets',
   KITCHEN_APPLIANCES: 'Kitchen appliances in room',
   LITHIUM_BATTERIES: 'Lithium batteries',
   MODIFICATIONS: 'Modifications (paint, holes, etc.)',
   DRUG_PARAPHERNALIA: 'Drug paraphernalia',
   WEAPONS: 'Weapons',
+  UNCLEAR_EGRESS: 'Unclear egress path',
   NOISE: 'Noise',
   OTHER: 'Other',
 };
